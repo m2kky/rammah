@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Smooth SVG Loader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #f1f5f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* حاوية الـ Loader */
+        .loader-wrapper {
+            position: relative;
+            width: 160px;
+            height: 160px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: white;
+            border-radius: 40px;
+            box-shadow: 0 25px 50px -12px rgba(15, 59, 70, 0.12);
+            overflow: hidden;
+        }
+
+        /* أنميشن الـ Dynamic Zooming الانسيابي بدون Bounce */
+        @keyframes dynamic-morph {
+            0% {
+                opacity: 0;
+                transform: scale(0.4) rotate(-45deg);
+                filter: blur(10px);
+            }
+            20%, 35% {
+                opacity: 1;
+                transform: scale(1) rotate(0deg);
+                filter: blur(0px);
+            }
+            55% {
+                opacity: 0;
+                transform: scale(1.5) rotate(45deg);
+                filter: blur(10px);
+            }
+            100% {
+                opacity: 0;
+                transform: scale(1.5);
+            }
+        }
+
+        .icon-layer {
+            position: absolute;
+            opacity: 0;
+            /* دورة كاملة مدتها 3 ثوانٍ */
+            animation: dynamic-morph 3s infinite cubic-bezier(0.4, 0, 0.2, 1);
+            fill: #0F3B46;
+            stroke: #0F3B46;
+            transform-origin: center;
+        }
+
+        /* توقيتات الظهور (0.75 ثانية لكل أيقونة - إجمالي 3 ثوانٍ) */
+        .icon-1 { animation-delay: 0s; }
+        .icon-2 { animation-delay: 0.75s; }
+        .icon-3 { animation-delay: 1.5s; }
+        .icon-4 { animation-delay: 2.25s; }
+
+        /* نبض خلفية خفيف */
+        .background-glow {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(15, 59, 70, 0.03) 0%, transparent 70%);
+            animation: glow-pulse 3s infinite ease-in-out;
+        }
+
+        @keyframes glow-pulse {
+            0%, 100% { opacity: 0.5; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        .status-text {
+            margin-top: 1.5rem;
+            color: #0F3B46;
+            font-weight: 700;
+            font-size: 0.75rem;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+
+<div class="flex flex-col items-center">
+    <div class="loader-wrapper">
+        <div class="background-glow"></div>
+        
+        <!-- الأيقونة 1: المربع الهندسي -->
+        <svg class="icon-layer icon-1" width="75" height="75" viewBox="0 0 102 102">
+            <rect x="6" y="6.5" width="90" height="91" fill="none" stroke="#0F3B46" stroke-width="12"/>
+            <rect x="50" y="20.5" width="3" height="15"/>
+            <rect x="50" y="69.5" width="3" height="15"/>
+            <rect x="19.5" y="54" width="3" height="15" transform="rotate(-90 19.5 54)"/>
+            <rect x="67.5" y="54" width="3" height="15" transform="rotate(-90 67.5 54)"/>
+            <rect x="24.5371" y="69.7991" width="1" height="15" transform="rotate(-120 24.5371 69.7991)"/>
+            <rect x="65.9727" y="45.2991" width="1" height="15" transform="rotate(-120 65.9727 45.2991)"/>
+            <rect x="36.7988" y="80.9629" width="1" height="15" transform="rotate(-150 36.7988 80.9629)"/>
+            <rect x="60.2988" y="38.5276" width="1" height="15" transform="rotate(-150 60.2988 38.5276)"/>
+            <rect x="67.7988" y="79.4629" width="1" height="15" transform="rotate(150 67.7988 79.4629)"/>
+            <rect x="44.2988" y="37.0276" width="1" height="15" transform="rotate(150 44.2988 37.0276)"/>
+            <rect x="78.9629" y="67.2009" width="1" height="15" transform="rotate(120 78.9629 67.2009)"/>
+            <rect x="37.5273" y="42.7009" width="1" height="15" transform="rotate(120 37.5273 42.7009)"/>
+        </svg>
+
+        <!-- الأيقونة 2: الشمس -->
+        <svg class="icon-layer icon-2" width="75" height="75" viewBox="200 0 102 104">
+            <circle cx="251" cy="52" r="21"/>
+            <rect x="249" width="5" height="24"/>
+            <rect x="249" y="80" width="5" height="24"/>
+            <rect x="200" y="54" width="4" height="24" transform="rotate(-90 200 54)"/>
+            <rect x="278" y="54" width="4" height="24" transform="rotate(-90 278 54)"/>
+            <rect x="208.155" y="80.0079" width="1.61905" height="24.2857" transform="rotate(-120 208.155 80.0079)"/>
+            <rect x="275.241" y="40.3413" width="1.61905" height="24.2857" transform="rotate(-120 275.241 40.3413)"/>
+            <rect x="228.008" y="98.0826" width="1.61905" height="24.2857" transform="rotate(-150 228.008 98.0826)"/>
+            <rect x="266.056" y="29.3779" width="1.61905" height="24.2857" transform="rotate(-150 266.056 29.3779)"/>
+            <rect x="278.198" y="95.6541" width="1.61905" height="24.2857" transform="rotate(150 278.198 95.6541)"/>
+            <rect x="240.151" y="26.9493" width="1.61905" height="24.2857" transform="rotate(150 240.151 26.9493)"/>
+            <rect x="296.273" y="75.8014" width="1.61905" height="24.2857" transform="rotate(120 296.273 75.8014)"/>
+            <rect x="229.188" y="36.1348" width="1.61905" height="24.2857" transform="rotate(120 229.188 36.1348)"/>
+        </svg>
+
+        <!-- الأيقونة 3: الهدف -->
+        <svg class="icon-layer icon-3" width="75" height="75" viewBox="400 0 102 104">
+            <circle cx="451" cy="52" r="46.5" fill="none" stroke="#0F3B46" stroke-width="9"/>
+            <path d="M451 18L481.311 70.5H420.689L451 18Z"/>
+        </svg>
+
+        <!-- الأيقونة 4: الهرم -->
+        <svg class="icon-layer icon-4" width="75" height="75" viewBox="610 0 114 104">
+            <path d="M704.436 86.5H619.564L662 12.999L704.436 86.5Z" fill="none" stroke="#0F3B46" stroke-width="13"/>
+            <rect x="648" y="52" width="28" height="28"/>
+        </svg>
+
+    </div>
+    
+    <div class="status-text">Processing System</div>
+</div>
+
+</body>
+</html>
