@@ -8,8 +8,8 @@ import { fetchPublicOfferings } from "@/lib/api/offerings";
 import { servicesFallback } from "@/data/servicesFallback";
 
 /* ─── config ─── */
-const TOTAL_FRAMES = 96;    // 4s clip at 24fps
-const FRAME_VERSION = "v4s_3";
+const TOTAL_FRAMES = 192;   // 4s clip at 24fps
+const FRAME_VERSION = "v4s_6";
 const FRAME_PATH   = (n: number) =>
   `/frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
 

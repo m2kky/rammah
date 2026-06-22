@@ -1,0 +1,1 @@
+const fs = require('fs'); const path = require('path'); const dir = path.join(process.cwd(), 'public', 'frames'); fs.readdirSync(dir).forEach(file => { if (file.startsWith('frame_') && file.endsWith('.webp')) { const numStr = file.match(/\d+/)[0]; const newName = 'frame' + numStr.padStart(4, '0') + '.webp'; fs.renameSync(path.join(dir, file), path.join(dir, newName)); } });
