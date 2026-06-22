@@ -30,7 +30,7 @@ body {
   }
 }
 
-@keyframes icrl-float-a {
+@keyframes acrl-float-a {
   0%, 100% {
     transform: translateY(0px) scale(1);
   }
@@ -39,7 +39,7 @@ body {
   }
 }
 
-@keyframes icrl-float-b {
+@keyframes acrl-float-b {
   0%, 100% {
     transform: translateY(0px) rotate(0deg);
   }
@@ -48,7 +48,7 @@ body {
   }
 }
 
-@keyframes icrl-spin-soft {
+@keyframes acrl-spin-soft {
   from {
     transform: rotate(0deg);
   }
@@ -57,11 +57,94 @@ body {
   }
 }
 
-@keyframes icrl-tilt-soft {
+@keyframes acrl-tilt-soft {
   0%, 100% {
     transform: rotate(0deg) scale(1);
   }
   50% {
     transform: rotate(6deg) scale(1.04);
   }
+}
+
+@keyframes admin-loading {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(80%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+/* Global Button Hover Animations */
+.btn-fill-hover {
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  transition: color 0.4s ease, border-color 0.4s ease;
+}
+
+.btn-fill-hover::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: -1;
+}
+
+.btn-fill-hover:hover::before {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.btn-fill-dark {
+  background-color: var(--color-accent);
+  color: #fff;
+}
+.btn-fill-dark::before {
+  background-color: #fff;
+}
+.btn-fill-dark:hover {
+  color: var(--color-accent) !important;
+}
+.btn-fill-dark:hover svg path {
+  fill: var(--color-accent) !important;
+  transition: fill 0.4s ease;
+}
+
+.btn-fill-light {
+  background-color: #fff;
+  color: var(--color-accent);
+}
+.btn-fill-light::before {
+  background-color: var(--color-accent);
+}
+.btn-fill-light:hover {
+  color: #fff !important;
+}
+.btn-fill-light:hover svg path {
+  fill: #fff !important;
+  transition: fill 0.4s ease;
+}
+
+/* Link Arrow Hover Animation */
+.link-arrow-hover {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  transition: opacity 0.3s ease;
+}
+.link-arrow-hover .arrow {
+  display: inline-block;
+  transform: rotate(-45deg);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-arrow-hover:hover .arrow {
+  transform: rotate(0deg) scale(1.15);
 }

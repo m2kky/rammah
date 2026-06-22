@@ -6,15 +6,15 @@ export default function AboutSection() {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.26, "0px 0px -8% 0px");
 
   return (
-    <section ref={ref} className="w-full min-h-[100dvh] px-4 md:px-6 pt-24 md:pt-28 pb-4 md:pb-6 flex">
+    <section id="acrl" ref={ref} className="w-full min-h-[100dvh] bg-white flex items-center justify-center overflow-hidden py-20">
       <div
-        className={`w-full max-w-[1440px] mx-auto rounded-[34px] md:rounded-[40px] bg-white overflow-hidden flex-1 min-h-[calc(100dvh-7rem)] md:min-h-[calc(100dvh-8.5rem)] transition-all duration-[1100ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`w-full max-w-[1440px] mx-auto px-4 md:px-8 transition-all duration-[1100ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
           inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-16"
         }`}
       >
         <div className="flex flex-col lg:flex-row items-stretch h-full">
           {/* Left — text content */}
-          <div className="flex-1 flex flex-col justify-center gap-5 md:gap-7 px-6 md:px-10 lg:px-14 py-8 md:py-10 lg:py-14">
+          <div className="flex-1 flex flex-col justify-center gap-5 md:gap-7 px-6 md:px-10 lg:px-14 py-8 md:py-10">
             <p
               className={`text-[#0F3B46] font-bold leading-[0.8] transition-all duration-[950ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
@@ -72,7 +72,7 @@ export default function AboutSection() {
             >
               <a
                 href="/about"
-                className="inline-flex items-center gap-4 px-6 md:px-8 py-3.5 md:py-4 rounded-full border-4 border-[#0F3B46] bg-white hover:bg-[#0F3B46]/5 transition-colors"
+                className="btn-fill-hover btn-fill-light inline-flex items-center gap-4 px-6 md:px-8 py-3.5 md:py-4 rounded-full border-4 border-[#0F3B46] bg-white shadow-[0_8px_20px_rgba(15,59,70,0.15)]"
               >
                 <span
                   className="text-[#0F3B46] font-bold leading-[0.8]"
@@ -90,7 +90,7 @@ export default function AboutSection() {
                 >
                   <path
                     d="M50.1213 24.2131C51.2929 23.0415 51.2929 21.142 50.1213 19.9705L31.0294 0.878593C29.8579 -0.29298 27.9584 -0.29298 26.7868 0.878593C25.6152 2.05017 25.6152 3.94966 26.7868 5.12123L43.7574 22.0918L26.7868 39.0624C25.6152 40.2339 25.6152 42.1334 26.7868 43.305C27.9584 44.4766 29.8579 44.4766 31.0294 43.305L50.1213 24.2131ZM0 22.0918V25.0918H48V19.0918H0V22.0918Z"
-                    fill="#0F3B46"
+                    fill="currentColor"
                   />
                 </svg>
               </a>
@@ -99,16 +99,16 @@ export default function AboutSection() {
 
           {/* Vertical divider — desktop only */}
           <div
-            className={`hidden lg:block w-[3px] bg-[#0F3B46] rounded-full my-8 transition-opacity duration-[900ms] ${
+            className={`hidden lg:block w-[3px] bg-[#0F3B46]/20 rounded-full my-8 transition-opacity duration-[900ms] ${
               inView ? "opacity-100" : "opacity-0"
             }`}
             style={{ transitionDelay: inView ? "860ms" : "0ms" }}
           />
 
           {/* Right — stat cards */}
-          <div className="flex flex-col gap-4 md:gap-5 px-6 md:px-10 lg:px-14 py-8 md:py-10 lg:py-14 lg:w-[44%]">
+          <div className="flex flex-col gap-4 md:gap-5 px-6 md:px-10 lg:px-14 py-8 md:py-10 lg:w-[44%]">
             <StatCard number="1,500+" label="Profiles Analyzed" inView={inView} index={0} />
-            <StatCard number="1st" label="ICRL Master Trainer" numberSize="clamp(2rem, 4vw, 4rem)" inView={inView} index={1} />
+            <StatCard number="1st" label="aCRL Master Trainer" numberSize="clamp(2rem, 4vw, 4rem)" inView={inView} index={1} />
             <StatCard number="22+" label="Countries" inView={inView} index={2} />
           </div>
         </div>
@@ -144,20 +144,20 @@ function StatCard({
         transitionDelay: inView ? `${740 + index * 150}ms` : "0ms",
       }}
     >
-      {/* Layered background */}
-      <div className="absolute inset-0 rounded-[28px] md:rounded-[32px] bg-[#0F172A]" />
-      <div className="absolute inset-0 rounded-[28px] md:rounded-[32px] bg-[#0F3B46] translate-x-2 md:translate-x-6" />
+      {/* Glassmorphism Layered background */}
+      <div className="absolute inset-0 rounded-[28px] md:rounded-[32px] bg-[#0F172A]/70 backdrop-blur-xl border border-[#0F172A]/20" />
+      <div className="absolute inset-0 rounded-[28px] md:rounded-[32px] bg-[#0F3B46]/80 backdrop-blur-xl border border-white/10 translate-x-2 md:translate-x-6 shadow-[0_8px_32px_rgba(15,59,70,0.2)]" />
 
       {/* Content */}
       <div className="relative z-10 flex flex-col justify-center h-full px-6 md:px-8 py-5 md:py-6">
         <p
-          className="text-white font-bold leading-[0.8]"
+          className="text-white font-bold leading-[0.8] drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]"
           style={{ fontSize: numberSize }}
         >
           {number}
         </p>
         <p
-          className="text-white font-semibold leading-[0.8] mt-2"
+          className="text-white font-semibold leading-[0.8] mt-2 drop-shadow-md"
           style={{ fontSize: "clamp(1rem, 2.5vw, 3rem)" }}
         >
           {label}

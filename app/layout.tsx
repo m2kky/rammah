@@ -26,6 +26,8 @@ export const metadata: Metadata = {
     "I map your psychological system, find the bugs, and rewrite the code.",
 };
 
+import FloatingCTA from "@/components/FloatingCTA";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -36,7 +38,10 @@ export default function RootLayout({
       lang="en"
       className={`${bricolageGrotesque.variable} ${inter.variable} ${dancingScript.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col" suppressHydrationWarning>
+        {children}
+        <FloatingCTA />
+      </body>
     </html>
   );
 }

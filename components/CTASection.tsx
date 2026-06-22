@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useInViewOnce } from "@/lib/useInViewOnce";
 
 export default function CTASection() {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.24, "0px 0px -6% 0px");
 
   return (
-    <section ref={ref} className="w-full min-h-[100dvh] px-4 md:px-6 pt-24 md:pt-28 pb-4 md:pb-6 flex">
+    <section id="contact" ref={ref} className="w-full min-h-[100dvh] px-4 md:px-6 pt-24 md:pt-28 pb-4 md:pb-6 flex">
       <div className="max-w-[1440px] mx-auto w-full min-h-[calc(100dvh-7rem)] md:min-h-[calc(100dvh-8.5rem)] grid grid-rows-[1fr_1fr] gap-4 md:gap-6">
         {/* Dark CTA card */}
         <div
@@ -28,9 +29,9 @@ export default function CTASection() {
             from engineering code to decoding the human mind.
           </p>
 
-          <a
+          <Link
             href="/booking"
-            className={`inline-flex items-center gap-4 px-6 md:px-8 py-3 md:py-4 rounded-full border-[5px] border-[#0F3B46] bg-white hover:bg-gray-50 transition-all duration-[950ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            className={`btn-fill-hover btn-fill-light inline-flex items-center gap-4 px-6 md:px-8 py-3 md:py-4 rounded-full border-[5px] border-[#0F3B46] bg-white transition-all duration-[950ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
               inView ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-10 scale-95"
             }`}
             style={{ transitionDelay: inView ? "420ms" : "0ms" }}
@@ -51,10 +52,10 @@ export default function CTASection() {
             >
               <path
                 d="M50.1213 24.2131C51.2929 23.0415 51.2929 21.142 50.1213 19.9705L31.0294 0.878593C29.8579 -0.29298 27.9584 -0.29298 26.7868 0.878593C25.6152 2.05017 25.6152 3.94966 26.7868 5.12123L43.7574 22.0918L26.7868 39.0624C25.6152 40.2339 25.6152 42.1334 26.7868 43.305C27.9584 44.4766 29.8579 44.4766 31.0294 43.305L50.1213 24.2131ZM0 22.0918V25.0918H48V19.0918H0V22.0918Z"
-                fill="#0F3B46"
+                fill="currentColor"
               />
             </svg>
-          </a>
+          </Link>
         </div>
 
         {/* Subscribe card */}
@@ -95,7 +96,7 @@ export default function CTASection() {
                 className="w-full rounded-full border border-[#0F3B46] px-6 py-3 text-sm text-[#07313A] font-inter outline-none focus:ring-2 focus:ring-[#0F3B46]/30"
               />
             </div>
-            <button className="flex items-center gap-2 rounded-full border-2 border-white bg-[#0F3B46] text-white px-6 py-3 hover:bg-[#0F3B46]/90 transition-colors shrink-0">
+            <button className="btn-fill-hover btn-fill-dark flex items-center gap-2 rounded-full border-2 border-white bg-[#0F3B46] text-white px-6 py-3 shrink-0">
               <span className="text-sm md:text-base font-semibold leading-[0.8]">
                 submit
               </span>
@@ -109,7 +110,7 @@ export default function CTASection() {
               >
                 <path
                   d="M24.7131 8.2168C25.1117 7.83449 25.1249 7.20147 24.7426 6.80289L18.5125 0.307758C18.1302 -0.0908159 17.4972 -0.104004 17.0986 0.278302C16.7 0.660607 16.6869 1.29363 17.0692 1.69221L22.607 7.46566L16.8335 13.0035C16.4349 13.3858 16.4218 14.0188 16.8041 14.4174C17.1864 14.8159 17.8194 14.8291 18.218 14.4468L24.7131 8.2168ZM0.020874 6.99512L0 7.9949L24 8.4949L24.0209 7.49512L24.0417 6.49533L0.0417 5.99533L0.020874 6.99512Z"
-                  fill="white"
+                  fill="currentColor"
                 />
               </svg>
             </button>
