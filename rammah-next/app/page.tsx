@@ -4,6 +4,7 @@ import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
 import StatementSection from "@/components/StatementSection";
+import MethodologySection from "@/components/MethodologySection";
 import AboutSection from "@/components/AboutSection";
 import CTASection from "@/components/CTASection";
 import ServicesSection from "@/components/ServicesSection";
@@ -16,10 +17,11 @@ export default function Home() {
     <>
       {!isLoaded && <LoadingScreen onComplete={() => setIsLoaded(true)} />}
 
-      <main className="bg-black min-h-[100dvh] overflow-x-hidden">
+      <main className="bg-black min-h-[100dvh] overflow-x-clip">
         <Navbar entryReady={isLoaded} />
         <HeroSection entryReady={isLoaded} />
         <StatementSection />
+        <MethodologySection />
         <AboutSection />
         <ServicesSection />
         <CTASection />

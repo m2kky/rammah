@@ -1,0 +1,146 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - img
+            - paragraph: Engineer
+          - generic:
+            - img
+            - paragraph: Systematizer
+          - generic:
+            - img
+            - paragraph: Trainer
+          - generic:
+            - img
+            - paragraph: Coach
+    - generic:
+      - generic:
+        - img
+        - generic: "00"
+      - generic: Loading
+  - main [ref=e6]:
+    - navigation [ref=e7]:
+      - generic [ref=e9]:
+        - button "Open menu" [ref=e10]:
+          - generic [ref=e14]:
+            - img [ref=e16]
+            - img [ref=e31]
+            - img [ref=e46]
+            - img [ref=e50]
+        - generic [ref=e57]:
+          - paragraph [ref=e58]: Profile System Online
+          - paragraph [ref=e59]: ICRL Mapping Active
+          - paragraph [ref=e60]: Engineer Mode Live
+          - paragraph [ref=e61]: System Rewrite Running
+          - paragraph [ref=e62]: Precision Coaching Ready
+          - paragraph [ref=e63]: Profile System Online
+      - link "Go to homepage" [ref=e65] [cursor=pointer]:
+        - /url: /
+        - text: RAMMAH
+      - button "Open menu" [ref=e67]
+    - generic [ref=e71]:
+      - generic [ref=e73]:
+        - generic [ref=e74]:
+          - generic [ref=e75]: Engineer
+          - generic [ref=e76]: Systematizer
+          - generic [ref=e77]: Trainer
+          - generic [ref=e78]: Coach
+        - paragraph [ref=e79]: I don't just coach. I map your psychological system, find the bugs and rewrite the code
+      - generic: D E C O D E
+      - generic:
+        - img "Ahmed Ramah"
+    - generic [ref=e81]:
+      - generic [ref=e83]: Rewrite Your Mind
+      - generic [ref=e85]:
+        - img [ref=e86]
+        - img [ref=e100]
+        - img [ref=e114]
+        - img [ref=e117]
+    - generic [ref=e122]:
+      - generic [ref=e123]:
+        - paragraph [ref=e124]: The Man Behind the Method
+        - paragraph [ref=e125]:
+          - generic [ref=e126]: Not Just a
+          - generic [ref=e127]: Life Coach.
+        - paragraph [ref=e128]: Ramah combines 10+ years in IT engineering with deep psychological training — to build systems that actually change behavior, not just mindset.
+        - link "Read Full Story" [ref=e130] [cursor=pointer]:
+          - /url: /about
+          - generic [ref=e131]: Read Full Story
+          - img [ref=e132]
+      - generic [ref=e135]:
+        - generic [ref=e139]:
+          - paragraph [ref=e140]: 1,500+
+          - paragraph [ref=e141]: Profiles Analyzed
+        - generic [ref=e145]:
+          - paragraph [ref=e146]: 1st
+          - paragraph [ref=e147]: ICRL Master Trainer
+        - generic [ref=e151]:
+          - paragraph [ref=e152]: 22+
+          - paragraph [ref=e153]: Countries
+    - generic [ref=e156]:
+      - paragraph [ref=e157]: SERVICES
+      - paragraph [ref=e158]: Scroll to Discover ———
+      - generic [ref=e159]:
+        - paragraph [ref=e160]: Engineer
+        - paragraph [ref=e161]: Systematizer
+        - paragraph [ref=e162]: Trainer
+        - paragraph [ref=e163]: Coach
+        - generic:
+          - paragraph [ref=e164]: 1:1 Coaching
+          - paragraph [ref=e165]: Decode your psychological code.
+          - paragraph [ref=e166]: Not generic advice. ICRL-powered deep-dive to map your patterns and rewire your defaults.
+          - link "Book Now" [ref=e167] [cursor=pointer]:
+            - /url: /booking
+            - text: Book Now
+            - img [ref=e168]
+        - generic:
+          - paragraph [ref=e170]: Therapy Sessions
+          - paragraph [ref=e171]: Root-cause psychology. Not just symptom management.
+          - paragraph [ref=e172]: Fix the source, not the surface. Evidence-based support blended with ICRL profiling.
+          - link "Book Now" [ref=e173] [cursor=pointer]:
+            - /url: /booking
+            - text: Book Now
+            - img [ref=e174]
+        - generic:
+          - paragraph [ref=e176]: Workshops
+          - paragraph [ref=e177]: 1 to 3 days. Lasting change.
+          - paragraph [ref=e178]: Immersive group experiences using live ICRL profiling and zero filler content.
+          - link "Book Now" [ref=e179] [cursor=pointer]:
+            - /url: /booking
+            - text: Book Now
+            - img [ref=e180]
+        - generic:
+          - paragraph [ref=e182]: Corporate Training
+          - paragraph [ref=e183]: Build teams that understand themselves.
+          - paragraph [ref=e184]: Custom ICRL programs for organizations, from profiling to leadership development.
+          - link "Book Now" [ref=e185] [cursor=pointer]:
+            - /url: /booking
+            - text: Book Now
+            - img [ref=e186]
+      - generic [ref=e191]:
+        - paragraph [ref=e193]: 1:1 Coaching
+        - paragraph [ref=e195]: Therapy Sessions
+        - paragraph [ref=e197]: Workshops
+        - paragraph [ref=e199]: Corporate Training
+    - generic [ref=e201]:
+      - generic [ref=e202]:
+        - paragraph [ref=e203]:
+          - text: Meet Ahmed Ramah
+          - text: from engineering code to decoding the human mind.
+        - link "Get Free 1 to 1" [ref=e204] [cursor=pointer]:
+          - /url: /booking
+          - generic [ref=e205]: Get Free 1 to 1
+          - img [ref=e206]
+      - generic [ref=e208]:
+        - paragraph [ref=e209]:
+          - text: Subscribe for Free
+          - text: Courses & More
+        - generic [ref=e210]:
+          - generic [ref=e211]:
+            - generic [ref=e212]: Email*
+            - textbox "your-email@domain.com" [ref=e213]
+          - button "submit" [ref=e214]:
+            - generic [ref=e215]: submit
+            - img [ref=e216]

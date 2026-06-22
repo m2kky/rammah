@@ -1,26 +1,28 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
-type ShapeProps = { className?: string };
+type ShapeProps = { className?: string; style?: CSSProperties };
 
 function SvgBase({
   className,
+  style,
   viewBox,
   children,
 }: {
   className?: string;
+  style?: CSSProperties;
   viewBox: string;
   children: ReactNode;
 }) {
   return (
-    <svg className={className} viewBox={viewBox} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <svg className={className} style={style} viewBox={viewBox} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
       {children}
     </svg>
   );
 }
 
-export function ShapeGreen({ className }: ShapeProps) {
+export function ShapeGreen({ className, style }: ShapeProps) {
   return (
-    <SvgBase className={className} viewBox="0 0 104 104">
+    <SvgBase className={className} style={style} viewBox="0 0 104 104">
       <rect x="6" y="6.5" width="90" height="91" stroke="#0F3B46" strokeWidth="12" />
       <rect x="50" y="20.5" width="3" height="15" fill="#0F3B46" />
       <rect x="50" y="69.5" width="3" height="15" fill="#0F3B46" />
@@ -38,9 +40,9 @@ export function ShapeGreen({ className }: ShapeProps) {
   );
 }
 
-export function ShapeOrange({ className }: ShapeProps) {
+export function ShapeOrange({ className, style }: ShapeProps) {
   return (
-    <SvgBase className={className} viewBox="200 0 104 104">
+    <SvgBase className={className} style={style} viewBox="200 0 104 104">
       <circle cx="251" cy="52" r="21" fill="#0F3B46" />
       <rect x="249" width="5" height="24" fill="#0F3B46" />
       <rect x="249" y="80" width="5" height="24" fill="#0F3B46" />
@@ -58,27 +60,27 @@ export function ShapeOrange({ className }: ShapeProps) {
   );
 }
 
-export function ShapeBlue({ className }: ShapeProps) {
+export function ShapeBlue({ className, style }: ShapeProps) {
   return (
-    <SvgBase className={className} viewBox="400 0 104 104">
+    <SvgBase className={className} style={style} viewBox="400 0 104 104">
       <circle cx="451" cy="52" r="46.5" stroke="#0F3B46" strokeWidth="9" />
       <path d="M451 18L481.311 70.5H420.689L451 18Z" fill="#0F3B46" />
     </SvgBase>
   );
 }
 
-export function ShapeRed({ className }: ShapeProps) {
+export function ShapeRed({ className, style }: ShapeProps) {
   return (
-    <SvgBase className={className} viewBox="612 0 112 104">
+    <SvgBase className={className} style={style} viewBox="612 0 112 104">
       <path d="M704.436 86.5H619.564L662 12.999L704.436 86.5Z" stroke="#0F3B46" strokeWidth="13" />
       <rect x="648" y="52" width="28" height="28" fill="#0F3B46" />
     </SvgBase>
   );
 }
 
-export default function ICRLShapes({ className = "h-12 w-auto" }: ShapeProps) {
+export default function aCRLShapes({ className = "h-12 w-auto", style }: ShapeProps) {
   return (
-    <SvgBase className={className} viewBox="0 0 724 104">
+    <SvgBase className={className} style={style} viewBox="0 0 724 104">
       <rect x="6" y="6.5" width="90" height="91" stroke="#0F3B46" strokeWidth="12" />
       <rect x="50" y="20.5" width="3" height="15" fill="#0F3B46" />
       <rect x="50" y="69.5" width="3" height="15" fill="#0F3B46" />

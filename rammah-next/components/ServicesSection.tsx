@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import Link from "next/link";
+import { fetchPublicOfferings } from "@/lib/api/offerings";
+import { servicesFallback } from "@/data/servicesFallback";
 
 /* ─── config ─── */
 const TOTAL_FRAMES = 96;    // 4s clip at 24fps
@@ -11,41 +13,11 @@ const FRAME_VERSION = "v4s_3";
 const FRAME_PATH   = (n: number) =>
   `/frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
 
-/* ─── service data ─── */
-const services = [
-  {
-    title: "1:1 Coaching",
-    subtitle: "Decode your psychological code.",
-    desc: "Not generic advice. ICRL-powered deep-dive to map your patterns and rewire your defaults.",
-    bg: "#ffffff",
-    text: "#0F3B46",
-  },
-  {
-    title: "Therapy Sessions",
-    subtitle: "Root-cause psychology. Not just symptom management.",
-    desc: "Fix the source, not the surface. Evidence-based support blended with ICRL profiling.",
-    bg: "#0F3B46",
-    text: "#FFFFFF",
-  },
-  {
-    title: "Workshops",
-    subtitle: "1 to 3 days. Lasting change.",
-    desc: "Immersive group experiences using live ICRL profiling and zero filler content.",
-    bg: "#0F172A",
-    text: "#FFFFFF",
-  },
-  {
-    title: "Corporate Training",
-    subtitle: "Build teams that understand themselves.",
-    desc: "Custom ICRL programs for organizations — from profiling to leadership development.",
-    bg: "#02040A",
-    text: "#F2F2F2",
-  },
-];
-
 const roles = ["Engineer", "Systematizer", "Trainer", "Coach"];
 
 export default function ServicesSection() {
+  const [services, setServices] = useState(servicesFallback);
+
   const sectionRef     = useRef<HTMLDivElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
   const canvasRef      = useRef<HTMLCanvasElement>(null);
@@ -73,6 +45,23 @@ export default function ServicesSection() {
   /* preloaded Image objects — filled before useGSAP */
   const framesRef = useRef<HTMLImageElement[]>([]);
   const loadedRef = useRef(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    fetchPublicOfferings(controller.signal)
+      .then((offerings) => {
+        if (offerings.length > 0) {
+          setServices(offerings);
+        }
+      })
+      .catch((error) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        console.warn("Using fallback services because offerings API failed.", error);
+      });
+
+    return () => controller.abort();
+  }, []);
 
   /* helper: draw image in "contain" mode to avoid any stretch/zoom artifacts */
   const drawImageContain = (
@@ -499,7 +488,7 @@ export default function ServicesSection() {
 
       return () => mm.revert();
     },
-    { scope: sectionRef }
+    { scope: sectionRef, dependencies: [services], revertOnUpdate: true }
   );
 
   /* ─── JSX ─── */
@@ -555,7 +544,7 @@ export default function ServicesSection() {
           {/* Phase 3: per-service content, absolutely stacked */}
           {services.map((s, i) => (
             <div
-              key={s.title}
+              key={s.slug}
               className="absolute inset-y-0 left-0 w-full flex flex-col justify-center pl-6 md:pl-16 pointer-events-none"
             >
               <p
@@ -580,7 +569,7 @@ export default function ServicesSection() {
                 {s.desc}
               </p>
               <Link
-                href="/booking"
+                href={`/booking/${s.slug}`}
                 ref={(el) => { ctaRefs.current[i] = el; }}
                 className="inline-flex items-center gap-3 rounded-full border px-8 py-3 text-sm font-semibold hover:bg-current/10 transition-colors pointer-events-auto w-fit"
                 style={{ color: s.text, borderColor: s.text + "4D", opacity: 0 }}
@@ -620,7 +609,7 @@ export default function ServicesSection() {
           >
             {services.map((s, i) => (
               <div
-                key={s.title}
+                key={s.slug}
                 ref={(el) => { cardRefs.current[i] = el; }}
                 className="relative flex items-center rounded-[28px] overflow-hidden px-8 py-4 border border-white/10"
                 style={{ height: "15vh", backgroundColor: s.bg }}
@@ -666,7 +655,7 @@ export default function ServicesSection() {
           >
             {services.map((s, i) => (
               <div
-                key={s.title}
+                key={s.slug}
                 ref={(el) => { mobileCardRefs.current[i] = el; }}
                 className="rounded-2xl px-5 py-4 border border-white/10"
                 style={{ backgroundColor: s.bg }}
@@ -687,7 +676,7 @@ export default function ServicesSection() {
           >
             {services.map((s, i) => (
               <div
-                key={`${s.title}-mobile-detail`}
+                key={`${s.slug}-mobile-detail`}
                 ref={(el) => { mobileDetailRefs.current[i] = el; }}
                 className="absolute inset-0 opacity-0 pointer-events-none"
               >
@@ -710,7 +699,7 @@ export default function ServicesSection() {
                   {s.desc}
                 </p>
                 <Link
-                  href="/booking"
+                  href={`/booking/${s.slug}`}
                   className="inline-flex items-center gap-2 rounded-full border px-6 py-2 text-sm font-semibold pointer-events-auto"
                   style={{ color: s.text, borderColor: `${s.text}66` }}
                 >

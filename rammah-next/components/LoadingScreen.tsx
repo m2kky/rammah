@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gsap } from "@/lib/gsap-init";
-import { ShapeGreen, ShapeOrange, ShapeBlue, ShapeRed } from "./ICRLShapes";
+import { ShapeGreen, ShapeOrange, ShapeBlue, ShapeRed } from "./aCRLShapes";
 
 type LoadingScreenProps = {
   onComplete: () => void;

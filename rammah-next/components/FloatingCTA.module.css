@@ -1,0 +1,129 @@
+/* ── Container ── */
+.ctaContainer {
+  position: fixed;
+  bottom: clamp(1.5rem, 4vh, 2.5rem);
+  right: clamp(1.5rem, 4vw, 2.5rem);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(20px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.ctaContainer.visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+/* ── Morphing Wrapper ── */
+.morphContainer {
+  position: relative;
+  height: 54px;
+  border-radius: 50px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  transition: width 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55),
+              background-color 0.4s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.morphContainer.isTop {
+  width: 54px;
+  background-color: #1a1a1a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.morphContainer.isTop:hover {
+  background-color: var(--color-accent);
+}
+
+.morphContainer.isBook {
+  width: 170px;
+  background-color: #ffffff;
+}
+
+.morphContainer.isBook:hover {
+  background-color: var(--color-accent);
+}
+
+/* ── Content specific ── */
+.bookContent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #000000;
+  font-family: var(--font-bricolage, sans-serif);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.3s ease, color 0.3s ease;
+}
+
+.morphContainer.isTop .bookContent {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.morphContainer.isBook .bookContent {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.morphContainer.isBook:hover .bookContent {
+  color: #ffffff;
+}
+
+.topContent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 50px;
+  color: #ffffff;
+  cursor: pointer;
+  transition: opacity 0.3s ease, border-color 0.3s ease;
+}
+
+.morphContainer.isTop .topContent {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.morphContainer.isTop:hover .topContent {
+  border-color: #ffffff;
+}
+
+.morphContainer.isBook .topContent {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  .morphContainer {
+    height: 50px;
+  }
+  .morphContainer.isTop {
+    width: 50px;
+  }
+  .morphContainer.isBook {
+    width: 155px;
+  }
+  .bookContent {
+    font-size: 0.75rem;
+  }
+}
