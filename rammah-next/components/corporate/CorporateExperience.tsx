@@ -6,6 +6,7 @@ import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import CorporateQuoteForm from "./CorporateQuoteForm";
 import styles from "./CorporateExperience.module.css";
+import { findPublicSection, type PublicPage } from "@/lib/api/cms";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -38,8 +39,50 @@ const metrics = [
   ["Decisions", "Faster, systemic problem solving"],
 ];
 
-export default function CorporateExperience() {
+export default function CorporateExperience({ page }: { page?: PublicPage | null }) {
   const rootRef = useRef<HTMLElement>(null);
+
+  const heroSec = findPublicSection(page, "hero");
+  const marqueeSec = findPublicSection(page, "marquee");
+  const hiddenSec = findPublicSection(page, "hidden_variable");
+  const premiseSec = findPublicSection(page, "premise");
+  const deliverySec = findPublicSection(page, "delivery");
+  const storySec = findPublicSection(page, "story");
+  const metricsSec = findPublicSection(page, "metrics");
+  const ctaSec = findPublicSection(page, "cta");
+
+  const heroKicker = (heroSec?.config?.kicker as string) || "Corporate Training & Consultancy";
+  const heroTitleLines = heroSec?.title ? heroSec.title.split("\n") : ["Change the", "operating", "system."];
+  const heroBody = heroSec?.body || "Stop giving your teams motivational speeches. Give them a robust behavioral framework they can execute under pressure.";
+
+  const marqueeRow1 = (marqueeSec?.config?.row1 as string) || "Performance | Systems | Culture | Alignment |";
+  const marqueeRow2 = (marqueeSec?.config?.row2 as string) || "Decision-making | Leadership | Communication | Strategy |";
+
+  const hiddenLead = hiddenSec?.body || "Companies invest heavily in strategy, software, and market positioning.";
+  const hiddenStatement = (hiddenSec?.config?.statement as string) || "But the actual ceiling of your growth is rarely an operational flaw—it is the psychological capacity of your team to handle friction, communicate without ego, and execute together.";
+
+  const premiseTitle = premiseSec?.title || "(01) The Corporate Reality";
+  const premiseLead = premiseSec?.body || "Most corporate training fails because it targets symptoms, not systems.";
+  const premiseCards = (premiseSec?.config?.cards as any[]) || [
+    { title: "The Old Way", body: "Standard workshops provide generic advice, fleeting inspiration, and temporary alignment. Employees return to their desks and immediately revert to their default behavioral patterns because the underlying system was never diagnosed or altered." },
+    { title: "The aCRL Approach", body: "We treat corporate culture as an engineering problem. Using the Advanced Cognitive Response Loop (aCRL), we decode the exact structural patterns causing friction in your team, and install a new, measurable operating system for communication and decision-making." }
+  ];
+
+  const deliveryTitle = deliverySec?.title || "(02) Delivery Framework";
+  const deliveryLead = deliverySec?.body || "How we rewrite team dynamics.";
+  const deliveryStages = (deliverySec?.config?.stages as any[]) || stages;
+
+  const storyTitle = storySec?.title || "(03) The ROI of Clarity";
+  const storyHeadline = storySec?.body || "When invisible rules become visible, friction disappears.";
+  const storyCopy = (storySec?.config?.copy as string) || "Teams do not underperform because they lack talent. They underperform because they are running conflicting behavioral operating systems. We install a shared language that instantly reduces misunderstandings and accelerates execution.";
+  const storyQuote = (storySec?.config?.quote as string) || "“A team that understands its own system can solve any business problem. A team that doesn't will make every business problem personal.”";
+
+  const metricsTitle = metricsSec?.title || "(04) The Impact";
+  const metricsHeadline = metricsSec?.body || "Measurable structural shifts.";
+  const metricsList = (metricsSec?.config?.metrics as string[][]) || metrics;
+
+  const ctaTitle = ctaSec?.title || "(05) Start the Engagement";
+  const ctaHeadline = ctaSec?.body || "Ready to upgrade your team's OS?";
 
   useGSAP(
     () => {
@@ -250,16 +293,16 @@ export default function CorporateExperience() {
         <div className={styles.heroGrid}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow} data-hero-kicker>
-              Corporate Training & Consultancy
+              {heroKicker}
             </p>
             <h1 className={styles.heroTitle}>
-              <span className={styles.lineClip}><span data-hero-line>Change the</span></span>
-              <span className={styles.lineClip}><span data-hero-line>operating</span></span>
-              <span className={styles.lineClip}><span data-hero-line>system.</span></span>
+              {heroTitleLines.map((line: string, i: number) => (
+                <span className={styles.lineClip} key={i}><span data-hero-line>{line}</span></span>
+              ))}
             </h1>
             <div className={styles.heroBody} data-hero-copy>
               <p>
-                Stop giving your teams motivational speeches. Give them a robust behavioral framework they can execute under pressure.
+                {heroBody}
               </p>
               <button 
                 onClick={() => document.getElementById("quote-section")?.scrollIntoView({ behavior: "smooth" })}
@@ -288,12 +331,12 @@ export default function CorporateExperience() {
         <div className={styles.marqueeContainer}>
           <div className={styles.marqueeRow} data-marquee-row-1>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r1-${i}`}>Performance | Systems | Culture | Alignment |</span>
+              <span key={`r1-${i}`}>{marqueeRow1}</span>
             ))}
           </div>
           <div className={`${styles.marqueeRow} ${styles.marqueeOutline}`} data-marquee-row-2>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r2-${i}`}>Decision-making | Leadership | Communication | Strategy |</span>
+              <span key={`r2-${i}`}>{marqueeRow2}</span>
             ))}
           </div>
         </div>
@@ -302,12 +345,12 @@ export default function CorporateExperience() {
       {/* 2.8 The Hidden Variable */}
       <section className={styles.hiddenVariable} data-hidden-variable>
         <p className={styles.hiddenLead} data-hidden-reveal>
-          Companies invest heavily in strategy, software, and market positioning.
+          {hiddenLead}
         </p>
         <h2 className={styles.hiddenStatement}>
-          {"But the actual ceiling of your growth is rarely an operational flaw—it is the psychological capacity of your team to handle friction, communicate without ego, and execute together."
+          {hiddenStatement
             .split("")
-            .map((char, index) => (
+            .map((char: string, index: number) => (
               <span key={index} data-hidden-char style={{ opacity: 0.15 }}>
                 {char}
               </span>
@@ -325,32 +368,26 @@ export default function CorporateExperience() {
 
       {/* 3. The Problem / Premise */}
       <section className={styles.premise} data-belief>
-        <p className={styles.sectionIndex} data-reveal>(01) The Corporate Reality</p>
+        <p className={styles.sectionIndex} data-reveal>{premiseTitle}</p>
         <h2 className={styles.premiseLead} data-reveal>
-          Most corporate training fails because it targets symptoms, not systems.
+          {premiseLead}
         </h2>
         
         <div className={styles.premiseGrid}>
-          <div className={styles.premiseCard} data-reveal>
-            <h3>The Old Way</h3>
-            <p>
-              Standard workshops provide generic advice, fleeting inspiration, and temporary alignment. Employees return to their desks and immediately revert to their default behavioral patterns because the underlying system was never diagnosed or altered.
-            </p>
-          </div>
-          <div className={styles.premiseCard} data-reveal>
-            <h3>The aCRL Approach</h3>
-            <p>
-              We treat corporate culture as an engineering problem. Using the Advanced Cognitive Response Loop (aCRL), we decode the exact structural patterns causing friction in your team, and install a new, measurable operating system for communication and decision-making.
-            </p>
-          </div>
+          {premiseCards.map((card: any, idx: number) => (
+            <div className={styles.premiseCard} data-reveal key={idx}>
+              <h3>{card.title}</h3>
+              <p>{card.body}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       {/* 4. The Method / Delivery */}
       <section className={styles.delivery} data-method>
         <div className={styles.deliveryHeader}>
-          <p className={styles.sectionIndex}>(02) Delivery Framework</p>
-          <h2>How we rewrite team dynamics.</h2>
+          <p className={styles.sectionIndex}>{deliveryTitle}</p>
+          <h2>{deliveryLead}</h2>
         </div>
         
         <div className={styles.deliveryBody}>
@@ -359,7 +396,7 @@ export default function CorporateExperience() {
           </div>
           
           <div className={styles.stageStack}>
-            {stages.map((stage) => (
+            {deliveryStages.map((stage: any) => (
               <div className={styles.stage} data-stage key={stage.number}>
                 <span>{stage.number}</span>
                 <h3>{stage.title}</h3>
@@ -383,13 +420,13 @@ export default function CorporateExperience() {
           />
         </div>
         <div className={styles.parallaxCopy}>
-          <p className={styles.sectionIndex} data-parallax-reveal>(03) The ROI of Clarity</p>
-          <h2 data-parallax-reveal>When invisible rules become visible, friction disappears.</h2>
+          <p className={styles.sectionIndex} data-parallax-reveal>{storyTitle}</p>
+          <h2 data-parallax-reveal>{storyHeadline}</h2>
           <p data-parallax-reveal>
-            Teams do not underperform because they lack talent. They underperform because they are running conflicting behavioral operating systems. We install a shared language that instantly reduces misunderstandings and accelerates execution.
+            {storyCopy}
           </p>
           <blockquote data-parallax-reveal>
-            “A team that understands its own system can solve any business problem. A team that doesn't will make every business problem personal.”
+            {storyQuote}
           </blockquote>
         </div>
       </section>
@@ -397,14 +434,14 @@ export default function CorporateExperience() {
       {/* 4.8 Metrics Section */}
       <section className={styles.metricsSection} data-metrics-section>
         <div className={styles.metricsHeader}>
-          <p className={styles.sectionIndex} data-impact-reveal>(04) The Impact</p>
-          <h2 data-impact-reveal>Measurable structural shifts.</h2>
+          <p className={styles.sectionIndex} data-impact-reveal>{metricsTitle}</p>
+          <h2 data-impact-reveal>{metricsHeadline}</h2>
         </div>
         <div className={styles.metricsGrid}>
-          {metrics.map(([label, value]) => (
-            <div className={styles.metricCard} data-metric key={label}>
-              <strong>{label}</strong>
-              <span>{value}</span>
+          {metricsList.map((stat: string[]) => (
+            <div className={styles.metricCard} data-metric key={stat[0]}>
+              <strong>{stat[0]}</strong>
+              <span>{stat[1]}</span>
             </div>
           ))}
         </div>
@@ -412,8 +449,8 @@ export default function CorporateExperience() {
 
       {/* 5. CTA / Quote Form */}
       <section id="quote-section" className={styles.cta}>
-        <p className={styles.sectionIndex}>(05) Start the Engagement</p>
-        <h2>Ready to upgrade your team&apos;s OS?</h2>
+        <p className={styles.sectionIndex}>{ctaTitle}</p>
+        <h2>{ctaHeadline}</h2>
         
         <div className="mt-12 w-full flex justify-center">
           <CorporateQuoteForm />

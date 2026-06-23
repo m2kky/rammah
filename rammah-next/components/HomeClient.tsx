@@ -9,8 +9,9 @@ import AboutSection from "@/components/AboutSection";
 import CTASection from "@/components/CTASection";
 import ServicesSection from "@/components/ServicesSection";
 import LoadingScreen from "@/components/LoadingScreen";
+import { findPublicSection, type PublicPage } from "@/lib/api/cms";
 
-export default function HomeClient({ footer }: { footer: React.ReactNode }) {
+export default function HomeClient({ page, footer }: { page: PublicPage | null; footer: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
 
   return (
@@ -19,12 +20,12 @@ export default function HomeClient({ footer }: { footer: React.ReactNode }) {
 
       <main className="bg-black min-h-[100dvh] overflow-x-clip">
         <Navbar entryReady={isLoaded} />
-        <HeroSection entryReady={isLoaded} />
-        <StatementSection />
-        <MethodologySection />
-        <AboutSection />
+        <HeroSection entryReady={isLoaded} section={findPublicSection(page, "hero")} />
+        <StatementSection section={findPublicSection(page, "statement")} />
+        <MethodologySection section={findPublicSection(page, "methodology")} />
+        <AboutSection section={findPublicSection(page, "about_preview")} />
         <ServicesSection />
-        <CTASection />
+        <CTASection section={findPublicSection(page, "cta")} />
         {footer}
       </main>
     </>

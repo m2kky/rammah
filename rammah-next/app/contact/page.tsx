@@ -1,7 +1,7 @@
 import Link from "next/link";
 import ContactForm from "@/components/ContactForm";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicSiteSettings } from "@/lib/api/cms";
+import { fetchPublicSiteSettings, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
 
 export const metadata = {
   title: "Contact | Ahmed Rammah",
@@ -9,7 +9,14 @@ export const metadata = {
 };
 
 export default async function ContactPage() {
-  const settings = await fetchPublicSiteSettings().catch(() => null);
+  const [settings, page] = await Promise.all([
+    fetchPublicSiteSettings().catch(() => null),
+    fetchPublicPage("contact").catch(() => null)
+  ]);
+
+  const headerSec = findPublicSection(page, "header");
+  const headerTitle = headerSec?.title || "Start with context.";
+  const headerBody = headerSec?.body || "Send the problem, the pattern, or the program you want to build. The reply can route you to a session, quote, or the right next step.";
 
   return (
     <PublicFrame>
@@ -20,11 +27,10 @@ export default async function ContactPage() {
               Contact
             </p>
             <h1 className="mt-5 text-[clamp(4rem,12vw,12rem)] font-extrabold leading-[0.82] tracking-normal">
-              Start with context.
+              {headerTitle}
             </h1>
             <p className="mt-7 max-w-xl font-inter text-base leading-7 text-white/70 md:text-lg">
-              Send the problem, the pattern, or the program you want to build.
-              The reply can route you to a session, quote, or the right next step.
+              {headerBody}
             </p>
             <div className="mt-8 grid gap-2 font-inter text-sm text-white/62">
               {settings?.contactEmail && <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>}

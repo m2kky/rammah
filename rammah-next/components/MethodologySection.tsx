@@ -2,9 +2,21 @@
 
 import { useRef } from "react";
 import { motion, useScroll, useTransform } from "motion/react";
+import type { PublicPageSection } from "@/lib/api/cms";
 
-export default function MethodologySection() {
+export default function MethodologySection({ section }: { section?: PublicPageSection | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const titleText = section?.title || "Systems over motivation.";
+  const titleWords = titleText.split(" ");
+  const lastWord = titleWords.length > 1 ? titleWords.pop() : "";
+  const restTitle = titleWords.join(" ");
+  const bodyText = section?.body || "The Architecture of Change";
+  const steps = (section?.config?.steps as { title: string, desc: string }[]) || [
+    { title: "1. MAP", desc: "I scan your psychological system. Uncovering deep patterns, hidden loops, and the root structure of your current operating model." },
+    { title: "2. DEBUG", desc: "We locate the exact errors in the code. The limiting beliefs, the fears, and the emotional bottlenecks that are crashing your progress." },
+    { title: "3. REWRITE", desc: "We deploy the new system. Installing robust mental models, unshakeable confidence, and extreme clarity to scale your life to the next tier." }
+  ];
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -39,11 +51,11 @@ export default function MethodologySection() {
         {/* Left Side: Dynamic Text */}
         <div className="w-full md:w-1/2 h-1/2 md:h-full flex flex-col justify-center relative z-20">
           <p className="text-white/50 text-sm md:text-base tracking-[0.2em] uppercase font-semibold mb-6">
-            The Architecture of Change
+            {bodyText}
           </p>
           <h2 className="text-white text-5xl md:text-7xl font-bricolage font-bold mb-12">
-            Systems over <br />
-            <span className="text-white/30">motivation.</span>
+            {restTitle} <br />
+            <span className="text-white/30">{lastWord}</span>
           </h2>
 
           <div className="relative h-[200px]">
@@ -52,9 +64,9 @@ export default function MethodologySection() {
               style={{ opacity: textOpacity1, y: textY1 }}
               className="absolute top-0 left-0"
             >
-              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">1. MAP</h3>
+              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">{steps[0]?.title}</h3>
               <p className="text-white/70 text-lg md:text-xl font-medium max-w-md">
-                I scan your psychological system. Uncovering deep patterns, hidden loops, and the root structure of your current operating model.
+                {steps[0]?.desc}
               </p>
             </motion.div>
 
@@ -63,9 +75,9 @@ export default function MethodologySection() {
               style={{ opacity: textOpacity2, y: textY2 }}
               className="absolute top-0 left-0"
             >
-              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">2. DEBUG</h3>
+              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">{steps[1]?.title}</h3>
               <p className="text-white/70 text-lg md:text-xl font-medium max-w-md">
-                We locate the exact errors in the code. The limiting beliefs, the fears, and the emotional bottlenecks that are crashing your progress.
+                {steps[1]?.desc}
               </p>
             </motion.div>
 
@@ -74,9 +86,9 @@ export default function MethodologySection() {
               style={{ opacity: textOpacity3, y: textY3 }}
               className="absolute top-0 left-0"
             >
-              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">3. REWRITE</h3>
+              <h3 className="text-cyan-400 text-3xl font-bricolage font-bold mb-4">{steps[2]?.title}</h3>
               <p className="text-white/70 text-lg md:text-xl font-medium max-w-md">
-                We deploy the new system. Installing robust mental models, unshakeable confidence, and extreme clarity to scale your life to the next tier.
+                {steps[2]?.desc}
               </p>
             </motion.div>
           </div>

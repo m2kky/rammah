@@ -1,6 +1,6 @@
 import Link from "next/link";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicBlogPosts } from "@/lib/api/cms";
+import { fetchPublicBlogPosts, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
 
 const formatDate = (value: string | null) => {
   if (!value) return "Draft date";
@@ -16,7 +16,14 @@ export const metadata = {
 };
 
 export default async function BlogPage() {
-  const posts = await fetchPublicBlogPosts().catch(() => []);
+  const [posts, page] = await Promise.all([
+    fetchPublicBlogPosts().catch(() => []),
+    fetchPublicPage("blog").catch(() => null)
+  ]);
+
+  const headerSec = findPublicSection(page, "header");
+  const headerTitle = headerSec?.title || "Notes from the system.";
+  const headerBody = headerSec?.body || "Practical writing on behavior, decoding, training, and the work behind meaningful change.";
 
   return (
     <PublicFrame>
@@ -27,11 +34,10 @@ export default async function BlogPage() {
           </p>
           <div className="mt-5 grid gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
             <h1 className="text-[clamp(4.2rem,13vw,13rem)] font-extrabold leading-[0.82] tracking-normal">
-              Notes from the system.
+              {headerTitle}
             </h1>
             <p className="max-w-xl font-inter text-base leading-7 text-white/64 md:text-lg">
-              Practical writing on behavior, decoding, training, and the work
-              behind meaningful change.
+              {headerBody}
             </p>
           </div>
         </div>

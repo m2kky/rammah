@@ -107,3 +107,41 @@ export const fetchPublicBlogPost = async (slug: string) => {
 
   return payload.data;
 };
+
+export type PublicPageSection = {
+  id: string;
+  sectionType: string;
+  title: string | null;
+  body: string | null;
+  config: Record<string, unknown>;
+  mediaAssetId: string | null;
+  sortOrder: number;
+};
+
+export type PublicPage = {
+  id: string;
+  slug: string;
+  title: string;
+  template: string;
+  publishedAt: string | null;
+  seo: {
+    metaTitle: string | null;
+    metaDescription: string | null;
+    canonicalUrl: string | null;
+    noindex: boolean;
+  } | null;
+  sections: PublicPageSection[];
+};
+
+export const fetchPublicPage = async (slug: string) => {
+  const payload = await publicCmsRequest<{ data: PublicPage }>(
+    `/public/cms/pages/${encodeURIComponent(slug)}`,
+  );
+
+  return payload.data;
+};
+
+export const findPublicSection = (
+  page: PublicPage | null | undefined,
+  sectionType: string,
+) => page?.sections.find((section) => section.sectionType === sectionType) ?? null;

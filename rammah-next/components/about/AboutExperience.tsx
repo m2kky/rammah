@@ -8,6 +8,7 @@ import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import AboutGlobe from "./AboutGlobe";
 import { ShapeBlue } from "../aCRLShapes";
 import styles from "./AboutExperience.module.css";
+import { findPublicSection, type PublicPage } from "@/lib/api/cms";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -40,8 +41,47 @@ const proof = [
   ["22+", "countries reached through training"],
 ];
 
-export default function AboutExperience() {
+export default function AboutExperience({ page }: { page?: PublicPage | null }) {
   const rootRef = useRef<HTMLElement>(null);
+
+  const heroSec = findPublicSection(page, "hero");
+  const marqueeSec = findPublicSection(page, "marquee");
+  const premiseSec = findPublicSection(page, "premise");
+  const methodSec = findPublicSection(page, "method");
+  const storySec = findPublicSection(page, "story");
+  const reachSec = findPublicSection(page, "reach");
+  const ctaSec = findPublicSection(page, "cta");
+
+  const heroKicker = (heroSec?.config?.kicker as string) || "Engineer / Systematizer / Trainer / Coach";
+  const heroTitle = heroSec?.title || "Ahmed Rammah";
+  const heroBody = heroSec?.body || "I spent years understanding technical systems. Then I turned to the most complex system of all: human behavior.";
+  const heroAside = (heroSec?.config?.aside as string) || "Based in Cairo\nWorking globally";
+
+  const marqueeRow1 = (marqueeSec?.config?.row1 as string) || "Engineer | Systematizer | Trainer | Coach |";
+  const marqueeRow2 = (marqueeSec?.config?.row2 as string) || "First & Only aCRL Master Trainer in the Middle East |";
+
+  const premiseTitle = premiseSec?.title || "(01) The premise";
+  const premiseLead = premiseSec?.body || "Most people do not need more motivation.";
+  const premiseStatement = (premiseSec?.config?.statement as string) || "They need to see the invisible system that keeps making the decision before they do.";
+  const premiseFoot = (premiseSec?.config?.foot as string) || "aCRL turns that system into a map: structured enough to understand, practical enough to change.";
+
+  const methodTitle = methodSec?.title || "(02) The method";
+  const methodLead = methodSec?.body || "One operating system. Three deliberate moves. One exclusive standard.";
+  const methodStatement = (methodSec?.config?.statement as string) || "Decode before\nyou change.";
+  const methodStages = (methodSec?.config?.stages as any[]) || stages;
+
+  const storyTitle = storySec?.title || "(03) Systems meet people";
+  const storyHeadline = storySec?.body || "Built by an engineer. Tested in real human rooms.";
+  const storyCopy = (storySec?.config?.copy as string) || "The method was not designed as theory. It grew through coaching, training, facilitation, and more than 1,500 profiles where the same truth kept appearing: behavior becomes less mysterious when its structure is visible.";
+  const storyQuote = (storySec?.config?.quote as string) || "“Clarity is not the finish line. It is the point where better choices finally become available.”";
+
+  const reachTitle = reachSec?.title || "(04) The reach";
+  const reachHeadline = reachSec?.body || "One language for human patterns. Across borders.";
+  const reachPioneer = (reachSec?.config?.pioneerText as string) || "Bringing the aCRL methodology to the Arab World for the first time. The absolute pioneer and sole Master Trainer in the region.";
+  const reachStats = (reachSec?.config?.stats as string[][]) || proof;
+
+  const ctaTitle = ctaSec?.title || "(05) Start the work";
+  const ctaHeadline = ctaSec?.body || "Your patterns already tell a story. Let's read it properly.";
 
   useGSAP(
     () => {
@@ -221,15 +261,15 @@ export default function AboutExperience() {
         <div className={styles.heroGrid}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow} data-hero-kicker>
-              Engineer / Systematizer / Trainer / Coach
+              {heroKicker}
             </p>
-            <h1 className={styles.heroTitle} aria-label="Ahmed Rammah">
-              <span className={styles.lineClip}><span data-hero-line>Ahmed</span></span>
-              <span className={styles.lineClip}><span data-hero-line>Rammah</span></span>
+            <h1 className={styles.heroTitle} aria-label={heroTitle}>
+              <span className={styles.lineClip}><span data-hero-line>{heroTitle.split(" ")[0] || "Ahmed"}</span></span>
+              <span className={styles.lineClip}><span data-hero-line>{heroTitle.split(" ")[1] || "Rammah"}</span></span>
             </h1>
             <div className={styles.heroBody} data-hero-copy>
               <p>
-                I spent years understanding technical systems. Then I turned to the most complex system of all: human behavior.
+                {heroBody}
               </p>
               <Link href="/booking" className={`${styles.lightButton} btn-fill-hover btn-fill-light`}>Book a session</Link>
             </div>
@@ -246,7 +286,7 @@ export default function AboutExperience() {
             />
           </div>
 
-          <p className={styles.heroAside}>Based in Cairo<br />Working globally</p>
+          <p className={styles.heroAside} style={{ whiteSpace: "pre-wrap" }}>{heroAside}</p>
         </div>
       </section>
 
@@ -254,50 +294,50 @@ export default function AboutExperience() {
         <div className={styles.marqueeContainer}>
           <div className={styles.marqueeRow} data-marquee-row-1>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r1-${i}`}>Engineer | Systematizer | Trainer | Coach |</span>
+              <span key={`r1-${i}`}>{marqueeRow1}</span>
             ))}
           </div>
           <div className={`${styles.marqueeRow} ${styles.marqueeOutline}`} data-marquee-row-2>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r2-${i}`}>First & Only aCRL Master Trainer in the Middle East |</span>
+              <span key={`r2-${i}`}>{marqueeRow2}</span>
             ))}
           </div>
         </div>
       </section>
 
       <section className={styles.belief} data-belief>
-        <p className={styles.sectionIndex} data-reveal>(01) The premise</p>
+        <p className={styles.sectionIndex} data-reveal>{premiseTitle}</p>
         <p className={styles.beliefLead} data-reveal>
-          Most people do not need more motivation.
+          {premiseLead}
         </p>
         <h2 className={styles.beliefStatement}>
-          {"They need to see the invisible system that keeps making the decision before they do."
+          {premiseStatement
             .split("")
-            .map((char, index) => (
+            .map((char: string, index: number) => (
               <span key={index} data-char style={{ opacity: 0.15 }}>
                 {char}
               </span>
             ))}
         </h2>
         <p className={styles.beliefFoot} data-reveal>
-          aCRL turns that system into a map: structured enough to understand, practical enough to change.
+          {premiseFoot}
         </p>
       </section>
 
       <section className={styles.method} data-method>
         <div className={styles.methodTopline}>
-          <p className={styles.sectionIndex}>(02) The method</p>
-          <p>One operating system. Three deliberate moves. One exclusive standard.</p>
+          <p className={styles.sectionIndex}>{methodTitle}</p>
+          <p>{methodLead}</p>
         </div>
         <div className={styles.methodBody}>
           <div className={styles.methodStatement}>
-            <p>Decode before<br />you change.</p>
+            <p style={{ whiteSpace: "pre-wrap" }}>{methodStatement}</p>
             <div className={styles.progressTrack}>
               <span data-method-progress />
             </div>
           </div>
           <div className={styles.stageStack}>
-            {stages.map((stage) => (
+            {methodStages.map((stage: any) => (
               <div className={styles.stage} data-stage key={stage.number}>
                 <span>{stage.number}</span>
                 <h3>{stage.title}</h3>
@@ -320,41 +360,41 @@ export default function AboutExperience() {
           />
         </div>
         <div className={styles.storyCopy}>
-          <p className={styles.sectionIndex}>(03) Systems meet people</p>
-          <h2>Built by an engineer. Tested in real human rooms.</h2>
+          <p className={styles.sectionIndex}>{storyTitle}</p>
+          <h2>{storyHeadline}</h2>
           <p>
-            The method was not designed as theory. It grew through coaching, training, facilitation, and more than 1,500 profiles where the same truth kept appearing: behavior becomes less mysterious when its structure is visible.
+            {storyCopy}
           </p>
           <blockquote>
-            “Clarity is not the finish line. It is the point where better choices finally become available.”
+            {storyQuote}
           </blockquote>
         </div>
       </section>
 
       <section className={styles.world} data-world>
         <div className={styles.worldHeader}>
-          <p className={styles.sectionIndex}>(04) The reach</p>
-          <h2>One language for human patterns. Across borders.</h2>
+          <p className={styles.sectionIndex}>{reachTitle}</p>
+          <h2>{reachHeadline}</h2>
           <p className={styles.worldPioneerText}>
-            Bringing the aCRL methodology to the Arab World for the first time. The absolute pioneer and sole Master Trainer in the region.
+            {reachPioneer}
           </p>
         </div>
         <div className={styles.globeWrap} data-globe>
           <AboutGlobe />
         </div>
         <div className={styles.stats}>
-          {proof.map(([number, label]) => (
-            <div className={styles.stat} data-stat key={number}>
-              <strong>{number}</strong>
-              <span>{label}</span>
+          {reachStats.map((stat: string[]) => (
+            <div className={styles.stat} data-stat key={stat[0]}>
+              <strong>{stat[0]}</strong>
+              <span>{stat[1]}</span>
             </div>
           ))}
         </div>
       </section>
 
       <section className={styles.cta}>
-        <p className={styles.sectionIndex}>(05) Start the work</p>
-        <h2>Your patterns already tell a story. Let&apos;s read it properly.</h2>
+        <p className={styles.sectionIndex}>{ctaTitle}</p>
+        <h2>{ctaHeadline}</h2>
         <div className={styles.ctaActions}>
           <Link href="/booking" className={`${styles.darkButton} btn-fill-hover btn-fill-dark`}>Book a session</Link>
           <Link href="/services" className={`${styles.textLink} link-arrow-hover`}>Explore the work <span className="arrow" aria-hidden="true">→</span></Link>

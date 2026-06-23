@@ -23,6 +23,7 @@ import {
   fetchPublicOfferingBookingConfig,
   type PublicBookingFormField,
   type PublicOffering,
+  type PublicOfferingLocation,
 } from "@/lib/api/offerings";
 
 const addDays = (date: Date, days: number) => {
@@ -45,6 +46,15 @@ const formatDate = (value: string) =>
     day: "numeric",
   }).format(new Date(`${value}T00:00:00`));
 
+const formatWeekday = (value: string) =>
+  new Intl.DateTimeFormat("en", { weekday: "short" }).format(new Date(`${value}T00:00:00`));
+
+const formatDayNumber = (value: string) =>
+  new Intl.DateTimeFormat("en", { day: "2-digit" }).format(new Date(`${value}T00:00:00`));
+
+const formatMonth = (value: string) =>
+  new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(`${value}T00:00:00`));
+
 const formatTime = (value: string) =>
   new Intl.DateTimeFormat("en", {
     hour: "numeric",
@@ -60,6 +70,18 @@ const formatMoney = (amountMinor: number, currency: string) =>
 
 const attendanceLabels = (mode: PublicOffering["attendanceMode"]) =>
   mode === "online" ? "Online" : mode === "offline" ? "Offline" : "Hybrid";
+
+const formatPublicLocation = (
+  location:
+    | PublicOfferingLocation
+    | NonNullable<PublicOfferingSession["location"]>
+    | null
+    | undefined,
+) => {
+  if (!location) return "";
+
+  return [location.name, location.city, location.countryCode].filter(Boolean).join(", ");
+};
 
 const initialForm = {
   fullName: "",
@@ -137,8 +159,11 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [fields, setFields] = useState<PublicBookingFormField[]>([]);
   const [slots, setSlots] = useState<PublicAvailabilitySlot[]>([]);
   const [sessions, setSessions] = useState<PublicOfferingSession[]>([]);
+  const [locations, setLocations] = useState<PublicOfferingLocation[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PublicAvailabilitySlot | null>(null);
   const [selectedSession, setSelectedSession] = useState<PublicOfferingSession | null>(null);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [attendanceMode, setAttendanceMode] =
     useState<PublicOffering["attendanceMode"]>("online");
   const [form, setForm] = useState(initialForm);
@@ -178,6 +203,40 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const isBookableOffering = isFreeBooking || isPaidOffering;
   const hasSessionOptions = sessions.length > 0;
   const selectedBookableTime = selectedSession ?? selectedSlot;
+  const selectedFormLocation =
+    locations.find((location) => location.id === selectedLocationId) ?? null;
+  const selectedLocation = selectedSession?.location ?? selectedFormLocation;
+  const needsLocation =
+    !hasSessionOptions && attendanceMode !== "online" && locations.length > 0;
+  const dateOptions = useMemo(() => {
+    if (hasSessionOptions) {
+      const sessionDates = Array.from(new Set(sessions.map((session) => session.date))).sort();
+
+      return sessionDates.map((date) => ({
+        date,
+        count: sessions.filter((session) => session.date === date).length,
+      }));
+    }
+
+    return Array.from({ length: 14 }, (_, index) => {
+      const date = toDateKey(addDays(new Date(`${dateRange.from}T00:00:00`), index));
+
+      return {
+        date,
+        count: slots.filter((slot) => slot.date === date).length,
+      };
+    });
+  }, [dateRange.from, hasSessionOptions, sessions, slots]);
+  const activeDate =
+    selectedDate ||
+    dateOptions.find((dateOption) => dateOption.count > 0)?.date ||
+    dateOptions[0]?.date ||
+    "";
+  const activeDateSessions = sessions.filter((session) => session.date === activeDate);
+  const activeDateSlots = slots.filter((slot) => slot.date === activeDate);
+  const activeDateCount = hasSessionOptions
+    ? activeDateSessions.length
+    : activeDateSlots.length;
 
   const updateAnswer = (fieldKey: string, value: string) => {
     setAnswers((currentAnswers) => ({
@@ -218,11 +277,14 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setPricePreview(null);
       setPriceError("");
       setPriceCountryCode("");
+      setLocations([]);
+      setSelectedLocationId("");
       setStep("details");
       setSessions([]);
       setSlots([]);
       setSelectedSession(null);
       setSelectedSlot(null);
+      setSelectedDate("");
 
       try {
         const nextOffering = await fetchPublicOffering(slug);
@@ -233,7 +295,13 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
 
         setOffering(configuredOffering);
         setFields(bookingConfig.fields);
+        setLocations(bookingConfig.locations);
         setAnswers({});
+        setSelectedLocationId(
+          configuredOffering.attendanceMode === "offline"
+            ? bookingConfig.locations[0]?.id ?? ""
+            : "",
+        );
         setAttendanceMode(
           configuredOffering.attendanceMode === "hybrid" ? "online" : configuredOffering.attendanceMode,
         );
@@ -263,7 +331,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         if (availableSessions.length > 0) {
           setSessions(availableSessions);
           setSelectedSession(availableSessions[0] ?? null);
+          setSelectedDate(availableSessions[0]?.date ?? "");
           setAttendanceMode(availableSessions[0]?.attendanceMode ?? configuredOffering.attendanceMode);
+          setSelectedLocationId("");
           return;
         }
 
@@ -281,6 +351,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
 
         setSlots(availableSlots);
         setSelectedSlot(availableSlots[0] ?? null);
+        setSelectedDate(availableSlots[0]?.date ?? dateRange.from);
       } catch (loadError) {
         if (!isCancelled) {
           setError(loadError instanceof Error ? loadError.message : "Could not load booking.");
@@ -380,6 +451,11 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       return;
     }
 
+    if (needsLocation && !selectedLocationId) {
+      setError("Select where you want to attend.");
+      return;
+    }
+
     if (!validateRequiredAnswers()) {
       return;
     }
@@ -391,6 +467,12 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const handleConfirmBooking = async () => {
     if (!offering || !selectedBookableTime || !isBookableOffering) {
       setError("Select an available time first.");
+      setStep("details");
+      return;
+    }
+
+    if (needsLocation && !selectedLocationId) {
+      setError("Select where you want to attend.");
       setStep("details");
       return;
     }
@@ -415,6 +497,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       const bookingPayload = {
         holdId: hold.id,
         attendanceMode: selectedSession?.attendanceMode ?? attendanceMode,
+        locationId:
+          selectedSession?.location?.id ??
+          (attendanceMode === "online" ? null : selectedLocationId || null),
         customer: {
           fullName: form.fullName,
           email: form.email,
@@ -944,10 +1029,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                     <p className="mt-2 font-inter text-sm text-[#102329]/70">
                       {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt)}
                     </p>
-                    {selectedSession?.location && (
+                    {selectedLocation && (
                       <p className="mt-1 font-inter text-xs text-[#102329]/48">
-                        {selectedSession.location.name}
-                        {selectedSession.location.city ? `, ${selectedSession.location.city}` : ""}
+                        {formatPublicLocation(selectedLocation)}
                       </p>
                     )}
                   </div>
@@ -1029,84 +1113,206 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
             ) : (
               <form onSubmit={handleDetailsSubmit} className="space-y-6">
                 <div>
-                  <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/42">
-                    {hasSessionOptions ? "Available sessions" : "Available times"}
-                  </p>
-                  <div className="mt-4 grid max-h-[320px] gap-2 overflow-y-auto pr-1">
-                    {isLoading ? (
-                      Array.from({ length: 4 }).map((_, index) => (
-                        <div key={index} className="h-14 animate-pulse bg-[#102329]/8" />
-                      ))
-                    ) : hasSessionOptions ? (
-                      sessions.map((session) => {
-                        const isSelected = selectedSession?.id === session.id;
-
-                        return (
-                          <button
-                            key={session.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedSession(session);
-                              setSelectedSlot(null);
-                              setAttendanceMode(session.attendanceMode);
-                            }}
-                            className={`grid min-h-16 gap-1 border px-4 py-3 text-left transition-colors ${
-                              isSelected
-                                ? "border-[#0F3B46] bg-[#0F3B46] text-white"
-                                : "border-[#102329]/12 text-[#102329] hover:border-[#0F3B46]"
-                            }`}
-                          >
-                            <span className="flex items-center justify-between gap-4">
-                              <span className="font-inter text-sm font-semibold">
-                                {formatDate(session.date)}
-                              </span>
-                              <span className="font-inter text-sm">
-                                {formatTime(session.startsAt)}
-                              </span>
-                            </span>
-                            <span className={`font-inter text-xs ${isSelected ? "text-white/72" : "text-[#102329]/50"}`}>
-                              {session.location
-                                ? `${session.location.name}${session.location.city ? `, ${session.location.city}` : ""}`
-                                : attendanceLabels(session.attendanceMode)}
-                              {" · "}
-                              {session.remainingCapacity} seats left
-                            </span>
-                          </button>
-                        );
-                      })
-                    ) : slots.length > 0 ? (
-                      slots.map((slot) => {
-                        const isSelected = selectedSlot?.startsAt === slot.startsAt;
-
-                        return (
-                          <button
-                            key={`${slot.startsAt}-${slot.endsAt}`}
-                            type="button"
-                            onClick={() => {
-                              setSelectedSlot(slot);
-                              setSelectedSession(null);
-                            }}
-                            className={`flex min-h-14 items-center justify-between border px-4 text-left transition-colors ${
-                              isSelected
-                                ? "border-[#0F3B46] bg-[#0F3B46] text-white"
-                                : "border-[#102329]/12 text-[#102329] hover:border-[#0F3B46]"
-                            }`}
-                          >
-                            <span className="font-inter text-sm font-semibold">
-                              {formatDate(slot.date)}
-                            </span>
-                            <span className="font-inter text-sm">
-                              {formatTime(slot.startsAt)}
-                            </span>
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <p className="border border-[#102329]/10 p-4 font-inter text-sm leading-6 text-[#102329]/55">
-                        No available times yet.
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/42">
+                        {hasSessionOptions ? "Available sessions" : "Available times"}
+                      </p>
+                      {activeDate && (
+                        <p className="mt-2 font-inter text-sm font-semibold text-[#102329]/72">
+                          {formatDate(activeDate)}
+                        </p>
+                      )}
+                    </div>
+                    {!isLoading && activeDate && (
+                      <p className="shrink-0 font-inter text-xs font-semibold uppercase tracking-[0.12em] text-[#102329]/40">
+                        {activeDateCount === 1
+                          ? "1 option"
+                          : `${activeDateCount} options`}
                       </p>
                     )}
                   </div>
+
+                  {isLoading ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="flex gap-2 overflow-hidden">
+                        {Array.from({ length: 5 }).map((_, index) => (
+                          <div
+                            key={index}
+                            className="min-h-[82px] min-w-[82px] border border-[#102329]/10 bg-white/35 p-3"
+                          >
+                            <div className="h-3 animate-pulse bg-[#102329]/8" />
+                            <div className="mt-4 h-7 w-8 animate-pulse bg-[#102329]/8" />
+                            <div className="mt-3 h-3 w-10 animate-pulse bg-[#102329]/8" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="border border-[#102329]/12 bg-white/45 p-4">
+                        <div className="h-4 w-40 animate-pulse bg-[#102329]/8" />
+                        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {Array.from({ length: 6 }).map((_, index) => (
+                            <div
+                              key={index}
+                              className="h-11 animate-pulse border border-[#102329]/10 bg-white/40"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : dateOptions.length === 0 ? (
+                    <p className="mt-4 border border-dashed border-[#102329]/16 px-4 py-5 text-center font-inter text-sm text-[#102329]/48">
+                      No available times right now.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      <div
+                        aria-label="Choose a booking date"
+                        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1"
+                      >
+                        {dateOptions.map((day) => {
+                          const isActive = day.date === activeDate;
+                          const hasTimes = day.count > 0;
+
+                          return (
+                            <button
+                              key={day.date}
+                              type="button"
+                              aria-pressed={isActive}
+                              onClick={() => {
+                                setSelectedDate(day.date);
+                                if (selectedSession?.date !== day.date) {
+                                  setSelectedSession(null);
+                                }
+                                if (selectedSlot?.date !== day.date) {
+                                  setSelectedSlot(null);
+                                }
+                              }}
+                              className={`grid min-h-[82px] min-w-[82px] content-between border px-3 py-2 text-left transition-colors ${
+                                isActive
+                                  ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                                  : hasTimes
+                                    ? "border-[#102329]/14 bg-white/45 text-[#102329] hover:border-[#0F3B46]"
+                                    : "border-[#102329]/10 bg-white/25 text-[#102329]/34"
+                              }`}
+                            >
+                              <span
+                                className={`font-inter text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                  isActive ? "text-white/70" : "text-inherit"
+                                }`}
+                              >
+                                {formatWeekday(day.date)}
+                              </span>
+                              <span className="text-2xl font-semibold leading-none">
+                                {formatDayNumber(day.date)}
+                              </span>
+                              <span
+                                className={`font-inter text-[11px] font-semibold uppercase tracking-[0.1em] ${
+                                  isActive ? "text-white/70" : "text-inherit"
+                                }`}
+                              >
+                                {formatMonth(day.date)}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="border border-[#102329]/12 bg-white/45 p-3 sm:p-4">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="font-inter text-sm font-semibold text-[#102329]">
+                            {activeDate ? formatDate(activeDate) : "Choose a day"}
+                          </p>
+                          <p className="font-inter text-xs font-semibold uppercase tracking-[0.12em] text-[#102329]/42">
+                            {activeDateCount === 0
+                              ? "No times available"
+                              : activeDateCount === 1
+                                ? "1 available"
+                                : `${activeDateCount} available`}
+                          </p>
+                        </div>
+
+                        <div className="mt-3">
+                          {hasSessionOptions ? (
+                            activeDateSessions.length === 0 ? (
+                              <p className="border border-dashed border-[#102329]/14 px-3 py-5 text-center font-inter text-sm text-[#102329]/46">
+                                No sessions available on this day.
+                              </p>
+                            ) : (
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {activeDateSessions.map((session) => {
+                                  const isSelected = selectedSession?.id === session.id;
+
+                                  return (
+                                    <button
+                                      key={session.id}
+                                      type="button"
+                                      aria-pressed={isSelected}
+                                      onClick={() => {
+                                        setSelectedSession(session);
+                                        setSelectedSlot(null);
+                                        setSelectedDate(session.date);
+                                        setSelectedLocationId("");
+                                        setAttendanceMode(session.attendanceMode);
+                                      }}
+                                      className={`min-h-[64px] border px-3 py-2.5 text-left transition-colors ${
+                                        isSelected
+                                          ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                                          : "border-[#102329]/12 bg-white/35 text-[#102329] hover:border-[#0F3B46]"
+                                      }`}
+                                    >
+                                      <span className="font-inter text-sm font-semibold">
+                                        {formatTime(session.startsAt)}
+                                      </span>
+                                      <span
+                                        className={`mt-1 block font-inter text-[11px] leading-4 ${
+                                          isSelected ? "text-white/72" : "text-[#102329]/50"
+                                        }`}
+                                      >
+                                        {formatPublicLocation(session.location) ||
+                                          attendanceLabels(session.attendanceMode)}
+                                        {" · "}
+                                        {session.remainingCapacity} left
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )
+                          ) : activeDateSlots.length === 0 ? (
+                            <p className="border border-dashed border-[#102329]/14 px-3 py-5 text-center font-inter text-sm text-[#102329]/46">
+                              No times available on this day.
+                            </p>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                              {activeDateSlots.map((slot) => {
+                                const isSelected = selectedSlot?.startsAt === slot.startsAt;
+
+                                return (
+                                  <button
+                                    key={`${slot.startsAt}-${slot.endsAt}`}
+                                    type="button"
+                                    aria-pressed={isSelected}
+                                    onClick={() => {
+                                      setSelectedSlot(slot);
+                                      setSelectedSession(null);
+                                      setSelectedDate(slot.date);
+                                    }}
+                                    className={`min-h-11 border px-3 py-2 text-center font-inter text-sm font-semibold transition-colors ${
+                                      isSelected
+                                        ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                                        : "border-[#102329]/12 bg-white/35 text-[#102329] hover:border-[#0F3B46]"
+                                    }`}
+                                  >
+                                    {formatTime(slot.startsAt)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {offering?.attendanceMode === "hybrid" && !hasSessionOptions && (
@@ -1116,14 +1322,44 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                     </span>
                     <select
                       value={attendanceMode}
-                      onChange={(event) =>
-                        setAttendanceMode(event.target.value as PublicOffering["attendanceMode"])
-                      }
+                      onChange={(event) => {
+                        const nextMode = event.target.value as PublicOffering["attendanceMode"];
+                        setAttendanceMode(nextMode);
+                        setSelectedLocationId(
+                          nextMode === "online" ? "" : selectedLocationId || locations[0]?.id || "",
+                        );
+                      }}
                       className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
                     >
                       <option value="online">Online</option>
                       <option value="offline">Offline</option>
                     </select>
+                  </label>
+                )}
+
+                {needsLocation && (
+                  <label className="block">
+                    <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
+                      Location
+                    </span>
+                    <select
+                      value={selectedLocationId}
+                      onChange={(event) => setSelectedLocationId(event.target.value)}
+                      className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
+                      required
+                    >
+                      <option value="">Select location</option>
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {formatPublicLocation(location)}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedFormLocation?.instructions && (
+                      <p className="mt-2 font-inter text-xs leading-5 text-[#102329]/48">
+                        {selectedFormLocation.instructions}
+                      </p>
+                    )}
                   </label>
                 )}
 

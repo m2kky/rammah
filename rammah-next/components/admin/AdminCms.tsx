@@ -7,12 +7,20 @@ import {
   archiveAdminNavigationItem,
   createAdminLegalPage,
   createAdminNavigationItem,
+  fetchAdminCmsPageSections,
+  fetchAdminCmsPages,
   fetchAdminLegalPages,
   fetchAdminNavigationItems,
   fetchAdminSiteSettings,
   saveAdminSiteSettings,
+  updateAdminCmsPage,
+  updateAdminCmsPageSection,
   updateAdminLegalPage,
   updateAdminNavigationItem,
+  type AdminCmsPage,
+  type AdminCmsPagePayload,
+  type AdminCmsPageSection,
+  type AdminCmsPageSectionPayload,
   type AdminContentStatus,
   type AdminLegalPage,
   type AdminLegalPagePayload,
@@ -51,6 +59,15 @@ const statusClasses: Record<AdminContentStatus, string> = {
   archived: "border-[#102329]/15 text-[#102329]/38",
 };
 
+type CmsView = "pages" | "settings" | "navigation" | "legal";
+
+const cmsViews: Array<{ id: CmsView; label: string }> = [
+  { id: "pages", label: "Pages" },
+  { id: "settings", label: "Settings" },
+  { id: "navigation", label: "Navigation" },
+  { id: "legal", label: "Legal" },
+];
+
 const emptySettings = {
   siteName: "Ahmed Ramah Coaching Platform",
   defaultLocale: "en",
@@ -75,6 +92,44 @@ const emptyLegal: AdminLegalPagePayload = {
   status: "draft",
   publishedAt: null,
 };
+
+const emptyPageForm: AdminCmsPagePayload = {
+  slug: "",
+  title: "",
+  template: "default",
+  status: "draft",
+  publishedAt: null,
+};
+
+const emptySectionForm: AdminCmsPageSectionPayload = {
+  sectionType: "",
+  title: "",
+  body: "",
+  config: {},
+  mediaAssetId: null,
+  sortOrder: 0,
+  status: "draft",
+};
+
+const toPageForm = (page: AdminCmsPage): AdminCmsPagePayload => ({
+  slug: page.slug,
+  title: page.title,
+  template: page.template,
+  status: page.status,
+  publishedAt: toDatetimeLocalValue(page.publishedAt),
+});
+
+const toSectionForm = (
+  section: AdminCmsPageSection,
+): AdminCmsPageSectionPayload => ({
+  sectionType: section.sectionType,
+  title: section.title ?? "",
+  body: section.body ?? "",
+  config: section.config ?? {},
+  mediaAssetId: section.mediaAssetId,
+  sortOrder: section.sortOrder,
+  status: section.status,
+});
 
 const socialLinksText = (links: Record<string, string>) =>
   JSON.stringify(links, null, 2);
@@ -116,7 +171,14 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
+const previewText = (value: string | null | undefined, limit = 130) => {
+  if (!value?.trim()) return "-";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > limit ? `${normalized.slice(0, limit)}...` : normalized;
+};
+
 export default function AdminCms() {
+  const [activeView, setActiveView] = useState<CmsView>("pages");
   const [siteName, setSiteName] = useState(emptySettings.siteName);
   const [defaultLocale, setDefaultLocale] = useState(emptySettings.defaultLocale);
   const [contactEmail, setContactEmail] = useState(emptySettings.contactEmail);
@@ -142,12 +204,29 @@ export default function AdminCms() {
   const [legalSearchInput, setLegalSearchInput] = useState("");
   const [legalSearch, setLegalSearch] = useState("");
 
+  const [cmsPages, setCmsPages] = useState<AdminCmsPage[]>([]);
+  const [selectedCmsPage, setSelectedCmsPage] = useState<AdminCmsPage | null>(null);
+  const [pageForm, setPageForm] = useState<AdminCmsPagePayload>(emptyPageForm);
+  const [pageSections, setPageSections] = useState<AdminCmsPageSection[]>([]);
+  const [selectedPageSection, setSelectedPageSection] =
+    useState<AdminCmsPageSection | null>(null);
+  const [sectionForm, setSectionForm] =
+    useState<AdminCmsPageSectionPayload>(emptySectionForm);
+  const [sectionConfigText, setSectionConfigText] = useState("{}");
+  const [cmsPageStatus, setCmsPageStatus] = useState<AdminContentStatus | "all">("all");
+  const [cmsPageSearchInput, setCmsPageSearchInput] = useState("");
+  const [cmsPageSearch, setCmsPageSearch] = useState("");
+
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [isLoadingNavigation, setIsLoadingNavigation] = useState(true);
   const [isLoadingLegal, setIsLoadingLegal] = useState(true);
+  const [isLoadingCmsPages, setIsLoadingCmsPages] = useState(true);
+  const [isLoadingPageSections, setIsLoadingPageSections] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isSavingNavigation, setIsSavingNavigation] = useState(false);
   const [isSavingLegal, setIsSavingLegal] = useState(false);
+  const [isSavingCmsPage, setIsSavingCmsPage] = useState(false);
+  const [isSavingPageSection, setIsSavingPageSection] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -235,6 +314,68 @@ export default function AdminCms() {
     }
   };
 
+  const loadCmsPages = async () => {
+    setIsLoadingCmsPages(true);
+    setError("");
+
+    try {
+      const pages = await fetchAdminCmsPages({
+        status: cmsPageStatus,
+        search: cmsPageSearch,
+      });
+      setCmsPages(pages);
+
+      const nextSelected =
+        (selectedCmsPage && pages.find((page) => page.id === selectedCmsPage.id)) ??
+        pages[0] ??
+        null;
+      setSelectedCmsPage(nextSelected);
+      if (nextSelected) {
+        setPageForm(toPageForm(nextSelected));
+      } else {
+        setPageForm(emptyPageForm);
+        setPageSections([]);
+        setSelectedPageSection(null);
+        setSectionForm(emptySectionForm);
+        setSectionConfigText("{}");
+      }
+    } catch (loadError) {
+      setError(loadError instanceof AdminApiError ? loadError.message : "Could not load CMS pages.");
+    } finally {
+      setIsLoadingCmsPages(false);
+    }
+  };
+
+  const loadPageSections = async (pageId: string) => {
+    setIsLoadingPageSections(true);
+    setError("");
+
+    try {
+      const sections = await fetchAdminCmsPageSections(pageId);
+      setPageSections(sections);
+
+      const nextSelected =
+        (selectedPageSection &&
+          sections.find((section) => section.id === selectedPageSection.id)) ??
+        sections[0] ??
+        null;
+      setSelectedPageSection(nextSelected);
+
+      if (nextSelected) {
+        const nextForm = toSectionForm(nextSelected);
+        setSectionForm(nextForm);
+        setSectionConfigText(JSON.stringify(nextForm.config ?? {}, null, 2));
+      } else {
+        setSectionForm(emptySectionForm);
+        setSectionConfigText("{}");
+      }
+    } catch (loadError) {
+      setError(loadError instanceof AdminApiError ? loadError.message : "Could not load page sections.");
+    } finally {
+      setIsLoadingPageSections(false);
+    }
+  };
+
   useEffect(() => {
     void loadSettings();
   }, []);
@@ -249,9 +390,26 @@ export default function AdminCms() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [legalStatus, legalSearch]);
 
+  useEffect(() => {
+    void loadCmsPages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cmsPageStatus, cmsPageSearch]);
+
+  useEffect(() => {
+    if (selectedCmsPage) {
+      void loadPageSections(selectedCmsPage.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCmsPage]);
+
   const handleNavigationSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNavigationSearch(navigationSearchInput.trim());
+  };
+
+  const handleCmsPageSearch = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCmsPageSearch(cmsPageSearchInput.trim());
   };
 
   const handleLegalSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -294,6 +452,95 @@ export default function AdminCms() {
   const resetLegal = () => {
     setSelectedLegalPage(null);
     setLegalForm(emptyLegal);
+  };
+
+  const selectCmsPage = (page: AdminCmsPage) => {
+    setSelectedCmsPage(page);
+    setPageForm(toPageForm(page));
+    setSelectedPageSection(null);
+    setSectionForm(emptySectionForm);
+    setSectionConfigText("{}");
+    setMessage("");
+    setError("");
+  };
+
+  const selectPageSection = (section: AdminCmsPageSection) => {
+    const nextForm = toSectionForm(section);
+    setSelectedPageSection(section);
+    setSectionForm(nextForm);
+    setSectionConfigText(JSON.stringify(nextForm.config ?? {}, null, 2));
+    setMessage("");
+    setError("");
+  };
+
+  const handleCmsPageSave = async () => {
+    if (!selectedCmsPage) return;
+
+    setIsSavingCmsPage(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const saved = await updateAdminCmsPage(selectedCmsPage.id, {
+        ...pageForm,
+        slug: pageForm.slug.trim(),
+        title: pageForm.title.trim(),
+        template: pageForm.template.trim(),
+        publishedAt: toNullableIso(pageForm.publishedAt),
+      });
+      setSelectedCmsPage(saved);
+      setPageForm(toPageForm(saved));
+      await loadCmsPages();
+      setMessage("CMS page saved.");
+    } catch (saveError) {
+      setError(saveError instanceof AdminApiError ? saveError.message : "Could not save CMS page.");
+    } finally {
+      setIsSavingCmsPage(false);
+    }
+  };
+
+  const handlePageSectionSave = async () => {
+    if (!selectedCmsPage || !selectedPageSection) return;
+
+    setIsSavingPageSection(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const parsedConfig = JSON.parse(sectionConfigText || "{}") as unknown;
+
+      if (!parsedConfig || Array.isArray(parsedConfig) || typeof parsedConfig !== "object") {
+        throw new Error("Section config must be a JSON object.");
+      }
+
+      const mediaAssetId =
+        typeof sectionForm.mediaAssetId === "string"
+          ? sectionForm.mediaAssetId.trim() || null
+          : null;
+      const saved = await updateAdminCmsPageSection(
+        selectedCmsPage.id,
+        selectedPageSection.id,
+        {
+          ...sectionForm,
+          sectionType: sectionForm.sectionType.trim(),
+          title: sectionForm.title?.trim() || null,
+          body: sectionForm.body?.trim() || null,
+          config: parsedConfig as Record<string, unknown>,
+          mediaAssetId,
+          sortOrder: Number(sectionForm.sortOrder),
+        },
+      );
+
+      setSelectedPageSection(saved);
+      setSectionForm(toSectionForm(saved));
+      setSectionConfigText(JSON.stringify(saved.config ?? {}, null, 2));
+      await loadPageSections(selectedCmsPage.id);
+      setMessage("Page section saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Could not save page section.");
+    } finally {
+      setIsSavingPageSection(false);
+    }
   };
 
   const handleSettingsSave = async () => {
@@ -427,13 +674,14 @@ export default function AdminCms() {
           type="button"
           onClick={() => {
             void loadSettings();
+            void loadCmsPages();
             void loadNavigation();
             void loadLegalPages();
           }}
-          disabled={isLoadingSettings || isLoadingNavigation || isLoadingLegal}
+          disabled={isLoadingSettings || isLoadingCmsPages || isLoadingNavigation || isLoadingLegal}
           className="h-11 w-fit border border-[#102329]/20 px-5 font-inter text-sm font-semibold transition-colors hover:border-[#0F3B46] hover:text-[#0F3B46] disabled:cursor-wait disabled:opacity-50"
         >
-          {isLoadingSettings || isLoadingNavigation || isLoadingLegal ? "Refreshing" : "Refresh"}
+          {isLoadingSettings || isLoadingCmsPages || isLoadingNavigation || isLoadingLegal ? "Refreshing" : "Refresh"}
         </button>
       </div>
 
@@ -448,7 +696,25 @@ export default function AdminCms() {
         </p>
       )}
 
-      <section className="space-y-5 border-b border-[#102329]/10 pb-8">
+      <div className="flex flex-wrap gap-2 border-b border-[#102329]/10 pb-4">
+        {cmsViews.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            onClick={() => setActiveView(view.id)}
+            className={`h-10 border px-4 font-inter text-sm font-semibold transition-colors ${
+              activeView === view.id
+                ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                : "border-[#102329]/16 text-[#102329]/65 hover:border-[#0F3B46] hover:text-[#0F3B46]"
+            }`}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+
+      {activeView === "settings" && (
+      <section className="space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">
@@ -531,8 +797,367 @@ export default function AdminCms() {
           </label>
         </div>
       </section>
+      )}
 
-      <section className="space-y-5 border-b border-[#102329]/10 pb-8">
+      {activeView === "pages" && (
+      <section className="space-y-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">
+              Pages
+            </p>
+            <h2 className="mt-2 text-3xl font-semibold">Public pages & sections</h2>
+          </div>
+          <p className="font-inter text-sm text-[#102329]/55">
+            {cmsPages.length} pages · {pageSections.length} sections
+          </p>
+        </div>
+
+        <div className="grid gap-6 2xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="space-y-4">
+            <div className="space-y-3 border-y border-[#102329]/10 py-4">
+              <form onSubmit={handleCmsPageSearch} className="flex gap-2">
+                <input
+                  type="search"
+                  value={cmsPageSearchInput}
+                  onChange={(event) => setCmsPageSearchInput(event.target.value)}
+                  placeholder="Search title or slug"
+                  className="h-11 min-w-0 flex-1 border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
+                />
+                <button
+                  type="submit"
+                  className="h-11 bg-[#102329] px-4 font-inter text-sm font-semibold text-white transition-colors hover:bg-[#0F3B46]"
+                >
+                  Search
+                </button>
+              </form>
+
+              <div className="flex items-center gap-2 overflow-x-auto">
+                {statusOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setCmsPageStatus(option)}
+                    className={`h-9 whitespace-nowrap border px-3 font-inter text-xs font-semibold transition-colors ${
+                      cmsPageStatus === option
+                        ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                        : "border-[#102329]/16 text-[#102329]/65 hover:border-[#102329]/35"
+                    }`}
+                  >
+                    {statusLabels[option]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {isLoadingCmsPages ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="h-20 animate-pulse bg-[#102329]/8" />
+                ))
+              ) : cmsPages.length === 0 ? (
+                <p className="border border-[#102329]/12 p-5 font-inter text-sm text-[#102329]/55">
+                  No CMS pages match the current filters.
+                </p>
+              ) : (
+                cmsPages.map((page) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={() => selectCmsPage(page)}
+                    className={`w-full border p-4 text-left transition-colors ${
+                      selectedCmsPage?.id === page.id
+                        ? "border-[#0F3B46] bg-[#0F3B46]/5"
+                        : "border-[#102329]/12 bg-white hover:border-[#0F3B46]/45"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-inter text-sm font-semibold">{page.title}</p>
+                        <p className="mt-1 font-inter text-xs text-[#102329]/48">/{page.slug}</p>
+                      </div>
+                      <span className={`inline-flex h-7 shrink-0 items-center border px-2 font-inter text-[0.68rem] font-semibold ${statusClasses[page.status]}`}>
+                        {statusLabels[page.status]}
+                      </span>
+                    </div>
+                    <p className="mt-3 font-inter text-xs text-[#102329]/55">
+                      {page.template} · {formatDate(page.publishedAt)}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          </aside>
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(380px,1fr)]">
+            <div className="space-y-5 border border-[#102329]/12 bg-white p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">
+                    Page editor
+                  </p>
+                  <h3 className="mt-2 text-2xl font-semibold">
+                    {selectedCmsPage ? selectedCmsPage.title : "No page selected"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleCmsPageSave()}
+                  disabled={
+                    isSavingCmsPage ||
+                    !selectedCmsPage ||
+                    !pageForm.title.trim() ||
+                    !pageForm.slug.trim() ||
+                    !pageForm.template.trim()
+                  }
+                  className="h-10 shrink-0 border border-[#0F3B46] bg-[#0F3B46] px-4 font-inter text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {isSavingCmsPage ? "Saving" : "Save page"}
+                </button>
+              </div>
+
+              <div className="grid gap-4">
+                <label className="space-y-2">
+                  <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                    Title
+                  </span>
+                  <input
+                    value={pageForm.title}
+                    onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })}
+                    disabled={!selectedCmsPage}
+                    className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                  />
+                </label>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                      Slug
+                    </span>
+                    <input
+                      value={pageForm.slug}
+                      onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })}
+                      disabled={!selectedCmsPage}
+                      className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                      Template
+                    </span>
+                    <input
+                      value={pageForm.template}
+                      onChange={(event) => setPageForm({ ...pageForm, template: event.target.value })}
+                      disabled={!selectedCmsPage}
+                      className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                  </label>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                      Status
+                    </span>
+                    <select
+                      value={pageForm.status}
+                      onChange={(event) =>
+                        setPageForm({
+                          ...pageForm,
+                          status: event.target.value as AdminContentStatus,
+                        })
+                      }
+                      disabled={!selectedCmsPage}
+                      className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    >
+                      {editableStatusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabels[option]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="space-y-2">
+                    <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                      Published at
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={pageForm.publishedAt ?? ""}
+                      onChange={(event) =>
+                        setPageForm({ ...pageForm, publishedAt: event.target.value || null })
+                      }
+                      disabled={!selectedCmsPage}
+                      className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5 border border-[#102329]/12 bg-white p-5">
+              <div>
+                <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">
+                  Section editor
+                </p>
+                <h3 className="mt-2 text-2xl font-semibold">
+                  {selectedPageSection ? selectedPageSection.title ?? selectedPageSection.sectionType : "No section selected"}
+                </h3>
+              </div>
+
+              <div className="grid gap-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(0,1.1fr)]">
+                <div className="space-y-2">
+                  {isLoadingPageSections ? (
+                    Array.from({ length: 5 }).map((_, index) => (
+                      <div key={index} className="h-20 animate-pulse bg-[#102329]/8" />
+                    ))
+                  ) : pageSections.length === 0 ? (
+                    <p className="border border-[#102329]/12 p-5 font-inter text-sm text-[#102329]/55">
+                      No sections found for the selected page.
+                    </p>
+                  ) : (
+                    pageSections.map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        onClick={() => selectPageSection(section)}
+                        className={`w-full border p-3 text-left transition-colors ${
+                          selectedPageSection?.id === section.id
+                            ? "border-[#0F3B46] bg-[#0F3B46]/5"
+                            : "border-[#102329]/12 hover:border-[#0F3B46]/45"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                              {String(section.sortOrder).padStart(2, "0")} · {section.sectionType}
+                            </p>
+                            <p className="mt-2 font-inter text-sm font-semibold">
+                              {section.title ?? "Untitled section"}
+                            </p>
+                          </div>
+                          <span className={`inline-flex h-7 shrink-0 items-center border px-2 font-inter text-[0.68rem] font-semibold ${statusClasses[section.status]}`}>
+                            {statusLabels[section.status]}
+                          </span>
+                        </div>
+                        <p className="mt-3 font-inter text-xs leading-5 text-[#102329]/58">
+                          {previewText(section.body, 90)}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_110px]">
+                    <input
+                      value={sectionForm.sectionType}
+                      onChange={(event) =>
+                        setSectionForm({ ...sectionForm, sectionType: event.target.value })
+                      }
+                      disabled={!selectedPageSection}
+                      placeholder="section_type"
+                      className="h-11 border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                    <input
+                      type="number"
+                      value={sectionForm.sortOrder}
+                      onChange={(event) =>
+                        setSectionForm({
+                          ...sectionForm,
+                          sortOrder: Number(event.target.value),
+                        })
+                      }
+                      disabled={!selectedPageSection}
+                      className="h-11 border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                  </div>
+
+                  <input
+                    value={sectionForm.title ?? ""}
+                    onChange={(event) =>
+                      setSectionForm({ ...sectionForm, title: event.target.value })
+                    }
+                    disabled={!selectedPageSection}
+                    placeholder="Section title"
+                    className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                  />
+
+                  <textarea
+                    value={sectionForm.body ?? ""}
+                    onChange={(event) =>
+                      setSectionForm({ ...sectionForm, body: event.target.value })
+                    }
+                    disabled={!selectedPageSection}
+                    rows={7}
+                    placeholder="Section body"
+                    className="w-full resize-none border border-[#102329]/18 bg-white px-3 py-3 font-inter text-sm leading-6 outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                  />
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <select
+                      value={sectionForm.status}
+                      onChange={(event) =>
+                        setSectionForm({
+                          ...sectionForm,
+                          status: event.target.value as AdminContentStatus,
+                        })
+                      }
+                      disabled={!selectedPageSection}
+                      className="h-11 border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    >
+                      {editableStatusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabels[option]}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={sectionForm.mediaAssetId ?? ""}
+                      onChange={(event) =>
+                        setSectionForm({
+                          ...sectionForm,
+                          mediaAssetId: event.target.value || null,
+                        })
+                      }
+                      disabled={!selectedPageSection}
+                      placeholder="Media asset ID"
+                      className="h-11 border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                    />
+                  </div>
+
+                  <textarea
+                    value={sectionConfigText}
+                    onChange={(event) => setSectionConfigText(event.target.value)}
+                    disabled={!selectedPageSection}
+                    rows={10}
+                    spellCheck={false}
+                    className="w-full resize-none border border-[#102329]/18 bg-[#F7F4EC] px-3 py-3 font-mono text-xs leading-5 outline-none focus:border-[#0F3B46] disabled:opacity-45"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => void handlePageSectionSave()}
+                    disabled={
+                      isSavingPageSection ||
+                      !selectedCmsPage ||
+                      !selectedPageSection ||
+                      !sectionForm.sectionType.trim()
+                    }
+                    className="h-11 w-full border border-[#0F3B46] bg-[#0F3B46] px-5 font-inter text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    {isSavingPageSection ? "Saving" : "Save section"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      )}
+
+      {activeView === "navigation" && (
+      <section className="space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">
@@ -728,7 +1353,9 @@ export default function AdminCms() {
           </aside>
         </div>
       </section>
+      )}
 
+      {activeView === "legal" && (
       <section className="space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -935,6 +1562,7 @@ export default function AdminCms() {
           </aside>
         </div>
       </section>
+      )}
     </div>
   );
 }

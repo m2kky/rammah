@@ -1,12 +1,15 @@
 "use client";
 
+import type { PublicPageSection } from "@/lib/api/cms";
+
 type HeroSectionProps = {
   entryReady: boolean;
+  section?: PublicPageSection | null;
 };
 
-const roles = ["Engineer", "Systematizer", "Trainer", "Coach"];
-
-export default function HeroSection({ entryReady }: HeroSectionProps) {
+export default function HeroSection({ entryReady, section }: HeroSectionProps) {
+  const roles = (section?.config?.roles as string[]) || ["Engineer", "Systematizer", "Trainer", "Coach"];
+  const bodyText = section?.body || "I don't just coach. I map your psychological system, find the bugs and rewrite the code";
   return (
     <section className="relative w-full min-h-[100dvh] bg-[#0F3B46] overflow-hidden">
       {/* White background with blurred elliptical top */}
@@ -48,8 +51,7 @@ export default function HeroSection({ entryReady }: HeroSectionProps) {
             transitionDelay: entryReady ? "1180ms" : "0ms",
           }}
         >
-          I don&apos;t just coach.{" "}
-          I map your psychological system, find the bugs and rewrite the code
+          {bodyText}
         </p>
       </div>
       </div>

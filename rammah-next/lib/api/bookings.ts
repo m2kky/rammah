@@ -1,6 +1,13 @@
 import { apiBaseUrl } from "./config";
 import type { PublicOffering } from "./offerings";
 
+type PublicBookingLocation = {
+  id: string;
+  name: string | null;
+  city: string | null;
+  countryCode: string | null;
+} | null;
+
 export type PublicAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
 export type PublicAvailabilitySlotSource = "rule" | "available_override";
 
@@ -102,6 +109,7 @@ export type PublicBooking = {
     phone: string | null;
   };
   countryCode: string | null;
+  location: PublicBookingLocation;
   slot: {
     startsAt: string | null;
     endsAt: string | null;
@@ -383,6 +391,7 @@ export const fetchPublicPricePreview = async (input: {
 export const submitPublicFreeBooking = async (input: {
   holdId: string;
   attendanceMode?: PublicOffering["attendanceMode"];
+  locationId?: string | null;
   customer: {
     fullName: string;
     email: string;
@@ -411,6 +420,7 @@ export const submitPublicFreeBooking = async (input: {
 export const submitPublicPaidBooking = async (input: {
   holdId: string;
   attendanceMode?: PublicOffering["attendanceMode"];
+  locationId?: string | null;
   customer: {
     fullName: string;
     email: string;

@@ -200,6 +200,12 @@ export type AdminBooking = {
     phone: string | null;
   };
   countryCode: string | null;
+  location: {
+    id: string;
+    name: string | null;
+    city: string | null;
+    countryCode: string | null;
+  } | null;
   slot: {
     startsAt: string | null;
     endsAt: string | null;
@@ -411,6 +417,49 @@ export type AdminLegalPagePayload = {
   version: string;
   status: AdminContentStatus;
   publishedAt?: string | null;
+};
+
+export type AdminCmsPage = {
+  id: string;
+  slug: string;
+  title: string;
+  template: string;
+  status: AdminContentStatus;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminCmsPagePayload = {
+  slug: string;
+  title: string;
+  template: string;
+  status: AdminContentStatus;
+  publishedAt?: string | null;
+};
+
+export type AdminCmsPageSection = {
+  id: string;
+  pageId: string;
+  sectionType: string;
+  title: string | null;
+  body: string | null;
+  config: Record<string, unknown>;
+  mediaAssetId: string | null;
+  sortOrder: number;
+  status: AdminContentStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminCmsPageSectionPayload = {
+  sectionType: string;
+  title?: string | null;
+  body?: string | null;
+  config: Record<string, unknown>;
+  mediaAssetId?: string | null;
+  sortOrder: number;
+  status: AdminContentStatus;
 };
 
 export type GoogleCalendarIntegrationStatus = {
@@ -1287,6 +1336,66 @@ export const archiveAdminLegalPage = async (id: string) => {
   await adminRequest<void>(`/admin/cms/legal-pages/${id}`, {
     method: "DELETE",
   });
+};
+
+export const fetchAdminCmsPages = async (
+  filters: { status?: AdminContentStatus | "all"; search?: string } = {},
+) => {
+  const params = new URLSearchParams();
+
+  if (filters.status && filters.status !== "all") {
+    params.set("status", filters.status);
+  }
+
+  if (filters.search?.trim()) {
+    params.set("search", filters.search.trim());
+  }
+
+  const queryString = params.toString();
+  const payload = await adminRequest<{ data: AdminCmsPage[] }>(
+    `/admin/cms/pages${queryString ? `?${queryString}` : ""}`,
+  );
+
+  return payload.data;
+};
+
+export const fetchAdminCmsPageSections = async (pageId: string) => {
+  const payload = await adminRequest<{ data: AdminCmsPageSection[] }>(
+    `/admin/cms/pages/${pageId}/sections`,
+  );
+
+  return payload.data;
+};
+
+export const updateAdminCmsPage = async (
+  id: string,
+  input: Partial<AdminCmsPagePayload>,
+) => {
+  const payload = await adminRequest<{ data: AdminCmsPage }>(
+    `/admin/cms/pages/${id}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+
+  return payload.data;
+};
+
+export const updateAdminCmsPageSection = async (
+  pageId: string,
+  sectionId: string,
+  input: Partial<AdminCmsPageSectionPayload>,
+) => {
+  const payload = await adminRequest<{ data: AdminCmsPageSection }>(
+    `/admin/cms/pages/${pageId}/sections/${sectionId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    },
+  );
+
+  return payload.data;
 };
 
 export const fetchGoogleCalendarIntegrationStatus = async () => {

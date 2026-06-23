@@ -463,6 +463,13 @@ export default function AdminBookingsInbox() {
                     <td className="py-5 pr-5 font-inter text-sm text-[#102329]/70">
                       {formatDateTime(booking.slot.startsAt)}
                       <p className="mt-1 text-xs text-[#102329]/45">{booking.slot.timezone}</p>
+                      {booking.location && (
+                        <p className="mt-1 text-xs text-[#102329]/45">
+                          {[booking.location.name, booking.location.city, booking.location.countryCode]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                      )}
                     </td>
                     <td className="py-5 pr-5">
                       <span className={`inline-flex h-8 items-center border px-3 font-inter text-xs font-semibold ${statusClasses[booking.status]}`}>
@@ -527,6 +534,13 @@ export default function AdminBookingsInbox() {
                   <p className="mt-2 font-inter text-sm text-[#102329]/70">
                     {formatDateTime(selectedBooking.slot.startsAt)}
                   </p>
+                  {selectedBooking.location && (
+                    <p className="mt-1 font-inter text-xs text-[#102329]/48">
+                      {[selectedBooking.location.name, selectedBooking.location.city, selectedBooking.location.countryCode]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">

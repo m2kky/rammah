@@ -9,6 +9,17 @@ export type PublicOfferingPrice = {
   earlyBirdEndsAt: string | null;
 };
 
+export type PublicOfferingLocation = {
+  id: string;
+  name: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  city: string | null;
+  countryCode: string;
+  mapUrl: string | null;
+  instructions: string | null;
+};
+
 export type PublicOffering = {
   id: string;
   slug: string;
@@ -65,6 +76,7 @@ type BookingConfigResponse = {
   data: {
     offering: PublicOffering;
     fields: PublicBookingFormField[];
+    locations: PublicOfferingLocation[];
   };
 };
 
@@ -139,7 +151,11 @@ export const fetchPublicOfferingBookingConfig = async (
 
   const payload = (await response.json()) as BookingConfigResponse;
 
-  if (!payload.data?.offering?.id || !Array.isArray(payload.data.fields)) {
+  if (
+    !payload.data?.offering?.id ||
+    !Array.isArray(payload.data.fields) ||
+    !Array.isArray(payload.data.locations)
+  ) {
     throw new Error("Invalid booking config response.");
   }
 
