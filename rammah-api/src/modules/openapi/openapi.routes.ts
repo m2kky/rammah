@@ -1,0 +1,199 @@
+import { Router } from "express";
+import { env } from "../../config/env.js";
+import { httpStatus } from "../../shared/http/status.js";
+
+export const openApiRouter = Router();
+
+type Method = "get" | "post" | "patch" | "put" | "delete";
+type PathSpec = Partial<Record<Method, Record<string, unknown>>>;
+
+const jsonResponse = (description: string) => ({
+  description,
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        additionalProperties: true,
+      },
+    },
+  },
+});
+
+const noContentResponse = {
+  description: "No content",
+};
+
+const operation = (input: {
+  summary: string;
+  tags: string[];
+  secured?: boolean;
+  status?: number;
+  noContent?: boolean;
+}) => ({
+  summary: input.summary,
+  tags: input.tags,
+  ...(input.secured ? { security: [{ adminSession: [] }] } : {}),
+  responses: {
+    [input.noContent ? httpStatus.noContent : input.status ?? httpStatus.ok]: input.noContent
+      ? noContentResponse
+      : jsonResponse("Success"),
+    "400": { $ref: "#/components/responses/BadRequest" },
+    "401": { $ref: "#/components/responses/Unauthorized" },
+    "404": { $ref: "#/components/responses/NotFound" },
+    "409": { $ref: "#/components/responses/Conflict" },
+    "429": { $ref: "#/components/responses/RateLimited" },
+    "500": { $ref: "#/components/responses/ServerError" },
+  },
+});
+
+const publicPaths: Record<string, PathSpec> = {
+  "/health/live": { get: operation({ summary: "Live health check", tags: ["Health"] }) },
+  "/health/ready": { get: operation({ summary: "Ready health check", tags: ["Health"] }) },
+  "/openapi.json": { get: operation({ summary: "OpenAPI document", tags: ["OpenAPI"] }) },
+  "/public/offerings": { get: operation({ summary: "List public offerings", tags: ["Public Offerings"] }) },
+  "/public/offerings/{id}": { get: operation({ summary: "Get public offering by id", tags: ["Public Offerings"] }) },
+  "/public/offerings/slug/{slug}": { get: operation({ summary: "Get public offering by slug", tags: ["Public Offerings"] }) },
+  "/public/availability-slots": { get: operation({ summary: "Preview public availability slots", tags: ["Public Booking"] }) },
+  "/public/sessions": { get: operation({ summary: "List public fixed-date sessions", tags: ["Public Booking"] }) },
+  "/public/slot-holds": { post: operation({ summary: "Create public slot hold", tags: ["Public Booking"], status: httpStatus.created }) },
+  "/public/slot-holds/{id}": { delete: operation({ summary: "Release public slot hold", tags: ["Public Booking"], noContent: true }) },
+  "/public/bookings": { post: operation({ summary: "Create free booking", tags: ["Public Booking"], status: httpStatus.created }) },
+  "/public/bookings/{publicToken}/status": { get: operation({ summary: "Get public booking status", tags: ["Public Booking"] }) },
+  "/public/booking/price-preview": { post: operation({ summary: "Preview paid booking price", tags: ["Public Payments"] }) },
+  "/public/payments/paid-bookings": { post: operation({ summary: "Create paid booking", tags: ["Public Payments"], status: httpStatus.created }) },
+  "/public/payments/bookings/{publicToken}/payment-session": { get: operation({ summary: "Get payment session", tags: ["Public Payments"] }) },
+  "/public/payments/start": { post: operation({ summary: "Start payment by public token", tags: ["Public Payments"] }) },
+  "/public/payments/bookings/{publicToken}/start": { post: operation({ summary: "Start payment for booking", tags: ["Public Payments"] }) },
+  "/public/payments/bookings/{publicToken}/reconcile": { post: operation({ summary: "Reconcile public payment", tags: ["Public Payments"] }) },
+  "/public/quote-requests": { post: operation({ summary: "Submit public quote request", tags: ["Public Quote Requests"], status: httpStatus.created }) },
+  "/public/cms/settings": { get: operation({ summary: "Get public site settings", tags: ["Public CMS"] }) },
+  "/public/cms/navigation": { get: operation({ summary: "List public navigation items", tags: ["Public CMS"] }) },
+  "/public/cms/legal/{slug}": { get: operation({ summary: "Get public legal page", tags: ["Public CMS"] }) },
+  "/public/cms/pages/{slug}": { get: operation({ summary: "Get public CMS page", tags: ["Public CMS"] }) },
+  "/public/cms/blog/posts": { get: operation({ summary: "List public blog posts", tags: ["Public CMS"] }) },
+  "/public/cms/blog/posts/{slug}": { get: operation({ summary: "Get public blog post", tags: ["Public CMS"] }) },
+  "/webhooks/payments/kashier": { get: operation({ summary: "Kashier payment callback", tags: ["Payment Webhooks"] }) },
+};
+
+const adminResource = (tag: string, noun: string): PathSpec => ({
+  get: operation({ summary: `List ${noun}`, tags: [tag], secured: true }),
+  post: operation({ summary: `Create ${noun}`, tags: [tag], secured: true, status: httpStatus.created }),
+});
+
+const adminResourceItem = (tag: string, noun: string): PathSpec => ({
+  get: operation({ summary: `Get ${noun}`, tags: [tag], secured: true }),
+  patch: operation({ summary: `Update ${noun}`, tags: [tag], secured: true }),
+  delete: operation({ summary: `Archive ${noun}`, tags: [tag], secured: true, noContent: true }),
+});
+
+const adminPaths: Record<string, PathSpec> = {
+  "/admin/auth/login": { post: operation({ summary: "Admin login", tags: ["Admin Auth"] }) },
+  "/admin/auth/logout": { post: operation({ summary: "Admin logout", tags: ["Admin Auth"], noContent: true }) },
+  "/admin/auth/me": { get: operation({ summary: "Get current admin", tags: ["Admin Auth"], secured: true }) },
+  "/admin/offerings/categories": { get: operation({ summary: "List offering categories", tags: ["Admin Offerings"], secured: true }) },
+  "/admin/offerings": adminResource("Admin Offerings", "offerings"),
+  "/admin/offerings/{id}": adminResourceItem("Admin Offerings", "offering"),
+  "/admin/offerings/{id}/prices": { get: operation({ summary: "List offering prices", tags: ["Admin Offerings"], secured: true }), post: operation({ summary: "Create offering price", tags: ["Admin Offerings"], secured: true, status: httpStatus.created }) },
+  "/admin/offerings/{id}/prices/{priceId}": { patch: operation({ summary: "Update offering price", tags: ["Admin Offerings"], secured: true }), delete: operation({ summary: "Archive offering price", tags: ["Admin Offerings"], secured: true, noContent: true }) },
+  "/admin/bookings": { get: operation({ summary: "List bookings", tags: ["Admin Bookings"], secured: true }) },
+  "/admin/bookings/{id}": { get: operation({ summary: "Get booking", tags: ["Admin Bookings"], secured: true }) },
+  "/admin/bookings/{id}/status": { patch: operation({ summary: "Update booking status", tags: ["Admin Bookings"], secured: true }) },
+  "/admin/bookings/{id}/reschedule": { post: operation({ summary: "Reschedule booking", tags: ["Admin Bookings"], secured: true }) },
+  "/admin/bookings/{id}/calendar/retry": { post: operation({ summary: "Retry booking calendar sync", tags: ["Admin Bookings"], secured: true }) },
+  "/admin/booking-form-fields": adminResource("Admin Booking Form Fields", "booking form fields"),
+  "/admin/booking-form-fields/{id}": adminResourceItem("Admin Booking Form Fields", "booking form field"),
+  "/admin/locations": adminResource("Admin Locations", "locations"),
+  "/admin/locations/{id}": adminResourceItem("Admin Locations", "location"),
+  "/admin/sessions": adminResource("Admin Sessions", "sessions"),
+  "/admin/sessions/{id}": adminResourceItem("Admin Sessions", "session"),
+  "/admin/payments": { get: operation({ summary: "List payments", tags: ["Admin Payments"], secured: true }) },
+  "/admin/payments/{id}": { get: operation({ summary: "Get payment", tags: ["Admin Payments"], secured: true }) },
+  "/admin/payments/{id}/reconcile": { post: operation({ summary: "Reconcile payment", tags: ["Admin Payments"], secured: true }) },
+  "/admin/emails/deliveries": { get: operation({ summary: "List email deliveries", tags: ["Admin Emails"], secured: true }) },
+  "/admin/emails/deliveries/{id}/retry": { post: operation({ summary: "Retry email delivery", tags: ["Admin Emails"], secured: true }) },
+  "/admin/emails/templates": { get: operation({ summary: "List email templates", tags: ["Admin Emails"], secured: true }) },
+  "/admin/emails/templates/{key}": { patch: operation({ summary: "Update email template", tags: ["Admin Emails"], secured: true }) },
+  "/admin/quote-requests": { get: operation({ summary: "List quote requests", tags: ["Admin Quote Requests"], secured: true }) },
+  "/admin/quote-requests/{id}": { get: operation({ summary: "Get quote request", tags: ["Admin Quote Requests"], secured: true }), patch: operation({ summary: "Update quote request", tags: ["Admin Quote Requests"], secured: true }) },
+  "/admin/integrations/google-calendar/status": { get: operation({ summary: "Get Google Calendar status", tags: ["Admin Integrations"], secured: true }) },
+  "/admin/integrations/google-calendar/connect-url": { get: operation({ summary: "Get Google Calendar connect URL", tags: ["Admin Integrations"], secured: true }) },
+  "/admin/integrations/google-calendar/callback": { get: operation({ summary: "Complete Google Calendar OAuth", tags: ["Admin Integrations"], secured: true }) },
+  "/admin/integrations/google-calendar/settings": { patch: operation({ summary: "Update Google Calendar settings", tags: ["Admin Integrations"], secured: true }) },
+  "/admin/availability-rules": adminResource("Admin Availability", "availability rules"),
+  "/admin/availability-rules/{id}": adminResourceItem("Admin Availability", "availability rule"),
+  "/admin/availability-overrides": adminResource("Admin Availability", "availability overrides"),
+  "/admin/availability-overrides/{id}": adminResourceItem("Admin Availability", "availability override"),
+  "/admin/availability-slots": { get: operation({ summary: "Preview admin availability slots", tags: ["Admin Availability"], secured: true }) },
+  "/admin/cms/settings": { get: operation({ summary: "Get CMS settings", tags: ["Admin CMS"], secured: true }), patch: operation({ summary: "Update CMS settings", tags: ["Admin CMS"], secured: true }) },
+  "/admin/cms/navigation": adminResource("Admin CMS", "navigation items"),
+  "/admin/cms/navigation/{id}": adminResourceItem("Admin CMS", "navigation item"),
+  "/admin/cms/legal-pages": adminResource("Admin CMS", "legal pages"),
+  "/admin/cms/legal-pages/{id}": adminResourceItem("Admin CMS", "legal page"),
+  "/admin/cms/pages": adminResource("Admin CMS", "pages"),
+  "/admin/cms/pages/{id}": adminResourceItem("Admin CMS", "page"),
+  "/admin/cms/pages/{id}/sections": adminResource("Admin CMS", "page sections"),
+  "/admin/cms/pages/{id}/sections/{sectionId}": adminResourceItem("Admin CMS", "page section"),
+  "/admin/cms/blog/categories": adminResource("Admin CMS", "blog categories"),
+  "/admin/cms/blog/categories/{id}": adminResourceItem("Admin CMS", "blog category"),
+  "/admin/cms/blog/posts": adminResource("Admin CMS", "blog posts"),
+  "/admin/cms/blog/posts/{id}": adminResourceItem("Admin CMS", "blog post"),
+  "/admin/cms/media-assets": adminResource("Admin CMS", "media assets"),
+  "/admin/cms/media-assets/{id}": adminResourceItem("Admin CMS", "media asset"),
+  "/admin/cms/seo-metadata": { put: operation({ summary: "Upsert SEO metadata", tags: ["Admin CMS"], secured: true }) },
+};
+
+const openApiDocument = {
+  openapi: "3.1.0",
+  info: {
+    title: "Rammah API",
+    version: "0.1.0",
+  },
+  servers: [{ url: env.API_BASE_PATH }],
+  tags: [
+    "Health",
+    "OpenAPI",
+    "Public Offerings",
+    "Public Booking",
+    "Public Payments",
+    "Public Quote Requests",
+    "Public CMS",
+    "Payment Webhooks",
+    "Admin Auth",
+    "Admin Offerings",
+    "Admin Bookings",
+    "Admin Booking Form Fields",
+    "Admin Locations",
+    "Admin Sessions",
+    "Admin Payments",
+    "Admin Emails",
+    "Admin Quote Requests",
+    "Admin Integrations",
+    "Admin Availability",
+    "Admin CMS",
+  ].map((name) => ({ name })),
+  paths: {
+    ...publicPaths,
+    ...adminPaths,
+  },
+  components: {
+    securitySchemes: {
+      adminSession: {
+        type: "apiKey",
+        in: "cookie",
+        name: "rammah_admin_session",
+      },
+    },
+    responses: {
+      BadRequest: jsonResponse("Bad request"),
+      Unauthorized: jsonResponse("Unauthorized"),
+      NotFound: jsonResponse("Not found"),
+      Conflict: jsonResponse("Conflict"),
+      RateLimited: jsonResponse("Rate limited"),
+      ServerError: jsonResponse("Unexpected server error"),
+    },
+  },
+};
+
+openApiRouter.get("/openapi.json", (_req, res) => {
+  res.status(httpStatus.ok).json(openApiDocument);
+});
