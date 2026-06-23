@@ -1,9 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useInViewOnce } from "@/lib/useInViewOnce";
+import type { PublicPageSection } from "@/lib/api/cms";
 
-export default function AboutSection() {
+export default function AboutSection({ section }: { section?: PublicPageSection | null }) {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.26, "0px 0px -8% 0px");
+
+  const titleText = section?.title || "The Man Behind the Method";
+  const headline = (section?.config?.headline as string[]) || ["Not Just a", "Life Coach."];
+  const bodyText = section?.body || "Ramah combines 10+ years in IT engineering with deep psychological training — to build systems that actually change behavior, not just mindset.";
+  const stats = (section?.config?.stats as { number: string, label: string }[]) || [
+    { number: "1,500+", label: "Profiles Analyzed" },
+    { number: "1st", label: "aCRL Master Trainer" },
+    { number: "22+", label: "Countries" }
+  ];
 
   return (
     <section id="acrl" ref={ref} className="w-full min-h-[100dvh] bg-white flex items-center justify-center overflow-hidden py-20">
@@ -16,51 +27,45 @@ export default function AboutSection() {
           {/* Left — text content */}
           <div className="flex-1 flex flex-col justify-center gap-5 md:gap-7 px-6 md:px-10 lg:px-14 py-8 md:py-10">
             <p
-              className={`text-[#0F3B46] font-bold leading-[0.8] transition-all duration-[950ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+              className={`text-[#0F3B46] font-bold tracking-[0.2em] uppercase text-xs sm:text-sm mb-4 transition-all duration-700 ease-out ${
+                inView ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-4"
               }`}
-              style={{
-                fontSize: "clamp(1.15rem, 2.8vw, 3rem)",
-                transitionDelay: inView ? "220ms" : "0ms",
-              }}
             >
-              The Man Behind the Method
+              {titleText}
             </p>
 
-            <p
-              className="text-[#0F172A] font-bold leading-[0.85]"
-              style={{ fontSize: "clamp(1.6rem, 6.4vw, 6.8rem)" }}
+            <h2
+              className="text-[#07313A] font-bricolage font-bold leading-[0.9] tracking-tight mb-8"
+              style={{ fontSize: "clamp(3.5rem, 8vw, 6rem)" }}
             >
               <span
-                className={`block transition-all duration-[1050ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
+                className={`block transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  inView ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-6"
                 }`}
-                style={{ transitionDelay: inView ? "420ms" : "0ms" }}
+                style={{ transitionDelay: "100ms" }}
               >
-                Not Just a
+                {headline[0]}
               </span>
               <span
-                className={`block transition-all duration-[1050ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                  inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
+                className={`block text-[#0F3B46]/60 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  inView ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-6"
                 }`}
-                style={{ transitionDelay: inView ? "610ms" : "0ms" }}
+                style={{ transitionDelay: "180ms" }}
               >
-                Life Coach.
+                {headline[1]}
               </span>
-            </p>
+            </h2>
 
             <p
-              className={`text-black tracking-[0.06em] leading-[1.5] max-w-[608px] transition-all duration-[1000ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                inView ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"
+              className={`text-[#07313A] font-medium leading-relaxed max-w-xl mb-12 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                inView ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-6"
               }`}
               style={{
-                fontSize: "clamp(0.875rem, 1.8vw, 1.5rem)",
-                transitionDelay: inView ? "820ms" : "0ms",
+                fontSize: "clamp(1rem, 1.5vw, 1.25rem)",
+                transitionDelay: "260ms",
               }}
             >
-              Ramah combines 10+ years in IT engineering with deep psychological
-              training — to build systems that actually change behavior, not just
-              mindset.
+              {bodyText}
             </p>
 
             {/* CTA button */}
@@ -70,7 +75,7 @@ export default function AboutSection() {
               }`}
               style={{ transitionDelay: inView ? "980ms" : "0ms" }}
             >
-              <a
+              <Link
                 href="/about"
                 className="btn-fill-hover btn-fill-light inline-flex items-center gap-4 px-6 md:px-8 py-3.5 md:py-4 rounded-full border-4 border-[#0F3B46] bg-white shadow-[0_8px_20px_rgba(15,59,70,0.15)]"
               >
@@ -93,7 +98,7 @@ export default function AboutSection() {
                     fill="currentColor"
                   />
                 </svg>
-              </a>
+              </Link>
             </div>
           </div>
 
@@ -106,10 +111,26 @@ export default function AboutSection() {
           />
 
           {/* Right — stat cards */}
-          <div className="flex flex-col gap-4 md:gap-5 px-6 md:px-10 lg:px-14 py-8 md:py-10 lg:w-[44%]">
-            <StatCard number="1,500+" label="Profiles Analyzed" inView={inView} index={0} />
-            <StatCard number="1st" label="aCRL Master Trainer" numberSize="clamp(2rem, 4vw, 4rem)" inView={inView} index={1} />
-            <StatCard number="22+" label="Countries" inView={inView} index={2} />
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-6 md:gap-12 pl-0 md:pl-12 lg:pl-24 mt-8 md:mt-0">
+            <StatCard
+              number={stats[0]?.number}
+              label={stats[0]?.label}
+              inView={inView}
+              index={0}
+            />
+            <StatCard
+              number={stats[1]?.number}
+              label={stats[1]?.label}
+              numberSize="clamp(2rem, 4vw, 4rem)"
+              inView={inView}
+              index={1}
+            />
+            <StatCard
+              number={stats[2]?.number}
+              label={stats[2]?.label}
+              inView={inView}
+              index={2}
+            />
           </div>
         </div>
       </div>

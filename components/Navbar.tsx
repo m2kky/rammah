@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ShapeBlue, ShapeGreen, ShapeOrange, ShapeRed } from "./aCRLShapes";
 
-const menuItems = [
+import type { PublicNavigationItem } from "@/lib/api/cms";
+
+const fallbackMenuItems = [
   { label: "Home", href: "/", align: "start" as const },
   { label: "About", href: "/about", align: "start" as const },
   { label: "Services", href: "/services", align: "end" as const },
@@ -69,9 +71,10 @@ function AnimatedaCRLGlyph() {
 
 type NavbarProps = {
   entryReady: boolean;
+  navigation?: PublicNavigationItem[];
 };
 
-export default function Navbar({ entryReady }: NavbarProps) {
+export default function Navbar({ entryReady, navigation = [] }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -170,7 +173,11 @@ export default function Navbar({ entryReady }: NavbarProps) {
 
         <div className="relative z-10 h-full mx-auto max-w-[1440px] px-6 md:px-12 flex items-center">
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-14">
-            {menuItems.map((item) => (
+            {(navigation.length > 0 ? navigation.map((item, i) => ({
+              label: item.label,
+              href: item.url,
+              align: i % 2 === 0 ? ("start" as const) : ("end" as const)
+            })) : fallbackMenuItems).map((item) => (
               <div
                 key={item.label}
                 className={`${item.align === "start" ? "md:text-left" : "md:text-right"

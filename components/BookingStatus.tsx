@@ -296,6 +296,18 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                       </dd>
                     </div>
                   </div>
+                  {booking.location && (
+                    <div>
+                      <dt className="font-inter text-xs font-semibold uppercase text-[#102329]/42">
+                        Location
+                      </dt>
+                      <dd className="mt-2 font-inter text-sm text-[#102329]/72">
+                        {[booking.location.name, booking.location.city, booking.location.countryCode]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </dd>
+                    </div>
+                  )}
                   {booking.status === "confirmed" && (
                     <div>
                       <dt className="font-inter text-xs font-semibold uppercase text-[#102329]/42">

@@ -1,11 +1,17 @@
 "use client";
 import { ShapeBlue, ShapeGreen, ShapeOrange, ShapeRed } from "@/components/aCRLShapes";
 import { useInViewOnce } from "@/lib/useInViewOnce";
+import type { PublicPageSection } from "@/lib/api/cms";
 
 const iconFilter = { filter: "brightness(0) invert(1)" };
 
-export default function StatementSection() {
+export default function StatementSection({ section }: { section?: PublicPageSection | null }) {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.32, "0px 0px -10% 0px");
+  const titleText = section?.title || "REWRITE YOUR MIND";
+  const words = titleText.split(" ");
+  const word1 = words[0] || "REWRITE";
+  const word2 = words[1] || "YOUR";
+  const word3 = words[2] || "MIND";
 
   return (
     <section
@@ -20,7 +26,7 @@ export default function StatementSection() {
             } text-[7.5rem] sm:text-[9rem] md:text-[13rem] lg:text-[16rem] xl:text-[20rem]`}
           >
             <span className="inline-block" style={{ transform: "scaleX(0.68)", transformOrigin: "center" }}>
-              REWRITE
+              {word1}
             </span>
           </p>
 
@@ -34,7 +40,7 @@ export default function StatementSection() {
             }}
           >
             <span className="inline-block" style={{ transform: "scaleX(0.56)", transformOrigin: "center" }}>
-              YOUR
+              {word2}
             </span>
           </p>
 
@@ -82,7 +88,7 @@ export default function StatementSection() {
             }}
           >
             <span className="inline-block" style={{ transform: "scaleX(0.56)", transformOrigin: "center" }}>
-              MIND
+              {word3}
             </span>
           </p>
         </div>

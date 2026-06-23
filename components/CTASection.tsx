@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { useInViewOnce } from "@/lib/useInViewOnce";
+import type { PublicPageSection } from "@/lib/api/cms";
 
-export default function CTASection() {
+export default function CTASection({ section }: { section?: PublicPageSection | null }) {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.24, "0px 0px -6% 0px");
+  const titleText = (section?.title as string) || "Meet Ahmed Ramah";
+  const bodyText = (section?.body as string) || "from engineering code to decoding the human mind.";
+  const ctaText = (section?.config?.ctaText as string) || "Get Free 1 to 1";
+  const subscribeTitle = (section?.config?.subscribeTitle as string) || "Subscribe for Free Courses & More";
 
   return (
     <section id="contact" ref={ref} className="w-full min-h-[100dvh] px-4 md:px-6 pt-24 md:pt-28 pb-4 md:pb-6 flex">
@@ -24,9 +29,9 @@ export default function CTASection() {
               transitionDelay: inView ? "220ms" : "0ms",
             }}
           >
-            Meet Ahmed Ramah
+            {titleText}
             <br />
-            from engineering code to decoding the human mind.
+            {bodyText}
           </p>
 
           <Link
@@ -40,7 +45,7 @@ export default function CTASection() {
               className="text-[#0F3B46] font-bold leading-[0.8]"
               style={{ fontSize: "clamp(1rem, 2.2vw, 2.8rem)" }}
             >
-              Get Free 1 to 1
+              {ctaText}
             </span>
             <svg
               width="51"
@@ -74,9 +79,9 @@ export default function CTASection() {
               transitionDelay: inView ? "480ms" : "0ms",
             }}
           >
-            Subscribe for Free
-            <br />
-            Courses &amp; More
+            {subscribeTitle.split("Courses").length > 1 
+              ? <>{subscribeTitle.split("Courses")[0]}<br />Courses{subscribeTitle.split("Courses")[1]}</>
+              : subscribeTitle}
           </p>
 
           {/* Email input row */}

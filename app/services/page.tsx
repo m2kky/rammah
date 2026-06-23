@@ -1,6 +1,7 @@
 import PublicFrame from "@/components/PublicFrame";
 import ServicesStack from "@/components/services/ServicesStack";
 import { fetchPublicOfferingRecords, type PublicOffering } from "@/lib/api/offerings";
+import { fetchPublicPage, findPublicSection } from "@/lib/api/cms";
 import { servicesFallback } from "@/data/servicesFallback";
 
 const fallbackOfferings = servicesFallback.map((service) => ({
@@ -42,10 +43,17 @@ export const metadata = {
 };
 
 export default async function ServicesPage() {
-  const offerings = await getOfferings();
+  const [offerings, page] = await Promise.all([
+    getOfferings(),
+    fetchPublicPage("services").catch(() => null)
+  ]);
   const categories = Array.from(
     new Set(offerings.map((offering) => offering.category?.name ?? "Programs")),
   );
+
+  const headerSec = findPublicSection(page, "header");
+  const headerTitle = headerSec?.title || "Work on the system.";
+  const headerBody = headerSec?.body || "Choose the format that matches the work: personal decoding, therapy-style support, intensive workshops, or custom team programs.";
 
   return (
     <PublicFrame>
@@ -56,11 +64,10 @@ export default async function ServicesPage() {
           </p>
           <div className="mt-5 grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
             <h1 className="text-[clamp(4.2rem,13vw,13rem)] font-extrabold leading-[0.82] tracking-normal">
-              Work on the system.
+              {headerTitle}
             </h1>
             <p className="max-w-xl font-inter text-base leading-7 text-white/64 md:text-lg">
-              Choose the format that matches the work: personal decoding,
-              therapy-style support, intensive workshops, or custom team programs.
+              {headerBody}
             </p>
           </div>
           <div className="mt-10 flex flex-wrap gap-3 font-inter text-sm font-semibold text-white/70">
