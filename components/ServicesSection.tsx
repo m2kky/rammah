@@ -214,7 +214,7 @@ export default function ServicesSection() {
             trigger: section,
             start: "top top",
             end: "bottom bottom",
-            scrub: 1.95,
+            scrub: 2.4,
           },
         });
 
@@ -280,22 +280,45 @@ export default function ServicesSection() {
         /* ════════════════════════════════════════════
            PHASE 3  (0.42 → 0.95)  per-service reveals
         ════════════════════════════════════════════ */
-        const phaseStart = 0.42;
-        const phaseEnd   = 0.95;
+        const phaseStart = 0.38;
+        const phaseEnd   = 0.96;
         const perService = (phaseEnd - phaseStart) / services.length;
 
         services.forEach((s, i) => {
           const start         = phaseStart + i * perService;
           const contentReveal = start + perService * 0.12;
 
-          /* hard-reset other service content */
+          if (i > 0) {
+            const previous = i - 1;
+            tl.to(
+              [
+                titleRefs.current[previous],
+                subtitleRefs.current[previous],
+                descRefs.current[previous],
+                ctaRefs.current[previous],
+              ].filter(Boolean),
+              {
+                opacity: 0,
+                y: -18,
+                filter: "blur(6px)",
+                duration: perService * 0.16,
+                ease: "power1.inOut",
+              },
+              start
+            );
+            if (ctaRefs.current[previous]) {
+              tl.set(ctaRefs.current[previous], { pointerEvents: "none" }, start);
+            }
+          }
+
+          /* keep non-active service buttons from catching clicks */
           services.forEach((_, j) => {
-          if (j === i) return;
-          if (titleRefs.current[j])    tl.set(titleRefs.current[j],    { opacity: 0 }, start);
-          if (subtitleRefs.current[j]) tl.set(subtitleRefs.current[j], { opacity: 0, clipPath: "inset(0 100% 0 0)" }, start);
-          if (descRefs.current[j])     tl.set(descRefs.current[j],     { opacity: 0, filter: "blur(8px)" }, start);
-          if (ctaRefs.current[j])      tl.set(ctaRefs.current[j],      { opacity: 0 }, start);
-        });
+            if (j === i || j === i - 1) return;
+            if (titleRefs.current[j])    tl.set(titleRefs.current[j],    { opacity: 0 }, start);
+            if (subtitleRefs.current[j]) tl.set(subtitleRefs.current[j], { opacity: 0, clipPath: "inset(0 100% 0 0)" }, start);
+            if (descRefs.current[j])     tl.set(descRefs.current[j],     { opacity: 0, filter: "blur(8px)" }, start);
+            if (ctaRefs.current[j])      tl.set(ctaRefs.current[j],      { opacity: 0, pointerEvents: "none" }, start);
+          });
 
           /* BG transition from right edge (card side) */
           runBgSweep(
@@ -336,14 +359,14 @@ export default function ServicesSection() {
           /* content reveals */
           if (titleRefs.current[i]) {
             tl.fromTo(titleRefs.current[i],
-              { opacity: 0, x: 60 },
-              { opacity: 1, x: 0, color: s.text, duration: perService * 0.34, ease: "power2.out" },
+              { opacity: 0, x: 60, y: 0, filter: "blur(0px)" },
+              { opacity: 1, x: 0, y: 0, filter: "blur(0px)", color: s.text, duration: perService * 0.34, ease: "power2.out" },
               contentReveal);
           }
           if (subtitleRefs.current[i]) {
             tl.fromTo(subtitleRefs.current[i],
-              { clipPath: "inset(0 100% 0 0)", opacity: 1 },
-              { clipPath: "inset(0 0% 0 0)", color: s.text, duration: perService * 0.3, ease: "power2.out" },
+              { clipPath: "inset(0 100% 0 0)", opacity: 1, y: 0, filter: "blur(0px)" },
+              { clipPath: "inset(0 0% 0 0)", y: 0, filter: "blur(0px)", color: s.text, duration: perService * 0.3, ease: "power2.out" },
               contentReveal + perService * 0.2);
           }
           if (descRefs.current[i]) {
@@ -354,20 +377,24 @@ export default function ServicesSection() {
           }
           if (ctaRefs.current[i]) {
             tl.fromTo(ctaRefs.current[i],
-              { y: 24, opacity: 0 },
+              { y: 24, opacity: 0, pointerEvents: "none" },
               { y: 0, opacity: 1, color: s.text, borderColor: s.text + "4D", duration: perService * 0.28, ease: "power2.out" },
               contentReveal + perService * 0.5);
+            tl.set(ctaRefs.current[i], { pointerEvents: "auto" }, contentReveal + perService * 0.62);
           }
         });
 
         /* fade last service before exit */
         const last = services.length - 1;
         [titleRefs, subtitleRefs, descRefs, ctaRefs].forEach((r) => {
-          if (r.current[last]) tl.to(r.current[last], { opacity: 0, duration: 0.03 }, 0.93);
+          if (r.current[last]) tl.to(r.current[last], { opacity: 0, duration: 0.08 }, 0.94);
         });
+        if (ctaRefs.current[last]) {
+          tl.set(ctaRefs.current[last], { pointerEvents: "none" }, 0.94);
+        }
 
         /* section exits left */
-        tl.to(container, { xPercent: -100, duration: 0.07, ease: "power2.in" }, 0.93);
+        tl.to(container, { xPercent: -100, duration: 0.07, ease: "power2.in" }, 0.94);
       });
 
       /* mobile: roles top + frame-sequence middle + cards stack, then service-by-service reveal */
@@ -389,7 +416,7 @@ export default function ServicesSection() {
             trigger: section,
             start: "top top",
             end: "bottom bottom",
-            scrub: 1.4,
+            scrub: 1.8,
           },
         });
 
@@ -410,7 +437,7 @@ export default function ServicesSection() {
           },
         });
 
-        tl.set(mobileDetailRefs.current, { autoAlpha: 0, y: 20 }, 0);
+        tl.set(mobileDetailRefs.current, { autoAlpha: 0, y: 20, pointerEvents: "none" }, 0);
         tl.set(mobileDetailsStageRef.current, { autoAlpha: 1 }, 0);
 
         tl.fromTo(
@@ -453,18 +480,32 @@ export default function ServicesSection() {
           0.43
         );
 
-        const phaseStart = 0.52;
-        const phaseEnd   = 0.95;
+        const phaseStart = 0.5;
+        const phaseEnd   = 0.96;
         const perService = (phaseEnd - phaseStart) / services.length;
 
         services.forEach((s, i) => {
           const start = phaseStart + i * perService;
           const reveal = start + perService * 0.12;
 
+          if (i > 0 && mobileDetailRefs.current[i - 1]) {
+            tl.to(
+              mobileDetailRefs.current[i - 1],
+              {
+                autoAlpha: 0,
+                y: -18,
+                pointerEvents: "none",
+                duration: perService * 0.16,
+                ease: "power1.inOut",
+              },
+              start
+            );
+          }
+
           services.forEach((_, j) => {
-            if (j === i) return;
+            if (j === i || j === i - 1) return;
             if (mobileDetailRefs.current[j]) {
-              tl.set(mobileDetailRefs.current[j], { autoAlpha: 0, y: 20 }, start);
+              tl.set(mobileDetailRefs.current[j], { autoAlpha: 0, y: 20, pointerEvents: "none" }, start);
             }
           });
 
@@ -473,8 +514,8 @@ export default function ServicesSection() {
           if (mobileDetailRefs.current[i]) {
             tl.fromTo(
               mobileDetailRefs.current[i],
-              { autoAlpha: 0, y: 28 },
-              { autoAlpha: 1, y: 0, duration: perService * 0.48, ease: "power2.out" },
+              { autoAlpha: 0, y: 28, pointerEvents: "none" },
+              { autoAlpha: 1, y: 0, pointerEvents: "auto", duration: perService * 0.48, ease: "power2.out" },
               reveal
             );
           }
@@ -482,7 +523,7 @@ export default function ServicesSection() {
 
         const last = services.length - 1;
         if (mobileDetailRefs.current[last]) {
-          tl.to(mobileDetailRefs.current[last], { autoAlpha: 0, duration: 0.05 }, 0.96);
+          tl.to(mobileDetailRefs.current[last], { autoAlpha: 0, pointerEvents: "none", duration: 0.06 }, 0.96);
         }
       });
 
@@ -496,7 +537,7 @@ export default function ServicesSection() {
     <section
       ref={sectionRef}
       id="services"
-      className="relative w-full h-[600vh] max-md:h-[540vh]"
+      className="relative w-full h-[760vh] max-md:h-[680vh]"
     >
       {/* background layer */}
       <div
@@ -572,7 +613,7 @@ export default function ServicesSection() {
                 href={`/booking/${s.slug}`}
                 ref={(el) => { ctaRefs.current[i] = el; }}
                 className="inline-flex items-center gap-3 rounded-full border px-8 py-3 text-sm font-semibold hover:bg-current/10 transition-colors pointer-events-auto w-fit"
-                style={{ color: s.text, borderColor: s.text + "4D", opacity: 0 }}
+                style={{ color: s.text, borderColor: s.text + "4D", opacity: 0, pointerEvents: "none" }}
               >
                 Book Now
                 <svg width="20" height="10" viewBox="0 0 51 21" fill="none">
@@ -672,7 +713,7 @@ export default function ServicesSection() {
 
           <div
             ref={mobileDetailsStageRef}
-            className="absolute left-5 right-5 bottom-20 min-h-[250px] z-40"
+            className="absolute left-5 right-5 bottom-32 min-h-[250px] z-40"
           >
             {services.map((s, i) => (
               <div

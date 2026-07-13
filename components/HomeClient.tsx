@@ -22,8 +22,8 @@ export default function HomeClient({ page, footer }: { page: PublicPage | null; 
         <Navbar entryReady={isLoaded} />
         <HeroSection entryReady={isLoaded} section={findPublicSection(page, "hero")} />
         <StatementSection section={findPublicSection(page, "statement")} />
-        <MethodologySection section={findPublicSection(page, "methodology")} />
         <AboutSection section={findPublicSection(page, "about_preview")} />
+        <MethodologySection section={findPublicSection(page, "methodology")} />
         <ServicesSection />
         <CTASection section={findPublicSection(page, "cta")} />
         {footer}
