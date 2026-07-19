@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchPublicOfferings } from "@/lib/api/offerings";
 import { servicesFallback } from "@/data/servicesFallback";
 
@@ -17,6 +18,7 @@ const roles = ["Engineer", "Systematizer", "Trainer", "Coach"];
 
 export default function ServicesSection() {
   const [services, setServices] = useState(servicesFallback);
+  const router = useRouter();
 
   const sectionRef     = useRef<HTMLDivElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
@@ -24,13 +26,10 @@ export default function ServicesSection() {
 
   const wordRefs       = useRef<(HTMLParagraphElement | null)[]>([]);
   const cardRefs       = useRef<(HTMLDivElement | null)[]>([]);
-  const titleRefs      = useRef<(HTMLParagraphElement | null)[]>([]);
-  const subtitleRefs   = useRef<(HTMLParagraphElement | null)[]>([]);
-  const descRefs       = useRef<(HTMLParagraphElement | null)[]>([]);
-  const ctaRefs        = useRef<(HTMLAnchorElement | null)[]>([]);
+  const servicePanelRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const servicePanelContentRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const bgRef          = useRef<HTMLDivElement>(null);
-  const bgSweepRef     = useRef<HTMLDivElement>(null);
   const videoWrapRef   = useRef<HTMLDivElement>(null);
   const cardsColRef    = useRef<HTMLDivElement>(null);
 
@@ -41,10 +40,27 @@ export default function ServicesSection() {
   const mobileDetailsStageRef = useRef<HTMLDivElement>(null);
   const mobileCardRefs     = useRef<(HTMLDivElement | null)[]>([]);
   const mobileDetailRefs   = useRef<(HTMLDivElement | null)[]>([]);
+  const mobileDetailContentRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   /* preloaded Image objects — filled before useGSAP */
   const framesRef = useRef<HTMLImageElement[]>([]);
   const loadedRef = useRef(0);
+
+  const handleBookingLinkClick = (event: MouseEvent<HTMLAnchorElement>, slug: string) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    router.push(`/booking/${slug}`);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -96,70 +112,6 @@ export default function ServicesSection() {
     drawImageContain(img, targetCanvas);
   };
 
-  /* helper: liquid-like color sweep from either side */
-  const runBgSweep = (
-    tl: gsap.core.Timeline,
-    start: number,
-    color: string,
-    duration: number,
-    from: "right" | "left" = "right"
-  ) => {
-    if (!bgRef.current || !bgSweepRef.current) return;
-    const moveDirection = from === "right" ? -1 : 1;
-
-    tl.set(
-      bgSweepRef.current,
-      {
-        backgroundColor: color,
-        scaleX: 0,
-        scaleY: 1.02,
-        xPercent: 0,
-        skewX: 0,
-        autoAlpha: 0.78,
-        transformOrigin: from === "right" ? "right center" : "left center",
-        filter: "blur(14px)",
-      },
-      start
-    );
-
-    tl.to(
-      bgSweepRef.current,
-      {
-        scaleX: 1.08,
-        scaleY: 1,
-        xPercent: 4 * moveDirection,
-        skewX: 2 * moveDirection,
-        duration: duration * 0.68,
-        ease: "power2.out",
-      },
-      start
-    );
-
-    tl.to(
-      bgSweepRef.current,
-      {
-        scaleX: 1.01,
-        xPercent: 0,
-        skewX: 0,
-        filter: "blur(8px)",
-        duration: duration * 0.16,
-        ease: "sine.out",
-      },
-      start + duration * 0.68
-    );
-    tl.to(
-      bgSweepRef.current,
-      { autoAlpha: 0, duration: duration * 0.24, ease: "sine.out" },
-      start + duration * 0.76
-    );
-    tl.to(
-      bgRef.current,
-      { backgroundColor: color, duration: duration * 0.92, ease: "sine.inOut" },
-      start + duration * 0.08
-    );
-    tl.set(bgSweepRef.current, { scaleX: 0, autoAlpha: 0, skewX: 0, xPercent: 0 }, start + duration + 0.0001);
-  };
-
   /* ─── Preload all frames ─── */
   useEffect(() => {
     const imgs: HTMLImageElement[] = [];
@@ -190,13 +142,6 @@ export default function ServicesSection() {
       mm.add("(min-width: 768px)", () => {
         const section   = sectionRef.current!;
         const container = containerRef.current!;
-
-        const firstCard = cardRefs.current[0];
-        const secondCard = cardRefs.current[1];
-        const slotPx =
-          firstCard && secondCard
-            ? secondCard.offsetTop - firstCard.offsetTop
-            : window.innerHeight * 0.18;
 
         /* pin */
         ScrollTrigger.create({
@@ -277,120 +222,102 @@ export default function ServicesSection() {
           0.37
         );
 
+        tl.to(
+          cardsColRef.current,
+          { autoAlpha: 0, yPercent: -10, scale: 0.98, duration: 0.08, ease: "power2.out" },
+          0.36
+        );
+
+        const desktopPanels = servicePanelRefs.current.filter(
+          (el): el is HTMLDivElement => Boolean(el)
+        );
+        const desktopPanelContents = servicePanelContentRefs.current.filter(
+          (el): el is HTMLDivElement => Boolean(el)
+        );
+
+        tl.set(desktopPanels, { yPercent: 105, scale: 1.025, autoAlpha: 1, pointerEvents: "none" }, 0);
+        tl.set(desktopPanelContents, { y: 68, autoAlpha: 0 }, 0);
+
         /* ════════════════════════════════════════════
-           PHASE 3  (0.42 → 0.95)  per-service reveals
+           PHASE 3  (0.40 → 0.95)  stacked service panels
         ════════════════════════════════════════════ */
-        const phaseStart = 0.38;
+        const phaseStart = 0.4;
         const phaseEnd   = 0.96;
         const perService = (phaseEnd - phaseStart) / services.length;
 
-        services.forEach((s, i) => {
-          const start         = phaseStart + i * perService;
-          const contentReveal = start + perService * 0.12;
+        services.forEach((_, i) => {
+          const start = phaseStart + i * perService;
+          const contentReveal = start + perService * 0.18;
+          const panel = servicePanelRefs.current[i];
+          const content = servicePanelContentRefs.current[i];
+          const previousPanel = i > 0 ? servicePanelRefs.current[i - 1] : null;
+          const previousContent = i > 0 ? servicePanelContentRefs.current[i - 1] : null;
 
-          if (i > 0) {
-            const previous = i - 1;
+          if (previousContent) {
             tl.to(
-              [
-                titleRefs.current[previous],
-                subtitleRefs.current[previous],
-                descRefs.current[previous],
-                ctaRefs.current[previous],
-              ].filter(Boolean),
+              previousContent,
               {
-                opacity: 0,
-                y: -18,
-                filter: "blur(6px)",
-                duration: perService * 0.16,
+                autoAlpha: 0,
+                y: -42,
+                duration: perService * 0.2,
                 ease: "power1.inOut",
               },
               start
             );
-            if (ctaRefs.current[previous]) {
-              tl.set(ctaRefs.current[previous], { pointerEvents: "none" }, start);
-            }
           }
 
-          /* keep non-active service buttons from catching clicks */
-          services.forEach((_, j) => {
-            if (j === i || j === i - 1) return;
-            if (titleRefs.current[j])    tl.set(titleRefs.current[j],    { opacity: 0 }, start);
-            if (subtitleRefs.current[j]) tl.set(subtitleRefs.current[j], { opacity: 0, clipPath: "inset(0 100% 0 0)" }, start);
-            if (descRefs.current[j])     tl.set(descRefs.current[j],     { opacity: 0, filter: "blur(8px)" }, start);
-            if (ctaRefs.current[j])      tl.set(ctaRefs.current[j],      { opacity: 0, pointerEvents: "none" }, start);
-          });
-
-          /* BG transition from right edge (card side) */
-          runBgSweep(
-            tl,
-            start,
-            s.bg,
-            perService * 0.54,
-            i % 2 === 0 ? "right" : "left"
-          );
-
-          /* card slides off right */
-          if (cardRefs.current[i]) {
+          if (previousPanel) {
             tl.to(
-              cardRefs.current[i],
+              previousPanel,
               {
-                xPercent: 114,
-                opacity: 0,
-                scale: 0.985,
-                duration: perService * 0.34,
-                ease: "power2.inOut",
+                scale: 0.975,
+                duration: perService * 0.36,
+                ease: "power1.out",
               },
               start
             );
+            tl.set(previousPanel, { pointerEvents: "none" }, start);
           }
 
-          /* remaining cards shift up */
-          const shiftY = -(i + 1) * slotPx;
-          for (let j = i + 1; j < services.length; j++) {
-            if (cardRefs.current[j]) {
-              tl.to(
-                cardRefs.current[j],
-                { y: shiftY, duration: perService * 0.36, ease: "power2.inOut" },
-                start
-              );
-            }
+          if (panel) {
+            tl.fromTo(
+              panel,
+              {
+                yPercent: i === 0 ? 22 : 105,
+                scale: i === 0 ? 1.01 : 1.025,
+              },
+              {
+                yPercent: 0,
+                scale: 1,
+                duration: perService * 0.72,
+                ease: "power3.out",
+              },
+              start
+            );
+            tl.set(panel, { pointerEvents: "auto" }, contentReveal);
           }
 
-          /* content reveals */
-          if (titleRefs.current[i]) {
-            tl.fromTo(titleRefs.current[i],
-              { opacity: 0, x: 60, y: 0, filter: "blur(0px)" },
-              { opacity: 1, x: 0, y: 0, filter: "blur(0px)", color: s.text, duration: perService * 0.34, ease: "power2.out" },
-              contentReveal);
-          }
-          if (subtitleRefs.current[i]) {
-            tl.fromTo(subtitleRefs.current[i],
-              { clipPath: "inset(0 100% 0 0)", opacity: 1, y: 0, filter: "blur(0px)" },
-              { clipPath: "inset(0 0% 0 0)", y: 0, filter: "blur(0px)", color: s.text, duration: perService * 0.3, ease: "power2.out" },
-              contentReveal + perService * 0.2);
-          }
-          if (descRefs.current[i]) {
-            tl.fromTo(descRefs.current[i],
-              { opacity: 0, filter: "blur(8px)" },
-              { opacity: 1, filter: "blur(0px)", color: s.text, duration: perService * 0.32, ease: "power1.out" },
-              contentReveal + perService * 0.36);
-          }
-          if (ctaRefs.current[i]) {
-            tl.fromTo(ctaRefs.current[i],
-              { y: 24, opacity: 0, pointerEvents: "none" },
-              { y: 0, opacity: 1, color: s.text, borderColor: s.text + "4D", duration: perService * 0.28, ease: "power2.out" },
-              contentReveal + perService * 0.5);
-            tl.set(ctaRefs.current[i], { pointerEvents: "auto" }, contentReveal + perService * 0.62);
+          if (content) {
+            tl.fromTo(
+              content,
+              { autoAlpha: 0, y: 68 },
+              { autoAlpha: 1, y: 0, duration: perService * 0.44, ease: "power3.out" },
+              contentReveal
+            );
           }
         });
 
         /* fade last service before exit */
         const last = services.length - 1;
-        [titleRefs, subtitleRefs, descRefs, ctaRefs].forEach((r) => {
-          if (r.current[last]) tl.to(r.current[last], { opacity: 0, duration: 0.08 }, 0.94);
-        });
-        if (ctaRefs.current[last]) {
-          tl.set(ctaRefs.current[last], { pointerEvents: "none" }, 0.94);
+        if (servicePanelContentRefs.current[last]) {
+          tl.to(
+            servicePanelContentRefs.current[last],
+            { autoAlpha: 0, y: -38, duration: 0.08, ease: "power1.in" },
+            0.94
+          );
+        }
+        if (servicePanelRefs.current[last]) {
+          tl.set(servicePanelRefs.current[last], { pointerEvents: "none" }, 0.94);
         }
 
         /* section exits left */
@@ -437,7 +364,15 @@ export default function ServicesSection() {
           },
         });
 
-        tl.set(mobileDetailRefs.current, { autoAlpha: 0, y: 20, pointerEvents: "none" }, 0);
+        const mobilePanels = mobileDetailRefs.current.filter(
+          (el): el is HTMLDivElement => Boolean(el)
+        );
+        const mobilePanelContents = mobileDetailContentRefs.current.filter(
+          (el): el is HTMLDivElement => Boolean(el)
+        );
+
+        tl.set(mobilePanels, { yPercent: 108, scale: 1.025, autoAlpha: 1, pointerEvents: "none" }, 0);
+        tl.set(mobilePanelContents, { y: 44, autoAlpha: 0 }, 0);
         tl.set(mobileDetailsStageRef.current, { autoAlpha: 1 }, 0);
 
         tl.fromTo(
@@ -484,46 +419,69 @@ export default function ServicesSection() {
         const phaseEnd   = 0.96;
         const perService = (phaseEnd - phaseStart) / services.length;
 
-        services.forEach((s, i) => {
+        services.forEach((_, i) => {
           const start = phaseStart + i * perService;
           const reveal = start + perService * 0.12;
 
-          if (i > 0 && mobileDetailRefs.current[i - 1]) {
+          if (i > 0 && mobileDetailContentRefs.current[i - 1]) {
             tl.to(
-              mobileDetailRefs.current[i - 1],
+              mobileDetailContentRefs.current[i - 1],
               {
                 autoAlpha: 0,
-                y: -18,
-                pointerEvents: "none",
-                duration: perService * 0.16,
+                y: -34,
+                duration: perService * 0.2,
                 ease: "power1.inOut",
               },
               start
             );
+            tl.set(mobileDetailRefs.current[i - 1], { pointerEvents: "none" }, start);
           }
 
           services.forEach((_, j) => {
             if (j === i || j === i - 1) return;
             if (mobileDetailRefs.current[j]) {
-              tl.set(mobileDetailRefs.current[j], { autoAlpha: 0, y: 20, pointerEvents: "none" }, start);
+              tl.set(mobileDetailRefs.current[j], { yPercent: 108, pointerEvents: "none" }, start);
             }
           });
-
-          runBgSweep(tl, start, s.bg, perService * 0.5, i % 2 === 0 ? "right" : "left");
 
           if (mobileDetailRefs.current[i]) {
             tl.fromTo(
               mobileDetailRefs.current[i],
-              { autoAlpha: 0, y: 28, pointerEvents: "none" },
-              { autoAlpha: 1, y: 0, pointerEvents: "auto", duration: perService * 0.48, ease: "power2.out" },
+              {
+                yPercent: i === 0 ? 28 : 108,
+                scale: 1.025,
+                pointerEvents: "none",
+              },
+              {
+                yPercent: 0,
+                scale: 1,
+                duration: perService * 0.7,
+                ease: "power3.out",
+              },
+              start
+            );
+            tl.set(mobileDetailRefs.current[i], { pointerEvents: "auto" }, reveal);
+          }
+          if (mobileDetailContentRefs.current[i]) {
+            tl.fromTo(
+              mobileDetailContentRefs.current[i],
+              { autoAlpha: 0, y: 44 },
+              { autoAlpha: 1, y: 0, duration: perService * 0.42, ease: "power3.out" },
               reveal
             );
           }
         });
 
         const last = services.length - 1;
+        if (mobileDetailContentRefs.current[last]) {
+          tl.to(
+            mobileDetailContentRefs.current[last],
+            { autoAlpha: 0, y: -28, duration: 0.06, ease: "power1.in" },
+            0.96
+          );
+        }
         if (mobileDetailRefs.current[last]) {
-          tl.to(mobileDetailRefs.current[last], { autoAlpha: 0, pointerEvents: "none", duration: 0.06 }, 0.96);
+          tl.set(mobileDetailRefs.current[last], { pointerEvents: "none" }, 0.96);
         }
       });
 
@@ -545,11 +503,6 @@ export default function ServicesSection() {
         className="absolute inset-0 z-0"
         style={{ backgroundColor: "#000000" }}
       />
-      <div
-        ref={bgSweepRef}
-        className="absolute inset-0 z-0 scale-x-0 origin-right pointer-events-none"
-        style={{ backgroundColor: "#000000", filter: "blur(12px)" }}
-      />
 
       {/* sticky container */}
       <div
@@ -566,9 +519,67 @@ export default function ServicesSection() {
           Scroll to Discover ———
         </p>
 
-        {/* ── LEFT 50%: role words + per-service content ── */}
+        {/* ── STACKED SERVICE PANELS ── */}
+        <div className="absolute inset-0 z-30 hidden overflow-hidden md:block pointer-events-none">
+          {services.map((s, i) => (
+            <div
+              key={`${s.slug}-desktop-panel`}
+              data-service-panel="desktop"
+              ref={(el) => { servicePanelRefs.current[i] = el; }}
+              className="absolute inset-0 flex items-center overflow-hidden px-6 md:px-16 will-change-transform"
+              style={{
+                backgroundColor: s.bg,
+                color: s.text,
+                zIndex: i + 1,
+                visibility: "hidden",
+              }}
+            >
+              <div
+                ref={(el) => { servicePanelContentRefs.current[i] = el; }}
+                className="grid w-full items-end gap-10 will-change-transform lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.36fr)]"
+              >
+                <div>
+                  <p className="font-inter mb-5 text-xs font-semibold uppercase tracking-[0.18em] opacity-60">
+                    {String(i + 1).padStart(2, "0")} · Program
+                  </p>
+                  <h2
+                    className="font-bold leading-none"
+                    style={{ fontSize: "clamp(3.1rem, 8.2vw, 8.2rem)" }}
+                  >
+                    {s.title}
+                  </h2>
+                  <p className="mt-6 max-w-3xl font-inter text-xl leading-tight opacity-90">
+                    {s.subtitle}
+                  </p>
+                  <p className="mt-4 max-w-2xl font-inter text-base leading-7 opacity-72">
+                    {s.desc}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-5 lg:items-end">
+                  <Link
+                    href={`/booking/${s.slug}`}
+                    onClick={(event) => handleBookingLinkClick(event, s.slug)}
+                    className="pointer-events-auto inline-flex items-center justify-center gap-3 rounded-full border px-8 py-4 font-inter text-sm font-bold transition-transform hover:scale-[1.03]"
+                    style={{ borderColor: `${s.text}66`, color: s.text }}
+                  >
+                    Book Now
+                    <svg width="20" height="10" viewBox="0 0 51 21" fill="none" aria-hidden="true">
+                      <path
+                        d="M50.1 10.9C51.3 9.7 51.3 7.8 50.1 6.6L37-6.5C35.8-7.7 33.9-7.7 32.7-6.5C31.5-5.3 31.5-3.4 32.7-2.2L44.7 9.8 32.7 21.7C31.5 22.9 31.5 24.8 32.7 26 33.9 27.2 35.8 27.2 37 26L50.1 12.9ZM0 11.8H48V7.8H0V11.8Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── LEFT 50%: role words ── */}
         <div
-          className="absolute inset-y-0 left-0 w-1/2 flex flex-col justify-center pl-6 md:pl-16 z-20 max-md:hidden"
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 flex flex-col justify-center pl-6 md:pl-16 z-20 max-md:hidden"
         >
           {/* Phase 1: role words */}
           {roles.map((word, i) => (
@@ -581,54 +592,10 @@ export default function ServicesSection() {
               {word}
             </p>
           ))}
-
-          {/* Phase 3: per-service content, absolutely stacked */}
-          {services.map((s, i) => (
-            <div
-              key={s.slug}
-              className="absolute inset-y-0 left-0 w-full flex flex-col justify-center pl-6 md:pl-16 pointer-events-none"
-            >
-              <p
-                ref={(el) => { titleRefs.current[i] = el; }}
-                className="font-bold leading-none mb-4 pointer-events-auto"
-                style={{ fontSize: "clamp(3rem, 8vw, 8rem)", color: s.text, opacity: 0 }}
-              >
-                {s.title}
-              </p>
-              <p
-                ref={(el) => { subtitleRefs.current[i] = el; }}
-                className="text-sm md:text-lg mb-3 pointer-events-auto"
-                style={{ color: s.text, opacity: 0, clipPath: "inset(0 100% 0 0)" }}
-              >
-                {s.subtitle}
-              </p>
-              <p
-                ref={(el) => { descRefs.current[i] = el; }}
-                className="text-sm leading-relaxed max-w-md mb-6 pointer-events-auto"
-                style={{ color: s.text, opacity: 0, filter: "blur(8px)" }}
-              >
-                {s.desc}
-              </p>
-              <Link
-                href={`/booking/${s.slug}`}
-                ref={(el) => { ctaRefs.current[i] = el; }}
-                className="inline-flex items-center gap-3 rounded-full border px-8 py-3 text-sm font-semibold hover:bg-current/10 transition-colors pointer-events-auto w-fit"
-                style={{ color: s.text, borderColor: s.text + "4D", opacity: 0, pointerEvents: "none" }}
-              >
-                Book Now
-                <svg width="20" height="10" viewBox="0 0 51 21" fill="none">
-                  <path
-                    d="M50.1 10.9C51.3 9.7 51.3 7.8 50.1 6.6L37-6.5C35.8-7.7 33.9-7.7 32.7-6.5C31.5-5.3 31.5-3.4 32.7-2.2L44.7 9.8 32.7 21.7C31.5 22.9 31.5 24.8 32.7 26 33.9 27.2 35.8 27.2 37 26L50.1 12.9ZM0 11.8H48V7.8H0V11.8Z"
-                    fill="currentColor"
-                  />
-                </svg>
-              </Link>
-            </div>
-          ))}
         </div>
 
         {/* ── RIGHT 50%: canvas (image sequence) + cards ── */}
-        <div className="absolute inset-y-0 right-0 w-1/2 flex items-center justify-center z-20 max-md:hidden">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-center justify-center z-20 max-md:hidden">
 
           {/* canvas wrap — animates left into left half during phase 2 */}
           <div
@@ -713,39 +680,46 @@ export default function ServicesSection() {
 
           <div
             ref={mobileDetailsStageRef}
-            className="absolute left-5 right-5 bottom-32 min-h-[250px] z-40"
+            className="absolute inset-0 z-40 overflow-hidden pointer-events-none"
           >
             {services.map((s, i) => (
               <div
                 key={`${s.slug}-mobile-detail`}
+                data-service-panel="mobile"
                 ref={(el) => { mobileDetailRefs.current[i] = el; }}
-                className="absolute inset-0 opacity-0 pointer-events-none"
+                className="absolute inset-0 flex flex-col justify-center px-5 pb-10 pt-28 pointer-events-none will-change-transform"
+                style={{
+                  backgroundColor: s.bg,
+                  color: s.text,
+                  zIndex: i + 1,
+                  visibility: "hidden",
+                }}
               >
-                <p
-                  className="font-bold leading-none mb-3"
-                  style={{ color: s.text, fontSize: "clamp(2rem, 11vw, 3.2rem)" }}
-                >
-                  {s.title}
-                </p>
-                <p
-                  className="text-sm mb-3"
-                  style={{ color: s.text, opacity: 0.9 }}
-                >
-                  {s.subtitle}
-                </p>
-                <p
-                  className="text-sm leading-relaxed mb-5"
-                  style={{ color: s.text, opacity: 0.78 }}
-                >
-                  {s.desc}
-                </p>
-                <Link
-                  href={`/booking/${s.slug}`}
-                  className="inline-flex items-center gap-2 rounded-full border px-6 py-2 text-sm font-semibold pointer-events-auto"
-                  style={{ color: s.text, borderColor: `${s.text}66` }}
-                >
-                  Book Now →
-                </Link>
+                <div ref={(el) => { mobileDetailContentRefs.current[i] = el; }}>
+                  <p className="font-inter mb-4 text-xs font-semibold uppercase tracking-[0.18em] opacity-60">
+                    {String(i + 1).padStart(2, "0")} · Program
+                  </p>
+                  <p
+                    className="font-bold leading-none mb-4"
+                    style={{ fontSize: "clamp(2.35rem, 14vw, 4rem)" }}
+                  >
+                    {s.title}
+                  </p>
+                  <p className="text-base leading-snug mb-3 opacity-90">
+                    {s.subtitle}
+                  </p>
+                  <p className="text-sm leading-relaxed mb-6 opacity-75">
+                    {s.desc}
+                  </p>
+                  <Link
+                    href={`/booking/${s.slug}`}
+                    onClick={(event) => handleBookingLinkClick(event, s.slug)}
+                    className="inline-flex items-center gap-2 rounded-full border px-6 py-3 text-sm font-semibold pointer-events-auto"
+                    style={{ color: s.text, borderColor: `${s.text}66` }}
+                  >
+                    Book Now →
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

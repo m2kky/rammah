@@ -13,10 +13,10 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
   return (
     <section className="relative w-full min-h-[100dvh] bg-[#0F3B46] overflow-hidden">
       {/* White background with blurred elliptical top */}
-      <div className={`absolute inset-x-0 top-[50%] md:top-[45%] bottom-0 bg-white transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+      <div className={`absolute inset-x-0 top-[48%] sm:top-[46%] md:top-[43%] bottom-0 bg-white transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
         entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1/4"
       }`} />
-      <div className={`absolute left-1/2 top-[30%] md:top-[22%] w-[150%] md:w-[120%] h-[40%] md:h-[50%] bg-white rounded-[50%] blur-[30px] md:blur-[60px] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+      <div className={`absolute left-1/2 top-[28%] sm:top-[26%] md:top-[20%] w-[170%] sm:w-[150%] md:w-[120%] h-[42%] md:h-[52%] bg-white rounded-[50%] blur-[30px] md:blur-[60px] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
         entryReady ? "opacity-100 -translate-x-1/2 translate-y-0" : "opacity-0 -translate-x-1/2 translate-y-1/2"
       }`} />
 
@@ -32,7 +32,7 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
           {roles.map((w, index) => (
             <span
               key={w}
-              className={`text-white font-bricolage font-bold leading-[0.95] text-[0.95rem] md:text-[1.5rem] lg:text-[1.85rem] transition-all duration-[980ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              className={`text-white font-bricolage font-bold leading-[0.92] text-[1.35rem] sm:text-[1.42rem] md:text-[1.85rem] lg:text-[1.85rem] transition-all duration-[980ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 entryReady ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-6"
               }`}
               style={{
@@ -44,11 +44,12 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
           ))}
         </div>
         <p
-          className={`justify-self-end text-white font-bricolage font-bold leading-[1.02] text-[0.64rem] md:text-[1.25rem] lg:text-[1.75rem] max-w-[7.45rem] md:max-w-[42%] text-right self-start transition-all duration-[980ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          className={`justify-self-end text-white font-bricolage font-bold leading-[0.98] text-[1.08rem] sm:text-[1.12rem] md:text-[1.55rem] lg:text-[1.8rem] max-w-[12.75rem] sm:max-w-[14rem] md:max-w-[42%] text-right self-start transition-all duration-[980ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
             entryReady ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-8"
           }`}
           style={{
             transitionDelay: entryReady ? "1180ms" : "0ms",
+            textShadow: "0 2px 14px rgba(0, 0, 0, 0.24)",
           }}
         >
           {bodyText}
@@ -58,7 +59,7 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
 
       {/* DECODE background text */}
       <div
-        className={`absolute -bottom-2 md:bottom-0 left-0 right-0 text-center font-bricolage font-extrabold text-[#0F3B46] select-none leading-none text-[5.25rem] md:text-[14rem] lg:text-[19rem] xl:text-[21rem] 2xl:text-[24rem] z-[5] pointer-events-none transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`absolute -bottom-4 sm:-bottom-5 md:bottom-0 left-0 right-0 text-center font-bricolage font-extrabold text-[#0F3B46] select-none leading-none text-[7.15rem] sm:text-[8.5rem] md:text-[14rem] lg:text-[19rem] xl:text-[21rem] 2xl:text-[24rem] z-[5] pointer-events-none transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
           entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
         }`}
         style={{
@@ -74,7 +75,7 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
         <img
           src="/hero-final-frame.png"
           alt="Ahmed Ramah"
-          className={`h-[60dvh] md:h-[88dvh] lg:h-[90dvh] w-auto object-contain object-bottom transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
+          className={`h-[72dvh] sm:h-[74dvh] md:h-[90dvh] lg:h-[90dvh] w-auto object-contain object-bottom transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
             entryReady ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-12"
           }`}
           style={{ transitionDelay: entryReady ? "150ms" : "0ms" }}
