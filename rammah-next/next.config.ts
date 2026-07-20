@@ -15,6 +15,9 @@ const scriptSrc =
     : "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.kashier.io";
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: process.cwd(),
+  },
   async headers() {
     const paymentSecurityHeaders = [
       {

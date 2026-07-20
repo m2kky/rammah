@@ -1,19 +1,8 @@
 import Link from "next/link";
 import {
-  fetchPublicNavigation,
   fetchPublicSiteSettings,
-  type PublicNavigationItem,
   type PublicSiteSettings,
 } from "@/lib/api/cms";
-
-const fallbackNavigation: PublicNavigationItem[] = [
-  { id: "home", label: "Home", url: "/", location: "footer", sortOrder: 10 },
-  { id: "about", label: "About", url: "/about", location: "footer", sortOrder: 20 },
-  { id: "services", label: "Services", url: "/services", location: "footer", sortOrder: 30 },
-  { id: "booking", label: "Booking", url: "/booking", location: "footer", sortOrder: 40 },
-  { id: "blog", label: "Blog", url: "/blog", location: "footer", sortOrder: 50 },
-  { id: "contact", label: "Contact", url: "/contact", location: "footer", sortOrder: 60 },
-];
 
 const fallbackSettings: PublicSiteSettings = {
   siteName: "Ahmed Rammah",
@@ -23,20 +12,11 @@ const fallbackSettings: PublicSiteSettings = {
   bookingDefaultTimezone: "Africa/Cairo",
 };
 
-const getFooterData = async () => {
-  const [settings, navigation] = await Promise.all([
-    fetchPublicSiteSettings().catch(() => null),
-    fetchPublicNavigation("footer").catch(() => []),
-  ]);
-
-  return {
-    settings: settings ?? fallbackSettings,
-    navigation: navigation.length ? navigation : fallbackNavigation,
-  };
-};
+const getFooterSettings = async () =>
+  (await fetchPublicSiteSettings().catch(() => null)) ?? fallbackSettings;
 
 export default async function Footer() {
-  const { settings, navigation } = await getFooterData();
+  const settings = await getFooterSettings();
 
   return (
     <footer className="border-t border-white/10 bg-[#02040A] pt-24 pb-0 px-5 md:px-8 overflow-hidden relative">

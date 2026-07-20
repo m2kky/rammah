@@ -63,14 +63,14 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
 
   const premiseTitle = premiseSec?.title || "(01) The Corporate Reality";
   const premiseLead = premiseSec?.body || "Most corporate training fails because it targets symptoms, not systems.";
-  const premiseCards = (premiseSec?.config?.cards as any[]) || [
+  const premiseCards = (premiseSec?.config?.cards as { title: string; body: string }[]) || [
     { title: "The Old Way", body: "Standard workshops provide generic advice, fleeting inspiration, and temporary alignment. Employees return to their desks and immediately revert to their default behavioral patterns because the underlying system was never diagnosed or altered." },
     { title: "The aCRL Approach", body: "We treat corporate culture as an engineering problem. Using the Advanced Cognitive Response Loop (aCRL), we decode the exact structural patterns causing friction in your team, and install a new, measurable operating system for communication and decision-making." }
   ];
 
   const deliveryTitle = deliverySec?.title || "(02) Delivery Framework";
   const deliveryLead = deliverySec?.body || "How we rewrite team dynamics.";
-  const deliveryStages = (deliverySec?.config?.stages as any[]) || stages;
+  const deliveryStages = (deliverySec?.config?.stages as { number: string; title: string; body: string }[]) || stages;
 
   const storyTitle = storySec?.title || "(03) The ROI of Clarity";
   const storyHeadline = storySec?.body || "When invisible rules become visible, friction disappears.";
@@ -374,7 +374,7 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
         </h2>
         
         <div className={styles.premiseGrid}>
-          {premiseCards.map((card: any, idx: number) => (
+          {premiseCards.map((card, idx) => (
             <div className={styles.premiseCard} data-reveal key={idx}>
               <h3>{card.title}</h3>
               <p>{card.body}</p>
@@ -396,7 +396,7 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
           </div>
           
           <div className={styles.stageStack}>
-            {deliveryStages.map((stage: any) => (
+            {deliveryStages.map((stage) => (
               <div className={styles.stage} data-stage key={stage.number}>
                 <span>{stage.number}</span>
                 <h3>{stage.title}</h3>

@@ -1,24 +1,8 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Dancing_Script, Inter } from "next/font/google";
+import "@fontsource-variable/bricolage-grotesque/wght.css";
+import "@fontsource-variable/dancing-script/wght.css";
+import "@fontsource-variable/inter/wght.css";
 import "./globals.css";
-
-const bricolageGrotesque = Bricolage_Grotesque({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
-  variable: "--font-bricolage",
-});
-
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-  variable: "--font-inter",
-});
-
-const dancingScript = Dancing_Script({
-  subsets: ["latin"],
-  weight: ["700"],
-  variable: "--font-signature",
-});
 
 export const metadata: Metadata = {
   title: "Ahmed Rammah — Engineer · Systematizer · Trainer · Coach",
@@ -34,10 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${bricolageGrotesque.variable} ${inter.variable} ${dancingScript.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         {children}
         <FloatingCTA />

@@ -68,7 +68,7 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
   const methodTitle = methodSec?.title || "(02) The method";
   const methodLead = methodSec?.body || "One operating system. Three deliberate moves. One exclusive standard.";
   const methodStatement = (methodSec?.config?.statement as string) || "Decode before\nyou change.";
-  const methodStages = (methodSec?.config?.stages as any[]) || stages;
+  const methodStages = (methodSec?.config?.stages as { number: string; title: string; body: string }[]) || stages;
 
   const storyTitle = storySec?.title || "(03) Systems meet people";
   const storyHeadline = storySec?.body || "Built by an engineer. Tested in real human rooms.";
@@ -94,9 +94,7 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
           reduceMotion: "(prefers-reduced-motion: reduce)",
         },
         (context) => {
-          const { desktop, reduceMotion } = context.conditions as {
-            desktop: boolean;
-            mobile: boolean;
+          const { reduceMotion } = context.conditions as {
             reduceMotion: boolean;
           };
 
@@ -337,7 +335,7 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
             </div>
           </div>
           <div className={styles.stageStack}>
-            {methodStages.map((stage: any) => (
+            {methodStages.map((stage) => (
               <div className={styles.stage} data-stage key={stage.number}>
                 <span>{stage.number}</span>
                 <h3>{stage.title}</h3>

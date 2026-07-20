@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type { PublicPageSection } from "@/lib/api/cms";
 
 type HeroSectionProps = {
@@ -72,9 +73,13 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
 
       {/* Portrait — centered, fills height */}
       <div className="absolute inset-0 flex justify-center items-end z-10 pointer-events-none">
-        <img
+        <Image
           src="/hero-final-frame.png"
           alt="Ahmed Ramah"
+          width={1080}
+          height={1920}
+          sizes="(min-width: 768px) 51vh, (min-width: 640px) 42vh, 41vh"
+          preload
           className={`h-[72dvh] sm:h-[74dvh] md:h-[90dvh] lg:h-[90dvh] w-auto object-contain object-bottom transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
             entryReady ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-12"
           }`}

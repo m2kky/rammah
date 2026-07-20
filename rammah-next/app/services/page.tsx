@@ -31,12 +31,6 @@ const getOfferings = async () => {
   }
 };
 
-const modeLabel: Record<PublicOffering["bookingMode"], string> = {
-  free: "Free booking",
-  paid: "Paid booking",
-  quote_only: "Quote request",
-};
-
 export const metadata = {
   title: "Services | Ahmed Rammah",
   description: "Coaching, therapy-style sessions, workshops, and corporate aCRL programs.",
