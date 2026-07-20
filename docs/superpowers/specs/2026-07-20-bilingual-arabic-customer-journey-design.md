@@ -1,6 +1,6 @@
 # Bilingual Arabic Customer Journey Design
 
-**Status:** Written design awaiting final document review
+**Status:** Approved product and architecture baseline; implementation plan reviewed 2026-07-20
 
 **Date:** 2026-07-20
 
@@ -158,13 +158,13 @@ Rules:
 
 Base tables retain identity, relationships, operational configuration, price/capacity values, media references, sort order, and business state. Translation tables hold only localized public content and per-locale editorial state.
 
-The existing base `status` is the global safety gate: an archived or globally disabled base resource is unavailable in every locale. Translation `status` controls draft/scheduled/published/archived visibility for one locale. During the additive compatibility release, existing base records must remain in their current published state while locale-aware reads additionally require a published translation.
+The existing base `status` is the global safety gate: public reads require the base resource to be effectively `published`; draft, scheduled-before-time, archived, or globally disabled base resources are unavailable in every locale. Translation `status` independently controls draft/scheduled/published/archived visibility for one locale. During the additive compatibility release, locale-aware public reads require both effective base publication and effective requested-translation publication.
 
 Every translation table has:
 
 - `id`;
 - parent resource foreign key;
-- `locale` constrained to a supported locale format and validated in application code against `en | ar`;
+- `locale` constrained by the database enum and application schema to exactly `en | ar`;
 - localized fields;
 - `status` where the content can publish independently;
 - `published_at` where relevant;
@@ -173,22 +173,25 @@ Every translation table has:
 - unique `(locale, slug)` for localized slug resources;
 - indexes supporting public locale/status/slug reads.
 
+Typed translation rows are the current public snapshot; admins do not edit a published row in place. A shared schema-validated `translation_working_copies` store holds one draft or frozen scheduled replacement per resource/locale. Publishing atomically copies the working payload to the typed row, so authors can prepare the next version without making the current page disappear or leaking draft edits. Legal and customer-email publication additionally creates immutable revisions and advances a published revision pointer.
+
 ### 9.2 Translation tables
 
 | Translation table | Parent | Localized fields |
 | --- | --- | --- |
+| `translation_working_copies` | polymorphic validated resource identity | typed JSON working payload, schema version/hash, draft/scheduled state, schedule/admin provenance |
 | `site_setting_translations` | `site_settings` | `site_name` |
 | `navigation_item_translations` | `navigation_items` | `label`, `url`, `status` |
-| `media_asset_translations` | `media_assets` | `alt_text` |
+| `media_asset_translations` | `media_assets` | reviewed `alt_text` or explicit decorative state and review provenance |
 | `page_translations` | `pages` | `title`, `slug`, `status`, `published_at` |
 | `page_section_translations` | `page_sections` | `title`, `body`, localized `config`, `status` |
-| `legal_page_translations` | `legal_pages` | `title`, `slug`, `body`, `version`, `status`, `published_at` |
+| `legal_page_translations` + immutable revisions | `legal_pages` | current typed `title`, `slug`, `body`, `version`, `content_hash` plus published revision pointer; drafts live in working copies |
 | `seo_metadata_translations` | `seo_metadata` | `meta_title`, `meta_description`, `canonical_url` |
 | `offering_category_translations` | `offering_categories` | `name`, `slug`, `description`, `status` |
 | `offering_translations` | `offerings` | `title`, `slug`, `short_description`, `long_description`, `status` |
 | `offline_location_translations` | `offline_locations` | `name`, address display fields, `city`, `instructions` |
 | `booking_form_field_translations` | `booking_form_fields` | `label`, localized option labels with stable option values, `status` |
-| `email_template_translations` | `email_templates` | `subject`, `body`, `status` |
+| `email_template_translations` + immutable revisions | `email_templates` | current typed `subject`, `body`, `content_hash` plus published revision pointer; drafts live in working copies |
 | `blog_category_translations` | `blog_categories` | `name`, `slug`, `status` |
 | `blog_post_translations` | `blog_posts` | `title`, `slug`, `excerpt`, `body`, `status`, `published_at` |
 
@@ -214,8 +217,8 @@ Localization uses expand/contract migrations:
 
 1. Create translation tables and locale snapshot columns without dropping existing text columns.
 2. Backfill one `en` translation per existing record in a transaction-safe, restartable migration/script.
-3. Verify row counts, slug uniqueness, content hashes, and English API response parity.
-4. Switch reads/writes to translation repositories while retaining a temporary English compatibility path.
+3. Verify every copied field and canonical hash, missing/extra/orphan/duplicate rows, NFC slug uniqueness, immutable revision pointers, and English API response parity; media null alt remains null and never becomes a filename.
+4. Switch reads/writes to translation repositories while dual-writing approved English display fields to the legacy columns during the binary rollback compatibility window.
 5. Remove legacy localized columns only in a later release after production evidence and rollback compatibility expire.
 
 No historical Drizzle migration is rewritten.
@@ -289,7 +292,7 @@ Home, About, Services, service detail, corporate training, Blog, blog detail, Co
 
 ### 13.2 Lead capture
 
-Contact, corporate quote, and newsletter submissions send `locale`. Confirmation UI and queued emails use the stored locale. Consent evidence records the language/version of the notice accepted by the customer.
+Contact, corporate quote, and newsletter submissions send `locale`. Confirmation UI and queued emails use the stored locale. Consent evidence stores the exact immutable legal revision shown to the customer. The server issues a short-lived signed receipt bound to revision ID, locale, content hash, purpose, and expiry; submission verification prevents a publish-between-render-and-submit race and rejects forged client versions.
 
 ### 13.3 Booking
 
@@ -297,7 +300,7 @@ Offering copy, attendance modes, locations, dynamic fields/options, validation m
 
 ### 13.4 Payment
 
-The stored booking locale determines payment page copy, safe recovery guidance, return URL, status polling UI, and confirmation/failure email. Kashier signature, amount, currency, merchant order, and state transitions are unchanged. Callback redirects derive the locale from the trusted matched booking/payment record, never callback query input.
+The URL locale determines the currently rendered payment/status labels. The stored booking locale determines automatic callback return, provider display language, recovery-email links, and confirmation/failure email. Kashier signature, amount, currency, merchant order, and state transitions are unchanged. Callback redirects derive token/locale only from the verified matched booking/payment record; unmatched callbacks never reuse query-derived redirect data.
 
 ### 13.5 Status and email
 
@@ -320,11 +323,11 @@ Token-bearing status pages render the selected URL locale but never expose more 
 | Condition | Required behavior |
 | --- | --- |
 | Unsupported locale | API `400` with `UNSUPPORTED_LOCALE`; frontend route not generated |
-| Arabic feature flag off | `/ar` returns a controlled not-found/unavailable response and is absent from sitemap/navigation |
+| Arabic feature flag off | Arabic discovery, navigation, sitemap, leads, holds, and new bookings are blocked; signed newsletter confirm/unsubscribe plus verified token-bearing status/payment/recovery, callbacks, reconciliation, hold release, and queued email for already-created Arabic records remain available and noindex |
 | Missing Arabic translation | No mixed-language fallback; route absent from switcher/sitemap and publication gate fails |
 | Arabic API request fails | Localized retry/error boundary; no automatic switch to English during a transaction |
-| Locale changes mid-form | Ask for confirmation if state would be lost; otherwise preserve machine form values and re-resolve labels |
-| Locale changes after hold | Preserve hold, price snapshot, selected slot, and customer inputs |
+| Locale changes mid-form | Clean forms switch immediately; dirty forms ask for confirmation, never persist/transfer PII, and clear in-memory customer data only after confirmation |
+| Locale changes after hold | On confirmed switch, best-effort release the active hold, clear customer input, and restart against the explicit counterpart; cancel keeps the current hold/form untouched |
 | Callback locale query forged | Ignore it; use stored booking locale |
 | Arabic email template missing | Do not silently send English; block required template publication/preflight and surface a retryable operational failure |
 | RTL media/animation fails | Static accessible fallback remains usable |
@@ -352,6 +355,9 @@ The admin shell remains English. Localizable editors provide:
 - explicit copy-from-English-to-Arabic-draft action with audit logging;
 - publish prevention when required fields, legal versions, email templates, SEO, or referenced media are incomplete;
 - independent Arabic unpublish without deleting the base entity or English version.
+- immutable legal/email revision creation on publish and idempotent scheduled publication;
+- fixed-key immutability across legacy/new APIs and temporary English dual-write for binary rollback;
+- locale/status/completeness filters for content, customer records, and email failures.
 
 Admin operational tables for bookings/payments remain English but display the customer locale as a filterable field where it affects communication.
 
@@ -378,7 +384,9 @@ Admin operational tables for bookings/payments remain English but display the cu
 - customer locale persistence for free/paid bookings, quotes, contact, and newsletter;
 - callback/return locale derived from the trusted booking;
 - required Arabic email missing/dead-letter visibility;
-- legal/consent version and locale snapshot.
+- immutable email revision retry determinism;
+- signed legal-consent receipt, publish race, version/hash/locale/purpose snapshot;
+- feature-disable behavior for new versus in-flight Arabic journeys.
 
 ### 18.3 Component and accessibility tests
 
@@ -431,8 +439,8 @@ Payment and concurrency tests assert identical machine price, slot, hold, bookin
 6. Add admin translation editing, preview, completeness, and publication gates.
 7. Enter and approve Arabic content, legal documents, SEO, media alt text, and email templates.
 8. Run bilingual unit/integration/E2E/accessibility/visual/performance suites.
-9. Deploy disabled to staging, run the full provider journey and at least 48-hour staging soak, then enable Arabic in staging.
-10. Pass bilingual production preflight, release approval, controlled production enablement, live smoke, and canary monitoring.
+9. Deploy disabled to staging, run English regression/backfill checks, enable Arabic in staging, run the full provider/SEO/a11y/performance suite, rehearse disable/re-enable, then soak enabled staging for at least 48 hours.
+10. After G0-G5 and staging-soak sign-off, deploy production disabled, smoke, enable Arabic in production, run live bilingual smoke, and complete G6 canary monitoring with Arabic enabled.
 
 ## 21. Release Gates
 
@@ -452,11 +460,11 @@ Arabic production enablement is blocked until:
 
 ## 22. Documentation and Requirement Changes
 
-Implementation planning must update:
+The approved scope is reflected in these canonical documents and contracts:
 
-- `docs/02-requirements/FRS.md`: replace English-primary/Arabic-later launch scope with bilingual public-journey requirements while retaining English admin scope;
-- `docs/02-requirements/NFR.md`: convert Arabic readiness into explicit RTL, locale parity, SEO, accessibility, and performance acceptance;
-- `docs/05-project-plan/Production-Readiness-Execution-Plan.md`: add the bilingual Epic after P0/test foundations and before final CMS/SEO/content closure;
+- `docs/02-requirements/FRS.md`: bilingual public-journey requirements with English admin scope;
+- `docs/02-requirements/NFR.md`: explicit RTL, locale parity, SEO, accessibility, and performance acceptance;
+- `docs/05-project-plan/Production-Readiness-Execution-Plan.md`: bilingual Epic after P0/test foundations and before final CMS/SEO/content closure;
 - OpenAPI and environment contracts: locale parameters, response fields, persisted locale, and `AR_PUBLIC_ENABLED`;
 - admin/content/legal/provider/launch runbooks: bilingual completeness, preview, email, preflight, rollback, and canary procedures.
 
@@ -464,9 +472,9 @@ Implementation planning must update:
 
 The current codebase has a default locale field but not a reusable localization system. Full public-journey localization therefore requires schema, API, CMS, route, component, email, SEO, RTL, test, and content-release work.
 
-- Engineering: approximately **10-15 focused engineer-days** after P0/test foundations.
+- Engineering: approximately **17-24 focused engineer-days** after P0/test foundations, including immutable revisions, consent receipts, in-flight rollback safety, observability, and release evidence.
 - Content translation and legal approval: external lead time, parallel after the schema/editor contract stabilizes.
 - Updated complete production program: approximately **48-65 focused engineer-days**, depending on coupon/tax/media/editor scope and provider readiness.
-- Two engineers: typically **5-6 calendar weeks** plus required staging soak and production canary when external inputs arrive on time.
+- Two engineers: typically **6-7 calendar weeks** including staging soak when external inputs arrive on time; plan up to 8 weeks if provider/content/legal remediation repeats a gate.
 
 The Arabic Epic must not delay payment and booking P0 fixes, but it must land before final CMS content, SEO closure, acceptance, and production launch.
