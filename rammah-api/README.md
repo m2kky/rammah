@@ -13,14 +13,17 @@ Independent Express backend API for the Ahmed Ramah Coaching Platform.
 
 ## Getting Started
 
+From the repository root, install dependencies once, copy `rammah-api/.env.example` to `rammah-api/.env`, then run:
+
 ```bash
-npm install
-cp .env.example .env
-npm run db:up
-npm run db:migrate
-npm run db:seed
-npm run dev
+npm ci --no-audit --no-fund
+npm run docker:up
+npm run db:migrate --workspace=rammah-api
+npm run db:seed --workspace=rammah-api
+npm run dev --workspace=rammah-api
 ```
+
+Do not install this workspace independently.
 
 The default API runs at:
 

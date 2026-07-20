@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const apiOrigin = (() => {
@@ -16,7 +17,7 @@ const scriptSrc =
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: process.cwd(),
+    root: path.resolve(__dirname, ".."),
   },
   async headers() {
     const paymentSecurityHeaders = [

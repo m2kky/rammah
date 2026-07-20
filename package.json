@@ -1,0 +1,31 @@
+{
+  "name": "rammah",
+  "private": true,
+  "workspaces": [
+    "rammah-api",
+    "rammah-next"
+  ],
+  "engines": {
+    "node": "24.14.0",
+    "npm": "11.9.0"
+  },
+  "packageManager": "npm@11.9.0",
+  "overrides": {
+    "eslint-plugin-react-hooks": "7.0.1"
+  },
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:integration": "npm run test:integration --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "test:e2e": "npm run test:e2e --workspaces --if-present",
+    "smoke": "npm run smoke --workspaces --if-present",
+    "preflight": "npm run preflight --workspaces --if-present",
+    "docker:up": "npm run db:up --workspace=rammah-api",
+    "docker:down": "npm run db:down --workspace=rammah-api",
+    "docker:reset": "npm run db:reset --workspace=rammah-api",
+    "clean": "npm run clean --workspaces --if-present"
+  }
+}
