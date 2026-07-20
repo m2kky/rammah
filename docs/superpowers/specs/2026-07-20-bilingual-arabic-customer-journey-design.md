@@ -1,8 +1,11 @@
 # Bilingual Arabic Customer Journey Design
 
-**Status:** Written design awaiting final document review  
-**Date:** 2026-07-20  
-**Product:** Rammah public website and customer journey  
+**Status:** Written design awaiting final document review
+
+**Date:** 2026-07-20
+
+**Product:** Rammah public website and customer journey
+
 **Launch target:** Production-ready English and Arabic experience with the admin interface remaining English
 
 ## 1. Context
