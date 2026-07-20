@@ -1,2 +1,16 @@
 .worktrees/
 .superpowers/
+
+# Generated/runtime files
+node_modules/
+.next/
+dist/
+coverage/
+.playwright-cli/
+output/
+*.log
+
+# Local environment files
+.env
+.env.*
+!.env.example
