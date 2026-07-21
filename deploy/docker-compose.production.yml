@@ -1,17 +1,15 @@
-name: rammah-production
-
 x-api: &api
   build:
     context: ..
     dockerfile: rammah-api/Dockerfile
-  image: rammah-api:local
-  env_file: ${ENV_FILE:-.env}
+  env_file: .env
   restart: unless-stopped
 
 services:
   migrate:
     <<: *api
     restart: "no"
+    exclude_from_hc: true
     command: npm run db:migrate --workspace=rammah-api
 
   api:
@@ -19,8 +17,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    ports:
-      - "127.0.0.1:4000:4000"
+    expose:
+      - "4000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/v1/health/ready"]
       interval: 15s
@@ -39,15 +37,14 @@ services:
       context: ..
       dockerfile: rammah-next/Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL}
-    image: rammah-web:local
-    env_file: ${ENV_FILE:-.env}
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL in Coolify}
+    env_file: .env
     restart: unless-stopped
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:3000:3000"
+    expose:
+      - "3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
       interval: 15s
