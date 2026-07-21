@@ -496,6 +496,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
 
       const bookingPayload = {
         holdId: hold.id,
+        holdToken: hold.holdToken,
         attendanceMode: selectedSession?.attendanceMode ?? attendanceMode,
         locationId:
           selectedSession?.location?.id ??

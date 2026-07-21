@@ -1,0 +1,12 @@
+.git
+.worktrees
+.superpowers
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+docs
+*.log

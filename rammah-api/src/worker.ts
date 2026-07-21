@@ -9,6 +9,7 @@ import {
 import { logger } from "./shared/logger/logger.js";
 import { createHandlerRegistry } from "./worker/handler-registry.js";
 import { createWorkerLifecycle } from "./worker/lifecycle.js";
+import { productHandlers } from "./worker/product-handlers.js";
 import { createJobRunner, type Sleep } from "./worker/runner.js";
 import { createWorkerRuntime } from "./worker/runtime.js";
 import { createDurableScheduler } from "./worker/scheduler.js";
@@ -35,8 +36,7 @@ const repository = {
   retryOrDeadLetter: retryOrDeadLetterOutboxEvent,
 };
 
-// Product-specific handlers and schedules are added by JOB-06/JOB-07.
-const handlers = createHandlerRegistry({});
+const handlers = createHandlerRegistry(productHandlers);
 const scheduler = createDurableScheduler({
   enqueue: enqueueOutboxEvent,
   definitions: [],

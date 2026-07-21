@@ -51,6 +51,7 @@ export type PublicAvailabilitySlotPreview = {
 
 export type PublicSlotHold = {
   id: string;
+  holdToken: string;
   offeringId: string;
   offeringSessionId: string | null;
   startsAt: string;
@@ -390,6 +391,7 @@ export const fetchPublicPricePreview = async (input: {
 
 export const submitPublicFreeBooking = async (input: {
   holdId: string;
+  holdToken: string;
   attendanceMode?: PublicOffering["attendanceMode"];
   locationId?: string | null;
   customer: {
@@ -419,6 +421,7 @@ export const submitPublicFreeBooking = async (input: {
 
 export const submitPublicPaidBooking = async (input: {
   holdId: string;
+  holdToken: string;
   attendanceMode?: PublicOffering["attendanceMode"];
   locationId?: string | null;
   customer: {
