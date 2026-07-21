@@ -8,3 +8,17 @@ export const pool = new pg.Pool({
 });
 
 export const db = drizzle(pool, { schema });
+
+interface ClosablePool {
+  end(): Promise<void>;
+}
+
+export const createDatabaseCloser = (closablePool: ClosablePool) => {
+  let closePromise: Promise<void> | undefined;
+  return (): Promise<void> => {
+    closePromise ??= closablePool.end();
+    return closePromise;
+  };
+};
+
+export const closeDatabase = createDatabaseCloser(pool);

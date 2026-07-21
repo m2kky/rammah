@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { z } from "zod";
 
+const positiveInteger = z.coerce.number().int().positive();
+
 const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -34,7 +36,26 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(1).default("Rammah <no-reply@rammah.local>"),
   EMAIL_ADMIN_RECIPIENTS: z.string().default(""),
   RESEND_API_KEY: z.string().optional(),
+  WORKER_POLL_INTERVAL_MS: positiveInteger.default(1000),
+  WORKER_BATCH_SIZE: positiveInteger.default(10),
+  WORKER_CONCURRENCY: positiveInteger.default(4),
+  JOB_LEASE_SECONDS: positiveInteger.default(120),
+  JOB_TIMEOUT_SECONDS: positiveInteger.default(90),
+  JOB_MAX_ATTEMPTS: positiveInteger.default(8),
+  JOB_BACKOFF_BASE_MS: positiveInteger.default(1000),
+  JOB_BACKOFF_MAX_MS: positiveInteger.default(300000),
+  WORKER_DRAIN_TIMEOUT_MS: positiveInteger.default(30000),
+}).superRefine((value, context) => {
+  if (value.JOB_LEASE_SECONDS <= value.JOB_TIMEOUT_SECONDS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["JOB_LEASE_SECONDS"],
+      message: "JOB_LEASE_SECONDS must be greater than JOB_TIMEOUT_SECONDS",
+    });
+  }
 });
+
+export const parseEnv = (source: Record<string, unknown>) => envSchema.parse(source);
 
 const parsed = envSchema.safeParse(process.env);
 
