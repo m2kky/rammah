@@ -1,0 +1,19 @@
+name: rammah-test
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rammah_test
+      POSTGRES_PASSWORD: rammah_test
+      POSTGRES_DB: rammah_test
+    ports:
+      - "55433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rammah_test -d rammah_test"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+      start_period: 2s
