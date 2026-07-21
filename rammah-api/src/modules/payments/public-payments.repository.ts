@@ -405,7 +405,12 @@ export const findWebhookEventByProviderEventId = async (input: {
   providerEventId: string;
 }) => {
   const rows = await db
-    .select({ id: paymentWebhookEvents.id })
+    .select({
+      id: paymentWebhookEvents.id,
+      paymentId: paymentWebhookEvents.paymentId,
+      bookingId: paymentWebhookEvents.bookingId,
+      processingStatus: paymentWebhookEvents.processingStatus,
+    })
     .from(paymentWebhookEvents)
     .where(
       and(
@@ -440,6 +445,27 @@ export const insertPaymentWebhookEvent = async (input: {
       payload: input.payload,
       processingStatus: input.processingStatus ?? "pending",
     })
+    .onConflictDoNothing({
+      target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
+    })
+    .returning({
+      id: paymentWebhookEvents.id,
+      paymentId: paymentWebhookEvents.paymentId,
+      bookingId: paymentWebhookEvents.bookingId,
+      processingStatus: paymentWebhookEvents.processingStatus,
+    });
+
+  return rows[0] ?? null;
+};
+
+export const markPaymentWebhookEventProcessed = async (id: string) => {
+  const rows = await db
+    .update(paymentWebhookEvents)
+    .set({
+      processingStatus: "processed",
+      processedAt: new Date(),
+    })
+    .where(eq(paymentWebhookEvents.id, id))
     .returning({ id: paymentWebhookEvents.id });
 
   return rows[0] ?? null;

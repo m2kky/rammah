@@ -14,6 +14,7 @@ import { findPublishedLocationsForOffering } from "../offerings/offerings.reposi
 import { previewPublicOfferingPrice } from "../pricing/public-price-preview.service.js";
 import {
   createKashierSession,
+  parseKashierAmountMinor,
   reconcileKashierPayment,
   verifyKashierCallbackSignature,
   type KashierSession,
@@ -26,6 +27,7 @@ import {
   findPublicBookingPaymentContextByToken,
   findWebhookEventByProviderEventId,
   insertPaymentWebhookEvent,
+  markPaymentWebhookEventProcessed,
   markPaymentProcessing,
   updatePaymentCheckoutUrl,
 } from "./public-payments.repository.js";
@@ -461,13 +463,9 @@ export const startPublicPaymentForBooking = async (publicToken: string) => {
   };
 };
 
-const firstParam = (params: URLSearchParams, names: string[]) => {
-  for (const name of names) {
-    const value = params.get(name)?.trim();
-    if (value && !["null", "undefined"].includes(value.toLowerCase())) return value;
-  }
-
-  return null;
+const callbackParam = (params: URLSearchParams, name: string) => {
+  const value = params.get(name)?.trim();
+  return value && !["null", "undefined"].includes(value.toLowerCase()) ? value : null;
 };
 
 const normalizeProviderStatus = (value: string | null) => {
@@ -502,122 +500,156 @@ const normalizeProviderStatus = (value: string | null) => {
   return "ignored" as const;
 };
 
-const parseAmountMinor = (value: string | null) => {
-  if (!value) return null;
-
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount)) return null;
-
-  return Math.round(amount * 100);
+const storedEventResult = async (event: {
+  bookingId: string | null;
+  processingStatus: "pending" | "processed" | "failed" | "ignored";
+}) => {
+  const context = event.bookingId
+    ? await findPublicBookingPaymentContextByBookingId(event.bookingId)
+    : null;
+  return {
+    processed: event.processingStatus === "processed",
+    publicToken: context?.publicToken ?? null,
+  };
 };
 
-export const handleKashierCallback = async (rawQuery: string) => {
-  const params = new URLSearchParams(rawQuery);
-  const payload = Object.fromEntries(params.entries());
-  const bookingParam = params.get("booking");
-  const signatureValid = verifyKashierCallbackSignature(rawQuery);
-  const merchantOrderId = firstParam(params, ["merchantOrderId", "orderId", "merchantOrderID"]);
-  const providerPaymentId = firstParam(params, [
-    "transactionId",
-    "paymentId",
-    "kashierOrderId",
-    "orderReference",
-  ]);
-  const statusValue = firstParam(params, ["paymentStatus", "status", "transactionStatus", "result"]);
-  const providerStatus = normalizeProviderStatus(statusValue);
-  const providerEventId =
-    providerPaymentId ??
-    (merchantOrderId ? `${merchantOrderId}:${statusValue ?? "unknown"}:${params.get("signature") ?? "unsigned"}` : null);
+const claimAndApplyReconciliation = async (input: {
+  payment: NonNullable<Awaited<ReturnType<typeof findPaymentByIdempotencyKey>>>;
+  reconciliation: Awaited<ReturnType<typeof reconcileKashierPayment>>;
+}) => {
+  const providerStatus = normalizeProviderStatus(input.reconciliation.status);
+  const providerPaymentId = input.reconciliation.providerOrderId?.trim() || null;
+  const evidenceMatches =
+    providerStatus !== "ignored" &&
+    providerPaymentId !== null &&
+    input.reconciliation.amountMinor !== null &&
+    input.reconciliation.amountMinor === input.payment.amountMinor &&
+    input.reconciliation.currency !== null &&
+    input.reconciliation.currency === input.payment.currency;
 
-  if (!merchantOrderId || !providerEventId) {
-    await insertPaymentWebhookEvent({
-      provider: "kashier",
-      providerEventId: providerEventId ?? `unmatched:${crypto.randomUUID()}`,
-      eventType: statusValue ?? "unknown",
-      signatureValid,
-      payload,
-      processingStatus: "failed",
-    });
+  if (!evidenceMatches) return false;
 
-    return { processed: false, publicToken: bookingParam };
-  }
-
-  const existingEvent = await findWebhookEventByProviderEventId({
+  const providerEventId = `reconcile:${input.payment.idempotencyKey}:${providerPaymentId}:${providerStatus}`;
+  const claimed = await insertPaymentWebhookEvent({
     provider: "kashier",
     providerEventId,
+    paymentId: input.payment.id,
+    bookingId: input.payment.bookingId,
+    eventType: input.reconciliation.status!,
+    signatureValid: true,
+    payload: input.reconciliation.raw,
+    processingStatus: "pending",
   });
 
-  if (existingEvent) {
-    const payment = await findPaymentByIdempotencyKey(merchantOrderId);
-    if (payment && providerStatus !== "ignored") {
-      await applyTrustedPaymentResult({
-        paymentId: payment.id,
-        status: providerStatus,
-        providerPaymentId,
-      });
-    }
-    const context = payment
-      ? await findPublicBookingPaymentContextByBookingId(payment.bookingId)
-      : null;
-    return { processed: false, publicToken: context?.publicToken ?? null };
-  }
-
-  const payment = await findPaymentByIdempotencyKey(merchantOrderId);
-
-  if (!signatureValid || !payment || providerStatus === "ignored") {
-    await insertPaymentWebhookEvent({
+  if (!claimed) {
+    const storedEvent = await findWebhookEventByProviderEventId({
       provider: "kashier",
       providerEventId,
-      paymentId: payment?.id ?? null,
-      bookingId: payment?.bookingId ?? null,
-      eventType: statusValue ?? "unknown",
-      signatureValid,
-      payload,
-      processingStatus: "ignored",
     });
-
-    return { processed: false, publicToken: bookingParam };
+    return storedEvent?.processingStatus === "processed";
   }
 
-  const amountMinor = parseAmountMinor(firstParam(params, ["amount"]));
-  const currency = firstParam(params, ["currency"])?.toUpperCase() ?? null;
-  const amountMatches = amountMinor === null || amountMinor === payment.amountMinor;
-  const currencyMatches = currency === null || currency === payment.currency;
-
-  if (!amountMatches || !currencyMatches) {
-    await insertPaymentWebhookEvent({
-      provider: "kashier",
-      providerEventId,
-      paymentId: payment.id,
-      bookingId: payment.bookingId,
-      eventType: statusValue ?? "amount_or_currency_mismatch",
-      signatureValid,
-      payload,
-      processingStatus: "failed",
-    });
-
-    return { processed: false, publicToken: bookingParam };
-  }
-
-  await insertPaymentWebhookEvent({
-    provider: "kashier",
-    providerEventId,
-    paymentId: payment.id,
-    bookingId: payment.bookingId,
-    eventType: statusValue ?? providerStatus,
-    signatureValid,
-    payload,
-    processingStatus: "processed",
-  });
   await applyTrustedPaymentResult({
-    paymentId: payment.id,
+    paymentId: input.payment.id,
     status: providerStatus,
     providerPaymentId,
   });
+  await markPaymentWebhookEventProcessed(claimed.id);
+  return true;
+};
+
+const reconcileCallbackPayment = async (
+  payment: NonNullable<Awaited<ReturnType<typeof findPaymentByIdempotencyKey>>>,
+) => {
+  try {
+    // ponytail: JOB-01/07 replace this one bounded lookup with durable reconciliation.
+    const reconciliation = await reconcileKashierPayment(payment.idempotencyKey!);
+    return claimAndApplyReconciliation({ payment, reconciliation });
+  } catch {
+    return false;
+  }
+};
+
+export const handleKashierCallback = async (rawQuery: string) => {
+  if (Buffer.byteLength(rawQuery, "utf8") > 16 * 1024) {
+    return { processed: false, publicToken: null };
+  }
+
+  const params = new URLSearchParams(rawQuery);
+  if (!verifyKashierCallbackSignature(rawQuery)) {
+    return { processed: false, publicToken: null };
+  }
+
+  const providerEventId =
+    callbackParam(params, "transactionId") ?? callbackParam(params, "orderReference");
+  if (providerEventId) {
+    const existingEvent = await findWebhookEventByProviderEventId({
+      provider: "kashier",
+      providerEventId,
+    });
+    if (existingEvent) return storedEventResult(existingEvent);
+  }
+
+  const merchantOrderId = callbackParam(params, "merchantOrderId");
+  if (!merchantOrderId) return { processed: false, publicToken: null };
+
+  const payment = await findPaymentByIdempotencyKey(merchantOrderId);
+  if (!payment || payment.provider !== "kashier") {
+    return { processed: false, publicToken: null };
+  }
 
   const context = await findPublicBookingPaymentContextByBookingId(payment.bookingId);
-  return { processed: true, publicToken: context?.publicToken ?? null };
+  const storedToken = context?.publicToken ?? null;
+  const statusValue = callbackParam(params, "paymentStatus");
+  const providerStatus = normalizeProviderStatus(statusValue);
+  const amountMinor = parseKashierAmountMinor(callbackParam(params, "amount"));
+  const currencyValue = callbackParam(params, "currency");
+  const currency = currencyValue && /^[A-Za-z]{3}$/.test(currencyValue)
+    ? currencyValue.toUpperCase()
+    : null;
+  const directlyTrusted =
+    providerEventId !== null &&
+    providerStatus !== "ignored" &&
+    amountMinor !== null &&
+    amountMinor === payment.amountMinor &&
+    currency !== null &&
+    currency === payment.currency &&
+    (!payment.providerPaymentId || payment.providerPaymentId === providerEventId);
+
+  if (!directlyTrusted) {
+    const processed = await reconcileCallbackPayment(payment);
+    return { processed, publicToken: storedToken };
+  }
+
+  const claimed = await insertPaymentWebhookEvent({
+    provider: "kashier",
+    providerEventId: providerEventId!,
+    paymentId: payment.id,
+    bookingId: payment.bookingId,
+    eventType: statusValue!,
+    signatureValid: true,
+    payload: Object.fromEntries(params.entries()),
+    processingStatus: "pending",
+  });
+
+  if (!claimed) {
+    const existingEvent = await findWebhookEventByProviderEventId({
+      provider: "kashier",
+      providerEventId: providerEventId!,
+    });
+    return existingEvent
+      ? storedEventResult(existingEvent)
+      : { processed: false, publicToken: null };
+  }
+
+  await applyTrustedPaymentResult({
+    paymentId: payment.id,
+    status: providerStatus,
+    providerPaymentId: providerEventId,
+  });
+  await markPaymentWebhookEventProcessed(claimed.id);
+
+  return { processed: true, publicToken: storedToken };
 };
 
 export const reconcilePublicPayment = async (publicToken: string) => {
@@ -631,7 +663,11 @@ export const reconcilePublicPayment = async (publicToken: string) => {
     });
   }
 
-  if (!context.paymentRequired || !context.payment?.idempotencyKey) {
+  if (
+    !context.paymentRequired ||
+    !context.payment?.idempotencyKey ||
+    context.payment.provider !== "kashier"
+  ) {
     throw new AppError({
       code: "VALIDATION_ERROR",
       message: "This booking does not have a payable payment.",
@@ -642,38 +678,10 @@ export const reconcilePublicPayment = async (publicToken: string) => {
   const reconciliation = await reconcileKashierPayment(context.payment.idempotencyKey);
   const providerStatus = normalizeProviderStatus(reconciliation.status);
   const amountMatches =
-    reconciliation.amountMinor === null || reconciliation.amountMinor === context.payment.amountMinor;
+    reconciliation.amountMinor !== null && reconciliation.amountMinor === context.payment.amountMinor;
   const currencyMatches =
-    reconciliation.currency === null || reconciliation.currency === context.payment.currency;
-  const providerEventId = `reconcile:${context.payment.idempotencyKey}:${reconciliation.status ?? "unknown"}`;
-  const existingEvent = await findWebhookEventByProviderEventId({
-    provider: "kashier",
-    providerEventId,
-  });
-
-  if (!existingEvent) {
-    await insertPaymentWebhookEvent({
-      provider: "kashier",
-      providerEventId,
-      paymentId: context.payment.id,
-      bookingId: context.id,
-      eventType: reconciliation.status ?? "unknown",
-      signatureValid: true,
-      payload: reconciliation.raw,
-      processingStatus:
-        providerStatus !== "ignored" && amountMatches && currencyMatches
-          ? "processed"
-          : "ignored",
-    });
-  }
-
-  if (providerStatus !== "ignored" && amountMatches && currencyMatches) {
-    await applyTrustedPaymentResult({
-      paymentId: context.payment.id,
-      status: providerStatus,
-      providerPaymentId: reconciliation.providerOrderId,
-    });
-  }
+    reconciliation.currency !== null && reconciliation.currency === context.payment.currency;
+  await claimAndApplyReconciliation({ payment: context.payment, reconciliation });
 
   const nextContext = await findPublicBookingPaymentContextByToken(publicToken);
 

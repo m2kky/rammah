@@ -135,22 +135,21 @@ const buildSignaturePayload = (params: URLSearchParams, sort: boolean) => {
   return orderedEntries.map(([key, value]) => `${key}=${value}`).join("&");
 };
 
-const buildOfficialCallbackSignaturePayload = (params: URLSearchParams) => {
-  const orderedKeys = [
-    "paymentStatus",
-    "cardDataToken",
-    "maskedCard",
-    "merchantOrderId",
-    "orderId",
-    "cardBrand",
-    "orderReference",
-    "transactionId",
-    "amount",
-    "currency",
-  ];
+const officialCallbackSignatureKeys = [
+  "paymentStatus",
+  "cardDataToken",
+  "maskedCard",
+  "merchantOrderId",
+  "orderId",
+  "cardBrand",
+  "orderReference",
+  "transactionId",
+  "amount",
+  "currency",
+] as const;
 
-  return orderedKeys.map((key) => `${key}=${params.get(key) ?? ""}`).join("&");
-};
+const buildOfficialCallbackSignaturePayload = (params: URLSearchParams) =>
+  officialCallbackSignatureKeys.map((key) => `${key}=${params.get(key) ?? ""}`).join("&");
 
 export const verifyKashierCallbackSignature = (rawQuery: string) => {
   const secret = getKashierSigningKey();
@@ -158,6 +157,13 @@ export const verifyKashierCallbackSignature = (rawQuery: string) => {
   if (!secret) return false;
 
   const params = new URLSearchParams(rawQuery);
+  if (
+    [...officialCallbackSignatureKeys, "signature"].some(
+      (key) => params.getAll(key).length > 1,
+    )
+  ) {
+    return false;
+  }
   const signature = params.get("signature");
 
   if (!signature) return false;
@@ -180,14 +186,13 @@ export const verifyKashierCallbackSignature = (rawQuery: string) => {
   });
 };
 
-const parseReconciliationAmountMinor = (value: unknown) => {
+export const parseKashierAmountMinor = (value: unknown) => {
   if (typeof value !== "number" && typeof value !== "string") return null;
-
-  const amount = Number(value);
-
-  if (!Number.isFinite(amount)) return null;
-
-  return Math.round(amount * 100);
+  const normalized = String(value);
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const [whole, fraction = ""] = normalized.split(".");
+  const amountMinor = Number(whole) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(amountMinor) ? amountMinor : null;
 };
 
 const asRecord = (value: unknown): Record<string, unknown> =>
@@ -218,6 +223,7 @@ export const reconcileKashierPayment = async (
         Accept: "application/json",
         Authorization: authorizationKey,
       },
+      signal: AbortSignal.timeout(5_000),
     },
   );
   const payload = asRecord(await response.json().catch(() => ({})));
@@ -237,7 +243,7 @@ export const reconcileKashierPayment = async (
     typeof reconciliation.orderId === "string" ? reconciliation.orderId : null;
   const status = typeof reconciliation.status === "string" ? reconciliation.status : null;
   const currency = typeof order.currency === "string" ? order.currency.toUpperCase() : null;
-  const amountMinor = parseReconciliationAmountMinor(
+  const amountMinor = parseKashierAmountMinor(
     order.amount ?? reconciliation.totalCapturedAmount ?? reconciliation.totalAuthorizedAmount,
   );
 

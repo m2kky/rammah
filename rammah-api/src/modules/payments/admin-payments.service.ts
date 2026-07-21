@@ -5,8 +5,8 @@ import {
   reconcileKashierPayment,
 } from "./kashier.adapter.js";
 import {
-  findWebhookEventByProviderEventId,
   insertPaymentWebhookEvent,
+  markPaymentWebhookEventProcessed,
 } from "./public-payments.repository.js";
 import { applyTrustedPaymentResult } from "./payment-confirmation.service.js";
 import {
@@ -150,17 +150,21 @@ export const reconcileAdminPayment = async (
   const reconciliation = await reconcileKashierPayment(payment.idempotencyKey);
   const providerStatus = normalizeProviderStatus(reconciliation.status);
   const amountMatches =
-    reconciliation.amountMinor === null || reconciliation.amountMinor === payment.amountMinor;
+    reconciliation.amountMinor !== null && reconciliation.amountMinor === payment.amountMinor;
   const currencyMatches =
-    reconciliation.currency === null || reconciliation.currency === payment.currency;
-  const providerEventId = `admin-reconcile:${payment.idempotencyKey}:${reconciliation.status ?? "unknown"}`;
-  const existingEvent = await findWebhookEventByProviderEventId({
-    provider: "kashier",
-    providerEventId,
-  });
+    reconciliation.currency !== null && reconciliation.currency === payment.currency;
+  const providerPaymentId = reconciliation.providerOrderId?.trim() || null;
+  const providerIdentityMatches = providerPaymentId !== null;
+  const evidenceMatches =
+    providerStatus !== "ignored" &&
+    amountMatches &&
+    currencyMatches &&
+    providerIdentityMatches;
+  let applied = false;
 
-  if (!existingEvent) {
-    await insertPaymentWebhookEvent({
+  if (evidenceMatches) {
+    const providerEventId = `reconcile:${payment.idempotencyKey}:${providerPaymentId}:${providerStatus}`;
+    const claimed = await insertPaymentWebhookEvent({
       provider: "kashier",
       providerEventId,
       paymentId: payment.id,
@@ -168,19 +172,18 @@ export const reconcileAdminPayment = async (
       eventType: reconciliation.status ?? "unknown",
       signatureValid: true,
       payload: reconciliation.raw,
-      processingStatus:
-        providerStatus !== "ignored" && amountMatches && currencyMatches
-          ? "processed"
-          : "ignored",
+      processingStatus: "pending",
     });
-  }
 
-  if (providerStatus !== "ignored" && amountMatches && currencyMatches) {
-    await applyTrustedPaymentResult({
-      paymentId: payment.id,
-      status: providerStatus,
-      providerPaymentId: reconciliation.providerOrderId,
-    });
+    if (claimed) {
+      await applyTrustedPaymentResult({
+        paymentId: payment.id,
+        status: providerStatus,
+        providerPaymentId,
+      });
+      await markPaymentWebhookEventProcessed(claimed.id);
+      applied = true;
+    }
   }
 
   const nextPayment = await findAdminPaymentById(payment.id);
@@ -218,7 +221,7 @@ export const reconcileAdminPayment = async (
       status: reconciliation.status,
       amountMatches,
       currencyMatches,
-      appliedStatus: providerStatus === "ignored" ? null : (providerStatus as PaymentStatus),
+      appliedStatus: applied ? (providerStatus as PaymentStatus) : null,
     },
   };
 };
