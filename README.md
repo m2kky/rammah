@@ -38,3 +38,8 @@ The API defaults to `http://localhost:4000/api/v1`; the frontend defaults to `ht
 `docker:*` commands manage only the local PostgreSQL Compose service. Production container images are not available yet.
 
 Workspace-specific commands remain available through `npm run <script> --workspace=<workspace>`; see each workspace README for details.
+
+## Releases
+
+The [release manifest process](docs/05-project-plan/releases/README.md)
+records the source SHA and immutable images for a real production release.
