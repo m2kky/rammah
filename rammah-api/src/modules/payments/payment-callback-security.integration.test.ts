@@ -286,6 +286,49 @@ describe.sequential("Kashier callback trust boundary", () => {
     }
   });
 
+  it("persists only canonical signed evidence from an officially signed direct callback", async () => {
+    const fixture = await createPaymentFixture();
+    const eventId = "canonical-payload-event";
+    const params = new URLSearchParams(Object.entries(officialCallbackValues(fixture, eventId)));
+    params.set("signature", officialSignature(params));
+    params.append("status", "FAILED");
+    params.append("paymentId", "attacker-id");
+    params.append("booking", crypto.randomUUID());
+    params.append("mode", "live");
+    params.append("attackerExtra", "untrusted");
+
+    expect(verifyKashierCallbackSignature(params.toString())).toBe(true);
+    const result = await handleKashierCallback(params.toString());
+    const state = await readPaymentAndBooking(fixture.paymentId);
+    const [event] = await getTestDatabase().db
+      .select({
+        eventType: paymentWebhookEvents.eventType,
+        providerEventId: paymentWebhookEvents.providerEventId,
+        payload: paymentWebhookEvents.payload,
+      })
+      .from(paymentWebhookEvents)
+      .where(eq(paymentWebhookEvents.providerEventId, eventId));
+
+    expect(result).toEqual({ processed: true, publicToken: fixture.booking.publicToken });
+    expect(state).toMatchObject({
+      paymentStatus: "paid",
+      providerPaymentId: eventId,
+      bookingStatus: "confirmed",
+    });
+    expect(event).toEqual({
+      eventType: "SUCCESS",
+      providerEventId: eventId,
+      payload: {
+        merchantOrderId: fixture.merchantOrderId,
+        paymentStatus: "SUCCESS",
+        transactionId: eventId,
+        orderReference: `${eventId}-reference`,
+        amount: "123.45",
+        currency: "EGP",
+      },
+    });
+  });
+
   it("ignores a forged first callback without reserving its event or reflecting its booking token", async () => {
     const fixture = await createPaymentFixture();
     const forgedToken = crypto.randomUUID();

@@ -580,8 +580,9 @@ export const handleKashierCallback = async (rawQuery: string) => {
     return { processed: false, publicToken: null };
   }
 
-  const providerEventId =
-    callbackParam(params, "transactionId") ?? callbackParam(params, "orderReference");
+  const transactionId = callbackParam(params, "transactionId");
+  const orderReference = callbackParam(params, "orderReference");
+  const providerEventId = transactionId ?? orderReference;
   if (providerEventId) {
     const existingEvent = await findWebhookEventByProviderEventId({
       provider: "kashier",
@@ -602,7 +603,8 @@ export const handleKashierCallback = async (rawQuery: string) => {
   const storedToken = context?.publicToken ?? null;
   const statusValue = callbackParam(params, "paymentStatus");
   const providerStatus = normalizeProviderStatus(statusValue);
-  const amountMinor = parseKashierAmountMinor(callbackParam(params, "amount"));
+  const amountValue = callbackParam(params, "amount");
+  const amountMinor = parseKashierAmountMinor(amountValue);
   const currencyValue = callbackParam(params, "currency");
   const currency = currencyValue && /^[A-Za-z]{3}$/.test(currencyValue)
     ? currencyValue.toUpperCase()
@@ -628,7 +630,14 @@ export const handleKashierCallback = async (rawQuery: string) => {
     bookingId: payment.bookingId,
     eventType: statusValue!,
     signatureValid: true,
-    payload: Object.fromEntries(params.entries()),
+    payload: {
+      merchantOrderId,
+      paymentStatus: statusValue!,
+      ...(transactionId ? { transactionId } : {}),
+      ...(orderReference ? { orderReference } : {}),
+      amount: amountValue!,
+      currency: currencyValue!,
+    },
     processingStatus: "pending",
   });
 
