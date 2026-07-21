@@ -1,14 +1,13 @@
-import { and, desc, eq, gt, ilike, inArray, lt, ne, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
-  bookingSlotHolds,
   bookingStatusEnum,
   bookings,
   calendarEvents,
   offlineLocations,
-  offeringSessions,
   offerings,
 } from "../../db/schema/index.js";
+import { withAvailableSlotCapacity } from "../availability/slot-capacity.repository.js";
 
 export type BookingStatus = (typeof bookingStatusEnum.enumValues)[number];
 
@@ -153,130 +152,72 @@ export const updateAdminBookingStatus = async (
   return findAdminBookingById(id);
 };
 
-export const findAdminBookingScheduleContextById = async (id: string) => {
-  const rows = await db
-    .select({
-      id: bookings.id,
-      offeringId: bookings.offeringId,
-      offeringSessionId: bookings.offeringSessionId,
-      status: bookings.status,
-      slotStartAt: bookings.slotStartAt,
-      slotEndAt: bookings.slotEndAt,
-      timezone: bookings.timezone,
-      confirmedAt: bookings.confirmedAt,
-      offeringCapacity: offerings.capacity,
-      offeringDurationMinutes: offerings.durationMinutes,
-      offeringStatus: offerings.status,
-    })
-    .from(bookings)
-    .innerJoin(offerings, eq(bookings.offeringId, offerings.id))
-    .where(eq(bookings.id, id))
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-export const findRescheduleSessionById = async (input: {
-  sessionId: string;
-  offeringId: string;
-}) => {
-  const rows = await db
-    .select({
-      id: offeringSessions.id,
-      offeringId: offeringSessions.offeringId,
-      startsAt: offeringSessions.startsAt,
-      endsAt: offeringSessions.endsAt,
-      timezone: offeringSessions.timezone,
-      capacity: offeringSessions.capacity,
-      status: offeringSessions.status,
-    })
-    .from(offeringSessions)
-    .where(
-      and(
-        eq(offeringSessions.id, input.sessionId),
-        eq(offeringSessions.offeringId, input.offeringId),
-      ),
-    )
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-export const countBlockingBookingsForSlot = async (input: {
+export const rescheduleAdminBookingWithinCapacity = async (input: {
   bookingId: string;
-  offeringId: string;
-  offeringSessionId?: string | null;
-  startsAt: Date;
-  endsAt: Date;
-}) => {
-  const conditions: SQL[] = [
-    ne(bookings.id, input.bookingId),
-    eq(bookings.offeringId, input.offeringId),
-    inArray(bookings.status, ["pending_payment", "confirmed"]),
-    lt(bookings.slotStartAt, input.endsAt),
-    gt(bookings.slotEndAt, input.startsAt),
-  ];
-
-  if (input.offeringSessionId) {
-    conditions.push(eq(bookings.offeringSessionId, input.offeringSessionId));
-  }
-
-  const rows = await db
-    .select({ id: bookings.id })
-    .from(bookings)
-    .where(and(...conditions));
-
-  return rows.length;
-};
-
-export const countActiveHoldsForSlot = async (input: {
-  offeringId: string;
-  offeringSessionId?: string | null;
-  startsAt: Date;
-  endsAt: Date;
-}) => {
-  const conditions: SQL[] = [
-    eq(bookingSlotHolds.offeringId, input.offeringId),
-    eq(bookingSlotHolds.status, "active"),
-    gt(bookingSlotHolds.expiresAt, new Date()),
-    lt(bookingSlotHolds.slotStartAt, input.endsAt),
-    gt(bookingSlotHolds.slotEndAt, input.startsAt),
-  ];
-
-  if (input.offeringSessionId) {
-    conditions.push(eq(bookingSlotHolds.offeringSessionId, input.offeringSessionId));
-  }
-
-  const rows = await db
-    .select({ id: bookingSlotHolds.id })
-    .from(bookingSlotHolds)
-    .where(and(...conditions));
-
-  return rows.length;
-};
-
-export const updateAdminBookingSchedule = async (input: {
-  bookingId: string;
-  offeringSessionId?: string | null;
+  offeringSessionId: string | null;
   startsAt: Date;
   endsAt: Date;
   timezone: string;
-  confirmedAt?: Date | null;
-}) => {
-  const rows = await db
-    .update(bookings)
-    .set({
-      offeringSessionId: input.offeringSessionId ?? null,
-      slotStartAt: input.startsAt,
-      slotEndAt: input.endsAt,
-      timezone: input.timezone,
-      status: "confirmed",
-      confirmedAt: input.confirmedAt ?? new Date(),
-      cancelledAt: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(bookings.id, input.bookingId))
-    .returning({ id: bookings.id });
+}) =>
+  db.transaction(async (tx) => {
+    // Canonical reschedule order: booking row, target advisory lock, then fixed-session row.
+    const bookingRows = await tx
+      .select({
+        id: bookings.id,
+        offeringId: bookings.offeringId,
+        offeringSessionId: bookings.offeringSessionId,
+        status: bookings.status,
+        slotStartAt: bookings.slotStartAt,
+        slotEndAt: bookings.slotEndAt,
+        timezone: bookings.timezone,
+        confirmedAt: bookings.confirmedAt,
+        updatedAt: bookings.updatedAt,
+      })
+      .from(bookings)
+      .where(eq(bookings.id, input.bookingId))
+      .for("update")
+      .limit(1);
+    const booking = bookingRows[0];
 
-  return rows[0] ? findAdminBookingById(rows[0].id) : null;
-};
+    if (!booking) return { outcome: "not_found" as const };
+    if (!(["confirmed", "rescheduled"] as BookingStatus[]).includes(booking.status)) {
+      return { outcome: "invalid_status" as const };
+    }
+
+    const updated = await withAvailableSlotCapacity(
+      tx,
+      {
+        offeringId: booking.offeringId,
+        offeringSessionId: input.offeringSessionId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+      },
+      { excludeBookingId: booking.id },
+      async ({ timezone: targetTimezone, now }) => {
+        const timezone = (targetTimezone ?? input.timezone.trim()) || booking.timezone;
+        const rows = await tx
+          .update(bookings)
+          .set({
+            offeringSessionId: input.offeringSessionId,
+            slotStartAt: input.startsAt,
+            slotEndAt: input.endsAt,
+            timezone,
+            status: "confirmed",
+            confirmedAt: booking.confirmedAt ?? now,
+            cancelledAt: null,
+            updatedAt: now,
+          })
+          .where(eq(bookings.id, booking.id))
+          .returning({ id: bookings.id });
+
+        return {
+          bookingId: rows[0]!.id,
+          before: booking,
+        };
+      },
+    );
+
+    return updated
+      ? { outcome: "updated" as const, ...updated }
+      : { outcome: "unavailable" as const };
+  });

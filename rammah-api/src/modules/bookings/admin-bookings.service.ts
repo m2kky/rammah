@@ -4,14 +4,10 @@ import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
 import {
   findAdminBookingById,
   findAdminBookings,
-  findAdminBookingScheduleContextById,
-  findRescheduleSessionById,
-  countActiveHoldsForSlot,
-  countBlockingBookingsForSlot,
+  rescheduleAdminBookingWithinCapacity,
   type AdminBookingFilters,
   type AdminBookingRow,
   type BookingStatus,
-  updateAdminBookingSchedule,
   updateAdminBookingStatus as updateAdminBookingStatusRow,
 } from "./admin-bookings.repository.js";
 import {
@@ -24,7 +20,6 @@ import {
   sendBookingConfirmedEmails,
   sendBookingRescheduledEmails,
 } from "../emails/email.service.js";
-import { previewAvailabilitySlots } from "../availability/availability-slots.service.js";
 
 export type AdminBookingStatusPatchInput = {
   status: BookingStatus;
@@ -163,108 +158,6 @@ const parseTimestamp = (value: string, field: "startsAt" | "endsAt") => {
   return date;
 };
 
-const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const assertRecurringSlotIsAvailable = async (input: {
-  bookingId: string;
-  offeringId: string;
-  startsAt: Date;
-  endsAt: Date;
-  currentStartsAt: Date | null;
-  currentEndsAt: Date | null;
-}) => {
-  const unchangedSlot =
-    input.currentStartsAt?.getTime() === input.startsAt.getTime() &&
-    input.currentEndsAt?.getTime() === input.endsAt.getTime();
-
-  if (unchangedSlot) return;
-
-  const date = toDateKey(input.startsAt);
-  const preview = await previewAvailabilitySlots({
-    offeringId: input.offeringId,
-    dateFrom: date,
-    dateTo: date,
-  });
-  const matchingSlot = preview.days
-    .flatMap((day) => day.slots)
-    .find(
-      (slot) =>
-        slot.startsAt === input.startsAt.toISOString() &&
-        slot.endsAt === input.endsAt.toISOString(),
-    );
-
-  if (!matchingSlot || matchingSlot.status === "blocked") {
-    throw slotUnavailableError();
-  }
-
-  const [bookedCount, heldCount] = await Promise.all([
-    countBlockingBookingsForSlot({
-      bookingId: input.bookingId,
-      offeringId: input.offeringId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-    }),
-    countActiveHoldsForSlot({
-      offeringId: input.offeringId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-    }),
-  ]);
-
-  if (bookedCount + heldCount >= Math.max(preview.offering.capacity, 1)) {
-    throw slotUnavailableError();
-  }
-};
-
-const assertSessionSlotIsAvailable = async (input: {
-  bookingId: string;
-  offeringId: string;
-  offeringSessionId: string;
-  startsAt: Date;
-  endsAt: Date;
-}) => {
-  const session = await findRescheduleSessionById({
-    sessionId: input.offeringSessionId,
-    offeringId: input.offeringId,
-  });
-
-  if (
-    !session ||
-    session.status !== "published" ||
-    session.startsAt.getTime() !== input.startsAt.getTime() ||
-    session.endsAt.getTime() !== input.endsAt.getTime()
-  ) {
-    throw slotUnavailableError();
-  }
-
-  const [bookedCount, heldCount] = await Promise.all([
-    countBlockingBookingsForSlot({
-      bookingId: input.bookingId,
-      offeringId: input.offeringId,
-      offeringSessionId: input.offeringSessionId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-    }),
-    countActiveHoldsForSlot({
-      offeringId: input.offeringId,
-      offeringSessionId: input.offeringSessionId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-    }),
-  ]);
-
-  if (bookedCount + heldCount >= Math.max(session.capacity, 1)) {
-    throw slotUnavailableError();
-  }
-
-  return session;
-};
-
 export const updateAdminBookingStatusById = async (
   id: string,
   input: AdminBookingStatusPatchInput,
@@ -351,24 +244,6 @@ export const rescheduleAdminBookingById = async (
   input: AdminBookingRescheduleInput,
   auditContext?: AuditContext,
 ) => {
-  const booking = await findAdminBookingScheduleContextById(id);
-
-  if (!booking) {
-    throw new AppError({
-      code: "NOT_FOUND",
-      message: "Booking was not found.",
-      statusCode: httpStatus.notFound,
-    });
-  }
-
-  if (!["confirmed", "rescheduled"].includes(booking.status)) {
-    throw new AppError({
-      code: "VALIDATION_ERROR",
-      message: "Only confirmed bookings can be rescheduled.",
-      statusCode: httpStatus.badRequest,
-    });
-  }
-
   const startsAt = parseTimestamp(input.startsAt, "startsAt");
   const endsAt = parseTimestamp(input.endsAt, "endsAt");
 
@@ -381,9 +256,15 @@ export const rescheduleAdminBookingById = async (
     });
   }
 
-  const beforeBooking = await findAdminBookingById(id);
+  const result = await rescheduleAdminBookingWithinCapacity({
+    bookingId: id,
+    offeringSessionId: input.offeringSessionId ?? null,
+    startsAt,
+    endsAt,
+    timezone: input.timezone?.trim() || "",
+  });
 
-  if (!beforeBooking) {
+  if (result.outcome === "not_found") {
     throw new AppError({
       code: "NOT_FOUND",
       message: "Booking was not found.",
@@ -391,38 +272,17 @@ export const rescheduleAdminBookingById = async (
     });
   }
 
-  const beforeSnapshot = toAdminBooking(beforeBooking);
-  let timezone = input.timezone?.trim() || booking.timezone || "Africa/Cairo";
-  const offeringSessionId = input.offeringSessionId ?? null;
-
-  if (offeringSessionId) {
-    const session = await assertSessionSlotIsAvailable({
-      bookingId: booking.id,
-      offeringId: booking.offeringId,
-      offeringSessionId,
-      startsAt,
-      endsAt,
-    });
-    timezone = session.timezone;
-  } else {
-    await assertRecurringSlotIsAvailable({
-      bookingId: booking.id,
-      offeringId: booking.offeringId,
-      startsAt,
-      endsAt,
-      currentStartsAt: booking.slotStartAt,
-      currentEndsAt: booking.slotEndAt,
+  if (result.outcome === "invalid_status") {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Only confirmed bookings can be rescheduled.",
+      statusCode: httpStatus.badRequest,
     });
   }
 
-  const updatedBooking = await updateAdminBookingSchedule({
-    bookingId: booking.id,
-    offeringSessionId,
-    startsAt,
-    endsAt,
-    timezone,
-    confirmedAt: booking.confirmedAt,
-  });
+  if (result.outcome === "unavailable") throw slotUnavailableError();
+
+  const updatedBooking = await findAdminBookingById(result.bookingId);
 
   if (!updatedBooking) {
     throw new AppError({
@@ -432,16 +292,26 @@ export const rescheduleAdminBookingById = async (
     });
   }
 
-  await updateGoogleCalendarEventForBooking(booking.id);
-  await sendBookingRescheduledEmails(booking.id);
+  const beforeSnapshot = toAdminBooking({
+    ...updatedBooking,
+    status: result.before.status,
+    slotStartAt: result.before.slotStartAt,
+    slotEndAt: result.before.slotEndAt,
+    timezone: result.before.timezone,
+    confirmedAt: result.before.confirmedAt,
+    updatedAt: result.before.updatedAt,
+  });
 
-  const refreshedBooking = await findAdminBookingById(booking.id);
+  await updateGoogleCalendarEventForBooking(result.bookingId);
+  await sendBookingRescheduledEmails(result.bookingId);
+
+  const refreshedBooking = await findAdminBookingById(result.bookingId);
   const afterBooking = refreshedBooking ? toAdminBooking(refreshedBooking) : toAdminBooking(updatedBooking);
 
   await writeAuditLog(auditContext, {
     action: "admin.bookings.reschedule",
     resourceType: "booking",
-    resourceId: booking.id,
+    resourceId: result.bookingId,
     beforeSnapshot,
     afterSnapshot: {
       ...afterBooking,

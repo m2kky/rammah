@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, eq, gt, inArray, lt, ne, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   availabilityOverrides,
@@ -31,8 +31,19 @@ export type AtomicSlotHoldInput = {
   holdDurationMinutes: number;
 };
 
+export type SlotCapacityInput = Pick<
+  AtomicSlotHoldInput,
+  "offeringId" | "offeringSessionId" | "startsAt" | "endsAt"
+>;
+export type CapacityTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+type AvailableSlotCapacity = {
+  timezone: string | null;
+  now: Date;
+};
+
 const hasPublishedBusyOverlap = async (
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: CapacityTransaction,
   startsAt: Date,
   endsAt: Date,
 ) => {
@@ -52,7 +63,7 @@ const hasPublishedBusyOverlap = async (
 };
 
 const insertHold = async (
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tx: CapacityTransaction,
   input: AtomicSlotHoldInput,
   now: Date,
 ) =>
@@ -65,8 +76,12 @@ const insertHold = async (
     expiresAt: new Date(now.getTime() + input.holdDurationMinutes * 60_000),
   });
 
-export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
-  db.transaction(async (tx) => {
+export const withAvailableSlotCapacity = async <T>(
+  tx: CapacityTransaction,
+  input: SlotCapacityInput,
+  options: { excludeBookingId?: string } = {},
+  mutate: (capacity: AvailableSlotCapacity) => Promise<T>,
+): Promise<T | null> => {
     if (input.offeringSessionId) {
       await acquireCapacityLock(
         tx,
@@ -80,6 +95,7 @@ export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
           offeringId: offeringSessions.offeringId,
           startsAt: offeringSessions.startsAt,
           endsAt: offeringSessions.endsAt,
+          timezone: offeringSessions.timezone,
           capacity: offeringSessions.capacity,
           sessionStatus: offeringSessions.status,
           offeringStatus: offerings.status,
@@ -104,15 +120,17 @@ export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
         return null;
       }
 
+      const bookingConditions: SQL[] = [
+        eq(bookings.offeringSessionId, session.id),
+        inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+      ];
+      if (options.excludeBookingId) {
+        bookingConditions.push(ne(bookings.id, options.excludeBookingId));
+      }
       const blockingBookings = await tx
         .select({ id: bookings.id })
         .from(bookings)
-        .where(
-          and(
-            eq(bookings.offeringSessionId, session.id),
-            inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
-          ),
-        );
+        .where(and(...bookingConditions));
       const activeHolds = await tx
         .select({ id: bookingSlotHolds.id })
         .from(bookingSlotHolds)
@@ -129,7 +147,7 @@ export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
         return null;
       }
 
-      return insertHold(tx, input, now);
+      return mutate({ timezone: session.timezone, now });
     }
 
     await acquireCapacityLock(
@@ -228,17 +246,19 @@ export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
       return null;
     }
 
+    const bookingConditions: SQL[] = [
+      eq(bookings.offeringId, input.offeringId),
+      inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+      lt(bookings.slotStartAt, input.endsAt),
+      gt(bookings.slotEndAt, input.startsAt),
+    ];
+    if (options.excludeBookingId) {
+      bookingConditions.push(ne(bookings.id, options.excludeBookingId));
+    }
     const blockingBookings = await tx
       .select({ id: bookings.id })
       .from(bookings)
-      .where(
-        and(
-          eq(bookings.offeringId, input.offeringId),
-          inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
-          lt(bookings.slotStartAt, input.endsAt),
-          gt(bookings.slotEndAt, input.startsAt),
-        ),
-      );
+      .where(and(...bookingConditions));
     const activeHolds = await tx
       .select({ id: bookingSlotHolds.id })
       .from(bookingSlotHolds)
@@ -257,5 +277,10 @@ export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
       return null;
     }
 
-    return insertHold(tx, input, now);
-  });
+    return mutate({ timezone: null, now });
+};
+
+export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
+  db.transaction((tx) =>
+    withAvailableSlotCapacity(tx, input, {}, ({ now }) => insertHold(tx, input, now)),
+  );
