@@ -26,8 +26,6 @@ import {
   findPublicBookingPaymentContextByBookingId,
   findPublicBookingPaymentContextByToken,
   findWebhookEventByProviderEventId,
-  insertPaymentWebhookEvent,
-  markPaymentWebhookEventProcessed,
   markPaymentProcessing,
   updatePaymentCheckoutUrl,
 } from "./public-payments.repository.js";
@@ -530,7 +528,7 @@ const claimAndApplyReconciliation = async (input: {
   if (!evidenceMatches) return false;
 
   const providerEventId = `reconcile:${input.payment.idempotencyKey}:${providerPaymentId}:${providerStatus}`;
-  const claimed = await insertPaymentWebhookEvent({
+  const result = await applyTrustedPaymentResult({
     provider: "kashier",
     providerEventId,
     paymentId: input.payment.id,
@@ -538,24 +536,10 @@ const claimAndApplyReconciliation = async (input: {
     eventType: input.reconciliation.status!,
     signatureValid: true,
     payload: input.reconciliation.raw,
-    processingStatus: "pending",
-  });
-
-  if (!claimed) {
-    const storedEvent = await findWebhookEventByProviderEventId({
-      provider: "kashier",
-      providerEventId,
-    });
-    return storedEvent?.processingStatus === "processed";
-  }
-
-  await applyTrustedPaymentResult({
-    paymentId: input.payment.id,
     status: providerStatus,
     providerPaymentId,
   });
-  await markPaymentWebhookEventProcessed(claimed.id);
-  return true;
+  return result.event.processingStatus === "processed";
 };
 
 const reconcileCallbackPayment = async (
@@ -623,7 +607,7 @@ export const handleKashierCallback = async (rawQuery: string) => {
     return { processed, publicToken: storedToken };
   }
 
-  const claimed = await insertPaymentWebhookEvent({
+  const result = await applyTrustedPaymentResult({
     provider: "kashier",
     providerEventId: providerEventId!,
     paymentId: payment.id,
@@ -638,27 +622,14 @@ export const handleKashierCallback = async (rawQuery: string) => {
       amount: amountValue!,
       currency: currencyValue!,
     },
-    processingStatus: "pending",
-  });
-
-  if (!claimed) {
-    const existingEvent = await findWebhookEventByProviderEventId({
-      provider: "kashier",
-      providerEventId: providerEventId!,
-    });
-    return existingEvent
-      ? storedEventResult(existingEvent)
-      : { processed: false, publicToken: null };
-  }
-
-  await applyTrustedPaymentResult({
-    paymentId: payment.id,
     status: providerStatus,
     providerPaymentId: providerEventId,
   });
-  await markPaymentWebhookEventProcessed(claimed.id);
 
-  return { processed: true, publicToken: storedToken };
+  return {
+    processed: result.event.processingStatus === "processed",
+    publicToken: storedToken,
+  };
 };
 
 export const reconcilePublicPayment = async (publicToken: string) => {

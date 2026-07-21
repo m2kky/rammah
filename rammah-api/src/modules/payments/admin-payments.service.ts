@@ -4,10 +4,6 @@ import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
 import {
   reconcileKashierPayment,
 } from "./kashier.adapter.js";
-import {
-  insertPaymentWebhookEvent,
-  markPaymentWebhookEventProcessed,
-} from "./public-payments.repository.js";
 import { applyTrustedPaymentResult } from "./payment-confirmation.service.js";
 import {
   findAdminPaymentById,
@@ -164,7 +160,7 @@ export const reconcileAdminPayment = async (
 
   if (evidenceMatches) {
     const providerEventId = `reconcile:${payment.idempotencyKey}:${providerPaymentId}:${providerStatus}`;
-    const claimed = await insertPaymentWebhookEvent({
+    const result = await applyTrustedPaymentResult({
       provider: "kashier",
       providerEventId,
       paymentId: payment.id,
@@ -172,18 +168,10 @@ export const reconcileAdminPayment = async (
       eventType: reconciliation.status ?? "unknown",
       signatureValid: true,
       payload: reconciliation.raw,
-      processingStatus: "pending",
+      status: providerStatus,
+      providerPaymentId,
     });
-
-    if (claimed) {
-      await applyTrustedPaymentResult({
-        paymentId: payment.id,
-        status: providerStatus,
-        providerPaymentId,
-      });
-      await markPaymentWebhookEventProcessed(claimed.id);
-      applied = true;
-    }
+    applied = result.event.processingStatus === "processed";
   }
 
   const nextPayment = await findAdminPaymentById(payment.id);

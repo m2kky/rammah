@@ -10,6 +10,7 @@ import {
   payments,
 } from "../../db/schema/index.js";
 import type { PublicBookingAnswerInput } from "../bookings/public-bookings.repository.js";
+import { enqueueOutboxEvent } from "../outbox/outbox.repository.js";
 
 export type PaidBookingInput = {
   holdId: string;
@@ -423,124 +424,179 @@ export const findWebhookEventByProviderEventId = async (input: {
   return rows[0] ?? null;
 };
 
-export const insertPaymentWebhookEvent = async (input: {
+export type TrustedPaymentFinalizationInput = {
   provider: string;
   providerEventId: string;
-  paymentId?: string | null;
-  bookingId?: string | null;
-  eventType: string;
-  signatureValid: boolean;
-  payload: Record<string, unknown>;
-  processingStatus?: "pending" | "processed" | "failed" | "ignored";
-}) => {
-  const rows = await db
-    .insert(paymentWebhookEvents)
-    .values({
-      provider: input.provider,
-      providerEventId: input.providerEventId,
-      paymentId: input.paymentId ?? null,
-      bookingId: input.bookingId ?? null,
-      eventType: input.eventType,
-      signatureValid: input.signatureValid,
-      payload: input.payload,
-      processingStatus: input.processingStatus ?? "pending",
-    })
-    .onConflictDoNothing({
-      target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
-    })
-    .returning({
-      id: paymentWebhookEvents.id,
-      paymentId: paymentWebhookEvents.paymentId,
-      bookingId: paymentWebhookEvents.bookingId,
-      processingStatus: paymentWebhookEvents.processingStatus,
-    });
-
-  return rows[0] ?? null;
-};
-
-export const markPaymentWebhookEventProcessed = async (id: string) => {
-  const rows = await db
-    .update(paymentWebhookEvents)
-    .set({
-      processingStatus: "processed",
-      processedAt: new Date(),
-    })
-    .where(eq(paymentWebhookEvents.id, id))
-    .returning({ id: paymentWebhookEvents.id });
-
-  return rows[0] ?? null;
-};
-
-export const applyVerifiedPaymentResult = async (input: {
   paymentId: string;
+  bookingId: string;
+  eventType: string;
+  signatureValid: true;
+  payload: Record<string, unknown>;
   status: "paid" | "failed" | "abandoned" | "expired" | "cancelled";
   providerPaymentId?: string | null;
-}) =>
+};
+
+const paymentEventSelect = {
+  id: paymentWebhookEvents.id,
+  provider: paymentWebhookEvents.provider,
+  providerEventId: paymentWebhookEvents.providerEventId,
+  paymentId: paymentWebhookEvents.paymentId,
+  bookingId: paymentWebhookEvents.bookingId,
+  eventType: paymentWebhookEvents.eventType,
+  signatureValid: paymentWebhookEvents.signatureValid,
+  payload: paymentWebhookEvents.payload,
+  processedAt: paymentWebhookEvents.processedAt,
+  processingStatus: paymentWebhookEvents.processingStatus,
+  createdAt: paymentWebhookEvents.createdAt,
+};
+
+export const finalizeVerifiedPaymentEvent = async (input: TrustedPaymentFinalizationInput) =>
   db.transaction(async (tx) => {
+    const insertedEvents = await tx
+      .insert(paymentWebhookEvents)
+      .values({
+        provider: input.provider,
+        providerEventId: input.providerEventId,
+        paymentId: null,
+        bookingId: null,
+        eventType: input.eventType,
+        signatureValid: input.signatureValid,
+        payload: input.payload,
+        processingStatus: "pending",
+      })
+      .onConflictDoNothing({
+        target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
+      })
+      .returning(paymentEventSelect);
+    const insertedEvent = insertedEvents[0] ?? null;
+
+    if (!insertedEvent) {
+      const storedEvents = await tx
+        .select(paymentEventSelect)
+        .from(paymentWebhookEvents)
+        .where(
+          and(
+            eq(paymentWebhookEvents.provider, input.provider),
+            eq(paymentWebhookEvents.providerEventId, input.providerEventId),
+          ),
+        )
+        .limit(1);
+      const storedEvent = storedEvents[0];
+
+      if (!storedEvent) {
+        throw new Error("Conflicting payment event could not be read.");
+      }
+
+      return { event: storedEvent };
+    }
+
     const paymentRows = await tx
       .select(paymentSelect)
       .from(payments)
       .where(eq(payments.id, input.paymentId))
-      .limit(1);
+      .limit(1)
+      .for("update");
     const payment = paymentRows[0] ?? null;
 
-    if (!payment) return null;
-
-    if (payment.status === "paid" || payment.status === input.status) {
-      return payment;
+    if (!payment || payment.bookingId !== input.bookingId) {
+      throw new Error("Trusted payment event does not match an existing payment and booking.");
     }
 
+    const bookingRows = await tx
+      .select({ id: bookings.id, status: bookings.status })
+      .from(bookings)
+      .where(eq(bookings.id, payment.bookingId))
+      .limit(1)
+      .for("update");
+    const booking = bookingRows[0] ?? null;
+
+    if (!booking) {
+      throw new Error("Trusted payment event booking was not found.");
+    }
+
+    const repeatedStatus = payment.status === input.status;
+    const blockedByTerminalState =
+      !repeatedStatus && (payment.status === "paid" || payment.status === "refunded");
     const now = new Date();
-    const failedAt =
-      input.status === "failed" ||
-      input.status === "abandoned" ||
-      input.status === "expired" ||
-      input.status === "cancelled"
-        ? now
-        : null;
-    const bookingStatus =
-      input.status === "paid"
-        ? "confirmed"
-        : input.status === "expired"
-          ? "expired"
-          : input.status === "cancelled"
-            ? "cancelled"
-            : "payment_failed";
 
-    const updatedPaymentRows = await tx
-      .update(payments)
+    if (blockedByTerminalState) {
+      const ignoredEvents = await tx
+        .update(paymentWebhookEvents)
+        .set({
+          paymentId: payment.id,
+          bookingId: booking.id,
+          processingStatus: "ignored",
+          processedAt: now,
+        })
+        .where(eq(paymentWebhookEvents.id, insertedEvent.id))
+        .returning(paymentEventSelect);
+      return { event: ignoredEvents[0]! };
+    }
+
+    if (!repeatedStatus) {
+      const bookingStatus =
+        input.status === "paid"
+          ? "confirmed"
+          : input.status === "expired"
+            ? "expired"
+            : input.status === "cancelled"
+              ? "cancelled"
+              : "payment_failed";
+
+      await tx
+        .update(payments)
+        .set({
+          status: input.status,
+          providerPaymentId: input.providerPaymentId ?? payment.providerPaymentId,
+          paidAt: input.status === "paid" ? now : payment.paidAt,
+          failedAt: input.status === "paid" ? null : now,
+          updatedAt: now,
+        })
+        .where(eq(payments.id, payment.id));
+
+      await tx
+        .update(bookings)
+        .set({
+          status: bookingStatus,
+          confirmedAt: input.status === "paid" ? now : null,
+          cancelledAt: input.status === "cancelled" ? now : null,
+          updatedAt: now,
+        })
+        .where(eq(bookings.id, booking.id));
+
+      if (input.status === "paid") {
+        await enqueueOutboxEvent(
+          {
+            topic: "calendar.booking.create",
+            aggregateType: "booking",
+            aggregateId: booking.id,
+            payload: { bookingId: booking.id },
+            idempotencyKey: `calendar.booking.create:${booking.id}`,
+          },
+          tx,
+        );
+        await enqueueOutboxEvent(
+          {
+            topic: "email.booking.confirmed",
+            aggregateType: "booking",
+            aggregateId: booking.id,
+            payload: { bookingId: booking.id },
+            idempotencyKey: `email.booking.confirmed:${booking.id}`,
+          },
+          tx,
+        );
+      }
+    }
+
+    const processedEvents = await tx
+      .update(paymentWebhookEvents)
       .set({
-        status: input.status,
-        providerPaymentId: input.providerPaymentId ?? payment.providerPaymentId,
-        paidAt: input.status === "paid" ? now : payment.paidAt,
-        failedAt,
-        updatedAt: now,
+        paymentId: payment.id,
+        bookingId: booking.id,
+        processingStatus: "processed",
+        processedAt: now,
       })
-      .where(eq(payments.id, payment.id))
-      .returning(paymentSelect);
-
-    const bookingUpdate: Partial<typeof bookings.$inferInsert> = {
-      status: bookingStatus,
-      updatedAt: now,
-    };
-
-    if (input.status === "paid") {
-      bookingUpdate.confirmedAt = now;
-    }
-
-    if (input.status === "cancelled") {
-      bookingUpdate.cancelledAt = now;
-    }
-
-    await tx
-      .update(bookings)
-      .set(bookingUpdate)
-      .where(
-        and(
-          eq(bookings.id, payment.bookingId),
-          inArray(bookings.status, ["pending_payment", "payment_failed", "expired", "cancelled"]),
-        ),
-      );
-
-    return updatedPaymentRows[0] ?? null;
+      .where(eq(paymentWebhookEvents.id, insertedEvent.id))
+      .returning(paymentEventSelect);
+    return { event: processedEvents[0]! };
   });
