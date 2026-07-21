@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   bookingAnswers,
@@ -137,9 +137,8 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
         .select(paymentSelect)
         .from(payments)
         .where(eq(payments.bookingId, hold.bookingId))
-        .orderBy(desc(payments.createdAt))
+        .orderBy(asc(payments.createdAt), asc(payments.id))
         .limit(1);
-
       const booking = bookingRows[0] ?? null;
       const payment = paymentRows[0] ?? null;
 

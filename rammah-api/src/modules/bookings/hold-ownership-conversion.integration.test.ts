@@ -21,7 +21,10 @@ import {
 import { getTestDatabase } from "../../test/db.js";
 import { createSlotHold, releaseSlotHoldById } from "../availability/slot-holds.service.js";
 import { createPaidBookingFromHold } from "../payments/public-payments.repository.js";
-import { submitPaidBooking } from "../payments/public-payments.service.js";
+import {
+  startPublicPaymentForBooking,
+  submitPaidBooking,
+} from "../payments/public-payments.service.js";
 import { createFreeBookingFromHold } from "./public-bookings.repository.js";
 import { submitFreeBooking } from "./public-bookings.service.js";
 
@@ -170,6 +173,61 @@ const paidInput = (hold: { id: string; holdToken: string }, suffix = "first") =>
   },
 });
 
+const unknownAnswer = {
+  fieldKey: "unknown-current-field",
+  label: "Unknown current field",
+  value: "must not become an ownership oracle",
+};
+
+const freeServiceInput = (
+  holdId: string,
+  holdToken?: string | null,
+  answers = [unknownAnswer],
+) => ({
+  holdId,
+  holdToken,
+  attendanceMode: "online" as const,
+  customer: {
+    fullName: "Free Service Owner",
+    email: "free-service-owner@example.test",
+  },
+  timezone: "Africa/Cairo",
+  answers,
+});
+
+const paidServiceInput = (
+  holdId: string,
+  holdToken?: string | null,
+  answers = [unknownAnswer],
+) => ({
+  holdId,
+  holdToken,
+  attendanceMode: "online" as const,
+  customer: {
+    fullName: "Paid Service Owner",
+    email: "paid-service-owner@example.test",
+  },
+  countryCode: "EG",
+  timezone: "Africa/Cairo",
+  answers,
+});
+
+const seedRequiredGoalField = async (offeringId: string) => {
+  const { db } = getTestDatabase();
+  const [field] = await db
+    .insert(bookingFormFields)
+    .values({
+      offeringId,
+      fieldKey: "goal",
+      label: "Goal",
+      fieldType: "text",
+      required: true,
+      status: "published",
+    })
+    .returning();
+  return field!;
+};
+
 const expectUnavailable = async (promise: Promise<unknown>) => {
   await expect(promise).rejects.toMatchObject({ code: "SLOT_UNAVAILABLE" });
 };
@@ -244,32 +302,57 @@ describe.sequential("owned slot holds and atomic conversion", () => {
     }
   });
 
-  it("does not reveal owned hold context through pre-conversion validation", async () => {
+  it("rejects every unauthenticated or unusable free hold before mutable validation", async () => {
     const { db } = getTestDatabase();
     const target = await seedRecurringTarget({});
     const hold = await createSlotHold(target.holdInput);
-    await db.insert(bookingFormFields).values({
-      offeringId: target.offering.id,
-      fieldKey: "required-secret",
-      label: "Required answer",
-      fieldType: "text",
-      required: true,
-      status: "published",
-    });
+    await expectUnavailable(submitFreeBooking(freeServiceInput(hold.id, undefined)));
+    await expectUnavailable(submitFreeBooking(freeServiceInput(hold.id, "wrong-token")));
+    await db.update(bookingSlotHolds).set({ holdSecretHash: null }).where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitFreeBooking(freeServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ holdSecretHash: digest(hold.holdToken), status: "released" })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitFreeBooking(freeServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ status: "active", expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitFreeBooking(freeServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ expiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expect(submitFreeBooking(freeServiceInput(hold.id, hold.holdToken))).rejects
+      .toMatchObject({ code: "VALIDATION_ERROR" });
+  });
 
-    await expectUnavailable(
-      submitFreeBooking({
-        holdId: hold.id,
-        holdToken: "wrong-token",
-        attendanceMode: "online",
-        customer: {
-          fullName: "Unknown Owner",
-          email: "unknown@example.test",
-        },
-        timezone: "Africa/Cairo",
-        answers: [],
-      }),
-    );
+  it("rejects every unauthenticated or unusable paid hold before form and price validation", async () => {
+    const { db } = getTestDatabase();
+    const target = await seedRecurringTarget({ bookingMode: "paid" });
+    const hold = await createSlotHold(target.holdInput);
+    await db.delete(offeringPrices).where(eq(offeringPrices.offeringId, target.offering.id));
+    await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, undefined)));
+    await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, "wrong-token")));
+    await db.update(bookingSlotHolds).set({ holdSecretHash: null }).where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ holdSecretHash: digest(hold.holdToken), status: "released" })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ status: "active", expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, hold.holdToken)));
+    await db
+      .update(bookingSlotHolds)
+      .set({ expiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(bookingSlotHolds.id, hold.id));
+    await expect(submitPaidBooking(paidServiceInput(hold.id, hold.holdToken))).rejects
+      .toMatchObject({ code: "VALIDATION_ERROR" });
   });
 
   it("lets the owner release an active hold idempotently and never convert it", async () => {
@@ -389,6 +472,75 @@ describe.sequential("owned slot holds and atomic conversion", () => {
     );
     expect(second.paymentSession.checkoutUrl).toBe(first.paymentSession.checkoutUrl);
     expect(await countRows(target.offering.id)).toEqual({ bookings: 1, answers: 0, payments: 1 });
+  });
+
+  it("replays a converted free booking before changed form and offering validation", async () => {
+    const { db } = getTestDatabase();
+    const target = await seedRecurringTarget({});
+    const field = await seedRequiredGoalField(target.offering.id);
+    const hold = await createSlotHold(target.holdInput);
+    const request = freeServiceInput(hold.id, hold.holdToken, [
+      { fieldKey: field.fieldKey, label: field.label, value: "Original goal" },
+    ]);
+
+    const first = await submitFreeBooking(request);
+    await db
+      .update(bookingFormFields)
+      .set({ status: "archived", label: "Changed current label" })
+      .where(eq(bookingFormFields.id, field.id));
+    await db
+      .update(offerings)
+      .set({ status: "archived" })
+      .where(eq(offerings.id, target.offering.id));
+
+    const replay = await submitFreeBooking(request);
+
+    expect(replay.id).toBe(first.id);
+    expect(replay.publicToken).toBe(first.publicToken);
+    await expectUnavailable(
+      submitPaidBooking(paidServiceInput(hold.id, hold.holdToken, request.answers)),
+    );
+    expect(await countRows(target.offering.id)).toEqual({ bookings: 1, answers: 1, payments: 0 });
+  });
+
+  it("replays the original paid conversion after mutable data changes and a public retry", async () => {
+    const { db } = getTestDatabase();
+    const target = await seedRecurringTarget({ bookingMode: "paid" });
+    const field = await seedRequiredGoalField(target.offering.id);
+    const hold = await createSlotHold(target.holdInput);
+    const request = paidServiceInput(hold.id, hold.holdToken, [
+      { fieldKey: field.fieldKey, label: field.label, value: "Original goal" },
+    ]);
+
+    const first = await submitPaidBooking(request);
+    await db
+      .update(bookingFormFields)
+      .set({ status: "archived", label: "Changed current label" })
+      .where(eq(bookingFormFields.id, field.id));
+    await db.delete(offeringPrices).where(eq(offeringPrices.offeringId, target.offering.id));
+    await db
+      .update(payments)
+      .set({ status: "failed", failedAt: new Date(), updatedAt: new Date() })
+      .where(eq(payments.id, first.payment.id));
+    await db
+      .update(bookings)
+      .set({ status: "payment_failed", updatedAt: new Date() })
+      .where(eq(bookings.id, first.booking.id));
+
+    const retry = await startPublicPaymentForBooking(first.booking.publicToken);
+    expect(retry.payment.id).not.toBe(first.payment.id);
+
+    const replay = await submitPaidBooking(request);
+
+    expect(replay.booking.id).toBe(first.booking.id);
+    expect(replay.payment.id).toBe(first.payment.id);
+    expect(replay.paymentSession.iframe.merchantOrderId).toBe(
+      first.paymentSession.iframe.merchantOrderId,
+    );
+    await expectUnavailable(
+      submitFreeBooking(freeServiceInput(hold.id, hold.holdToken, request.answers)),
+    );
+    expect(await countRows(target.offering.id)).toEqual({ bookings: 1, answers: 1, payments: 2 });
   });
 
   it("makes the free conversion win against an incompatible paid conversion", async () => {

@@ -167,22 +167,43 @@ export const submitFreeBooking = async (input: PublicBookingInput) => {
       input.holdId,
       input.holdToken,
     );
-    const activeHold =
-      holdContext?.holdStatus === "active" && holdContext.expiresAt > new Date()
-        ? holdContext
-        : null;
-    const fields = activeHold
-      ? await listPublicBookingFormFields(activeHold.offeringId)
-      : [];
+    if (!holdContext) {
+      throw slotUnavailableError();
+    }
+
+    if (holdContext.holdStatus === "converted") {
+      const replay = await createFreeBookingFromHold({
+        holdId: input.holdId,
+        holdToken: input.holdToken,
+        attendanceMode: input.attendanceMode,
+        locationId: input.locationId,
+        customerFullName: input.customer.fullName.trim(),
+        customerEmail: input.customer.email.trim().toLowerCase(),
+        customerPhone: normalizeOptionalText(input.customer.phone),
+        countryCode: normalizeCountryCode(input.countryCode),
+        timezone: input.timezone.trim() || "Africa/Cairo",
+        answers: [],
+      });
+      if (!replay.booking || !replay.hold || replay.rejection) {
+        throw slotUnavailableError();
+      }
+
+      return toPublicBooking(replay);
+    }
+
+    if (holdContext.holdStatus !== "active" || holdContext.expiresAt <= new Date()) {
+      throw slotUnavailableError();
+    }
+
+    const activeHold = holdContext;
+    const fields = await listPublicBookingFormFields(activeHold.offeringId);
     const answers = validateAndNormalizeBookingAnswers(fields, input.answers);
-    const locationId = activeHold
-      ? await resolveLocationId({
-          offeringId: activeHold.offeringId,
-          offeringSessionId: activeHold.offeringSessionId,
-          attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
-          locationId: input.locationId,
-        })
-      : null;
+    const locationId = await resolveLocationId({
+      offeringId: activeHold.offeringId,
+      offeringSessionId: activeHold.offeringSessionId,
+      attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
+      locationId: input.locationId,
+    });
 
     const initialResult = await createFreeBookingFromHold({
       holdId: input.holdId,

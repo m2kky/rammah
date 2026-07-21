@@ -256,24 +256,65 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
     input.holdId,
     input.holdToken,
   );
-  const activeHold =
-    holdContext?.holdStatus === "active" && holdContext.expiresAt > new Date()
-      ? holdContext
-      : null;
-  const fields = activeHold ? await listPublicBookingFormFields(activeHold.offeringId) : [];
-  const answers = validateAndNormalizeBookingAnswers(fields, input.answers);
-  const locationId = activeHold
-    ? await resolveLocationId({
-        offeringId: activeHold.offeringId,
-        offeringSessionId: activeHold.offeringSessionId,
-        attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
-        locationId: input.locationId,
-      })
-    : null;
-
   if (!holdContext) {
     throw slotUnavailableError();
   }
+
+  if (holdContext.holdStatus === "converted") {
+    // ponytail: the repository's converted branch returns before these mutable inputs are read.
+    const replay = await createPaidBookingFromHold({
+      holdId: input.holdId,
+      holdToken: input.holdToken,
+      attendanceMode: input.attendanceMode,
+      locationId: input.locationId,
+      customerFullName: input.customer.fullName.trim(),
+      customerEmail: input.customer.email.trim().toLowerCase(),
+      customerPhone: normalizeOptionalText(input.customer.phone),
+      countryCode: normalizeCountryCode(input.countryCode),
+      timezone: input.timezone.trim() || "Africa/Cairo",
+      answers: [],
+      price: {
+        currency: "EGP",
+        baseAmountMinor: 0,
+        discountAmountMinor: 0,
+        taxAmountMinor: 0,
+        totalAmountMinor: 0,
+      },
+      payment: {
+        provider: env.PAYMENT_PROVIDER,
+        idempotencyKey: "converted-hold-replay",
+      },
+    });
+    if (!replay.booking || !replay.payment || !replay.hold || replay.rejection) {
+      throw slotUnavailableError();
+    }
+
+    const { session, payment } = await getOrCreateSessionForPayment({
+      publicToken: replay.booking.publicToken,
+      payment: replay.payment,
+      markProcessing: true,
+    });
+    return toPublicPaidBooking({
+      booking: replay.booking,
+      hold: replay.hold,
+      payment,
+      session,
+    });
+  }
+
+  if (holdContext.holdStatus !== "active" || holdContext.expiresAt <= new Date()) {
+    throw slotUnavailableError();
+  }
+
+  const activeHold = holdContext;
+  const fields = await listPublicBookingFormFields(activeHold.offeringId);
+  const answers = validateAndNormalizeBookingAnswers(fields, input.answers);
+  const locationId = await resolveLocationId({
+    offeringId: activeHold.offeringId,
+    offeringSessionId: activeHold.offeringSessionId,
+    attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
+    locationId: input.locationId,
+  });
 
   const pricePreview = await previewPublicOfferingPrice({
     offeringId: holdContext.offeringId,
