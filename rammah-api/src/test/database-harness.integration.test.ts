@@ -18,7 +18,7 @@ describe.sequential("real PostgreSQL integration harness", () => {
     expect(databaseResult.rows[0]?.current_database).toBe(
       getTestDatabaseName(context.connectionString, process.env.NODE_ENV),
     );
-    expect(Number(migrationResult.rows[0]?.count)).toBe(4);
+    expect(Number(migrationResult.rows[0]?.count)).toBe(5);
 
     await seedTestDatabase(context, async (db) => {
       await db.insert(contactInquiries).values({

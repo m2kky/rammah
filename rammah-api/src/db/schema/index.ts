@@ -84,6 +84,12 @@ export const googleCalendarConnectionStatusEnum = pgEnum("google_calendar_connec
 ]);
 export const discountTypeEnum = pgEnum("discount_type", ["fixed", "percentage"]);
 export const overrideTypeEnum = pgEnum("override_type", ["available", "blocked"]);
+export const outboxStateEnum = pgEnum("outbox_state", [
+  "queued",
+  "processing",
+  "completed",
+  "dead_letter",
+]);
 
 export const adminUsers = pgTable(
   "admin_users",
@@ -806,5 +812,36 @@ export const auditLogs = pgTable(
     adminIdx: index("audit_logs_admin_idx").on(table.adminUserId),
     resourceIdx: index("audit_logs_resource_idx").on(table.resourceType, table.resourceId),
     createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt),
+  }),
+);
+
+export const outboxEvents = pgTable(
+  "outbox_events",
+  {
+    id: id(),
+    topic: varchar("topic", { length: 160 }).notNull(),
+    aggregateType: varchar("aggregate_type", { length: 120 }).notNull(),
+    aggregateId: text("aggregate_id").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    state: outboxStateEnum("state").notNull().default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lockToken: uuid("lock_token"),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+    lastError: varchar("last_error", { length: 2000 }),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    idempotencyUnique: uniqueIndex("outbox_events_idempotency_unique").on(table.idempotencyKey),
+    claimIdx: index("outbox_events_claim_idx").on(
+      table.state,
+      table.availableAt,
+      table.createdAt,
+      table.id,
+    ),
+    leaseIdx: index("outbox_events_lease_idx").on(table.state, table.lockedAt),
+    aggregateIdx: index("outbox_events_aggregate_idx").on(table.aggregateType, table.aggregateId),
   }),
 );
