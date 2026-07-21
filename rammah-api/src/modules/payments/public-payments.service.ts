@@ -33,6 +33,7 @@ import { applyTrustedPaymentResult } from "./payment-confirmation.service.js";
 
 type PublicPaidBookingInput = {
   holdId: string;
+  holdToken?: string | null;
   attendanceMode?: "online" | "offline" | "hybrid";
   locationId?: string | null;
   customer: {
@@ -247,7 +248,14 @@ const getOrCreateSessionForPayment = async (input: {
 };
 
 export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
-  const holdContext = await findPublicBookingHoldContextById(input.holdId);
+  if (!input.holdToken) {
+    throw slotUnavailableError();
+  }
+
+  const holdContext = await findPublicBookingHoldContextById(
+    input.holdId,
+    input.holdToken,
+  );
   const activeHold =
     holdContext?.holdStatus === "active" && holdContext.expiresAt > new Date()
       ? holdContext
@@ -274,6 +282,7 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
 
   const result = await createPaidBookingFromHold({
     holdId: input.holdId,
+    holdToken: input.holdToken,
     attendanceMode: input.attendanceMode,
     locationId,
     customerFullName: input.customer.fullName.trim(),

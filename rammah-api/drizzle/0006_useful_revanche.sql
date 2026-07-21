@@ -1,0 +1,1 @@
+ALTER TABLE "booking_slot_holds" ADD COLUMN "hold_secret_hash" varchar(64);

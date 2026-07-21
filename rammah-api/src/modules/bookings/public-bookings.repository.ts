@@ -6,9 +6,11 @@ import {
   bookings,
   offlineLocations,
   offeringLocations,
-  offeringSessions,
   offerings,
 } from "../../db/schema/index.js";
+import { withAvailableSlotCapacity } from "../availability/slot-capacity.repository.js";
+import { verifySlotHoldToken } from "../availability/slot-hold-token.js";
+import { lockOwnedSlotHold } from "../availability/slot-holds.repository.js";
 
 export type PublicBookingAnswerInput = {
   fieldId?: string | null;
@@ -19,6 +21,7 @@ export type PublicBookingAnswerInput = {
 
 export type CreateFreeBookingInput = {
   holdId: string;
+  holdToken: string | null | undefined;
   attendanceMode?: "online" | "offline" | "hybrid";
   locationId?: string | null;
   customerFullName: string;
@@ -29,7 +32,10 @@ export type CreateFreeBookingInput = {
   answers: PublicBookingAnswerInput[];
 };
 
-export const findPublicBookingHoldContextById = async (holdId: string) => {
+export const findPublicBookingHoldContextById = async (
+  holdId: string,
+  holdToken: string | null | undefined,
+) => {
   const rows = await db
     .select({
       id: bookingSlotHolds.id,
@@ -38,13 +44,20 @@ export const findPublicBookingHoldContextById = async (holdId: string) => {
       offeringAttendanceMode: offerings.attendanceMode,
       holdStatus: bookingSlotHolds.status,
       expiresAt: bookingSlotHolds.expiresAt,
+      holdSecretHash: bookingSlotHolds.holdSecretHash,
     })
     .from(bookingSlotHolds)
     .innerJoin(offerings, eq(bookingSlotHolds.offeringId, offerings.id))
     .where(eq(bookingSlotHolds.id, holdId))
     .limit(1);
 
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+  if (!row || !verifySlotHoldToken(holdToken, row.holdSecretHash)) {
+    return null;
+  }
+
+  const { holdSecretHash: _holdSecretHash, ...context } = row;
+  return context;
 };
 
 const bookingSelect = {
@@ -69,123 +82,140 @@ const bookingSelect = {
 
 export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =>
   db.transaction(async (tx) => {
-    const holdRows = await tx
-      .select({
-        id: bookingSlotHolds.id,
-        offeringId: bookingSlotHolds.offeringId,
-        offeringSessionId: bookingSlotHolds.offeringSessionId,
-        sessionLocationId: offeringSessions.locationId,
-        slotStartAt: bookingSlotHolds.slotStartAt,
-        slotEndAt: bookingSlotHolds.slotEndAt,
-        holdStatus: bookingSlotHolds.status,
-        expiresAt: bookingSlotHolds.expiresAt,
-        offeringTitle: offerings.title,
-        offeringSlug: offerings.slug,
-        offeringAttendanceMode: offerings.attendanceMode,
-        offeringBookingMode: offerings.bookingMode,
-        offeringRequiresPayment: offerings.requiresPayment,
-        offeringQuoteOnly: offerings.quoteOnly,
-        offeringStatus: offerings.status,
-      })
-      .from(bookingSlotHolds)
-      .innerJoin(offerings, eq(bookingSlotHolds.offeringId, offerings.id))
-      .leftJoin(offeringSessions, eq(bookingSlotHolds.offeringSessionId, offeringSessions.id))
-      .where(eq(bookingSlotHolds.id, input.holdId))
-      .limit(1);
-    const hold = holdRows[0] ?? null;
+    const hold = await lockOwnedSlotHold(tx, input.holdId, input.holdToken);
 
     if (!hold) {
-      return { booking: null, hold: null, converted: false, rejection: "hold_not_found" } as const;
+      return { booking: null, hold: null, converted: false, rejection: "hold_unavailable" } as const;
     }
 
-    const now = new Date();
+    if (hold.holdStatus === "converted" && hold.bookingId) {
+      const bookingRows = await tx
+        .select(bookingSelect)
+        .from(bookings)
+        .where(eq(bookings.id, hold.bookingId))
+        .limit(1);
+      const booking = bookingRows[0] ?? null;
 
-    if (hold.holdStatus !== "active" || hold.expiresAt <= now) {
+      if (!booking || booking.paymentRequired) {
+        return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
+      }
+
+      return { booking, hold, converted: true, rejection: null } as const;
+    }
+
+    if (hold.holdStatus !== "active" || hold.expiresAt <= new Date()) {
       return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
     }
 
-    if (
-      hold.offeringStatus !== "published" ||
-      hold.offeringBookingMode !== "free" ||
-      hold.offeringRequiresPayment ||
-      hold.offeringQuoteOnly
-    ) {
-      return { booking: null, hold, converted: false, rejection: "offering_not_free" } as const;
-    }
-
-    const attendanceMode = input.attendanceMode ?? hold.offeringAttendanceMode;
-
-    if (
-      hold.offeringAttendanceMode !== "hybrid" &&
-      attendanceMode !== hold.offeringAttendanceMode
-    ) {
-      return { booking: null, hold, converted: false, rejection: "attendance_mode" } as const;
-    }
-
-    const bookingRows = await tx
-      .insert(bookings)
-      .values({
+    const result = await withAvailableSlotCapacity(
+      tx,
+      {
         offeringId: hold.offeringId,
         offeringSessionId: hold.offeringSessionId,
-        locationId: hold.sessionLocationId ?? input.locationId ?? null,
-        attendanceMode,
-        status: "confirmed",
-        customerFullName: input.customerFullName,
-        customerEmail: input.customerEmail,
-        customerPhone: input.customerPhone ?? null,
-        countryCode: input.countryCode ?? null,
-        slotStartAt: hold.slotStartAt,
-        slotEndAt: hold.slotEndAt,
-        timezone: input.timezone,
-        paymentRequired: false,
-        confirmedAt: now,
-      })
-      .returning(bookingSelect);
-    const booking = bookingRows[0] ?? null;
+        startsAt: hold.slotStartAt,
+        endsAt: hold.slotEndAt,
+      },
+      { excludeHoldId: hold.id },
+      async ({ now, offering, sessionLocationId }) => {
+        const currentHold = {
+          ...hold,
+          offeringTitle: offering.title,
+          offeringSlug: offering.slug,
+          offeringAttendanceMode: offering.attendanceMode,
+          sessionLocationId,
+        };
 
-    if (!booking) {
-      throw new Error("Booking insert did not return a row.");
-    }
+        if (
+          offering.bookingMode !== "free" ||
+          offering.requiresPayment ||
+          offering.quoteOnly
+        ) {
+          return {
+            booking: null,
+            hold: currentHold,
+            converted: false,
+            rejection: "offering_not_free",
+          } as const;
+        }
 
-    if (input.answers.length > 0) {
-      await tx.insert(bookingAnswers).values(
-        input.answers.map((answer) => ({
-          bookingId: booking.id,
-          fieldId: answer.fieldId ?? null,
-          fieldKeySnapshot: answer.fieldKey,
-          labelSnapshot: answer.label,
-          value: answer.value ?? null,
-        })),
-      );
-    }
+        const attendanceMode = input.attendanceMode ?? offering.attendanceMode;
+        if (
+          offering.attendanceMode !== "hybrid" &&
+          attendanceMode !== offering.attendanceMode
+        ) {
+          return {
+            booking: null,
+            hold: currentHold,
+            converted: false,
+            rejection: "attendance_mode",
+          } as const;
+        }
 
-    const convertedRows = await tx
-      .update(bookingSlotHolds)
-      .set({
-        status: "converted",
-        bookingId: booking.id,
-      })
-      .where(
-        and(
-          eq(bookingSlotHolds.id, hold.id),
-          eq(bookingSlotHolds.status, "active"),
-          gt(bookingSlotHolds.expiresAt, now),
-        ),
-      )
-      .returning({
-        id: bookingSlotHolds.id,
-      });
+        const bookingRows = await tx
+          .insert(bookings)
+          .values({
+            offeringId: hold.offeringId,
+            offeringSessionId: hold.offeringSessionId,
+            locationId: sessionLocationId ?? input.locationId ?? null,
+            attendanceMode,
+            status: "confirmed",
+            customerFullName: input.customerFullName,
+            customerEmail: input.customerEmail,
+            customerPhone: input.customerPhone ?? null,
+            countryCode: input.countryCode ?? null,
+            slotStartAt: hold.slotStartAt,
+            slotEndAt: hold.slotEndAt,
+            timezone: input.timezone,
+            paymentRequired: false,
+            confirmedAt: now,
+          })
+          .returning(bookingSelect);
+        const booking = bookingRows[0] ?? null;
 
-    if (!convertedRows[0]) {
-      throw new Error("Slot hold could not be converted.");
-    }
+        if (!booking) {
+          throw new Error("Booking insert did not return a row.");
+        }
 
-    return {
-      booking,
-      hold,
-      converted: true,
-      rejection: null,
-    } as const;
+        if (input.answers.length > 0) {
+          await tx.insert(bookingAnswers).values(
+            input.answers.map((answer) => ({
+              bookingId: booking.id,
+              fieldId: answer.fieldId ?? null,
+              fieldKeySnapshot: answer.fieldKey,
+              labelSnapshot: answer.label,
+              value: answer.value ?? null,
+            })),
+          );
+        }
+
+        const convertedRows = await tx
+          .update(bookingSlotHolds)
+          .set({ status: "converted", bookingId: booking.id })
+          .where(
+            and(
+              eq(bookingSlotHolds.id, hold.id),
+              eq(bookingSlotHolds.status, "active"),
+              gt(bookingSlotHolds.expiresAt, now),
+            ),
+          )
+          .returning({ id: bookingSlotHolds.id });
+
+        if (!convertedRows[0]) {
+          throw new Error("Slot hold could not be converted.");
+        }
+
+        return { booking, hold: currentHold, converted: true, rejection: null } as const;
+      },
+    );
+
+    return (
+      result ?? {
+        booking: null,
+        hold,
+        converted: false,
+        rejection: "hold_unavailable",
+      }
+    );
   });
 
 export const findPublicBookingByToken = async (publicToken: string) => {

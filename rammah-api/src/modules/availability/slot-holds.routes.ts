@@ -45,7 +45,8 @@ slotHoldsRouter.delete(
   validateRequest({ params: idParamsSchema }),
   async (req, res, next) => {
     try {
-      await releaseSlotHoldById(req.params.id);
+      const holdToken = req.get("X-Booking-Hold-Token");
+      await releaseSlotHoldById(req.params.id, holdToken);
 
       res.status(httpStatus.noContent).send();
     } catch (error) {

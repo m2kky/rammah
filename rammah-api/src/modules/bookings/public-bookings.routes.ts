@@ -18,6 +18,7 @@ const bookingAnswerSchema = z.object({
 
 const createBookingBodySchema = z.object({
   holdId: z.string().uuid(),
+  holdToken: z.string().trim().min(1).max(200).optional(),
   attendanceMode: attendanceModeSchema.optional(),
   locationId: z.string().uuid().nullable().optional(),
   customer: z.object({

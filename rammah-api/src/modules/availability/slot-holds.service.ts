@@ -3,6 +3,7 @@ import { httpStatus } from "../../shared/http/status.js";
 import { env } from "../../config/env.js";
 import { createAtomicSlotHold } from "./slot-capacity.repository.js";
 import { releaseSlotHold } from "./slot-holds.repository.js";
+import { createSlotHoldToken } from "./slot-hold-token.js";
 
 export type SlotHoldInput = {
   offeringId: string;
@@ -51,12 +52,14 @@ export const createSlotHold = async (input: SlotHoldInput) => {
     });
   }
 
+  const owner = createSlotHoldToken();
   const hold = await createAtomicSlotHold({
     offeringId: input.offeringId,
     offeringSessionId: input.offeringSessionId ?? null,
     startsAt,
     endsAt,
     holdDurationMinutes: env.PAYMENT_HOLD_MINUTES,
+    holdSecretHash: owner.digest,
   });
 
   if (!hold) {
@@ -65,6 +68,7 @@ export const createSlotHold = async (input: SlotHoldInput) => {
 
   return {
     id: hold.id,
+    holdToken: owner.token,
     offeringId: hold.offeringId,
     offeringSessionId: hold.offeringSessionId,
     startsAt: hold.slotStartAt.toISOString(),
@@ -75,14 +79,13 @@ export const createSlotHold = async (input: SlotHoldInput) => {
   };
 };
 
-export const releaseSlotHoldById = async (id: string) => {
-  const releasedHold = await releaseSlotHold(id);
+export const releaseSlotHoldById = async (
+  id: string,
+  holdToken: string | null | undefined,
+) => {
+  const releasedHold = await releaseSlotHold(id, holdToken);
 
   if (!releasedHold) {
-    throw new AppError({
-      code: "NOT_FOUND",
-      message: "Slot hold was not found.",
-      statusCode: httpStatus.notFound,
-    });
+    throw slotUnavailableError();
   }
 };

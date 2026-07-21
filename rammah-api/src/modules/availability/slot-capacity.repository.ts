@@ -29,6 +29,7 @@ export type AtomicSlotHoldInput = {
   startsAt: Date;
   endsAt: Date;
   holdDurationMinutes: number;
+  holdSecretHash: string;
 };
 
 export type SlotCapacityInput = Pick<
@@ -40,6 +41,17 @@ export type CapacityTransaction = Parameters<Parameters<typeof db.transaction>[0
 type AvailableSlotCapacity = {
   timezone: string | null;
   now: Date;
+  sessionLocationId: string | null;
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    attendanceMode: "online" | "offline" | "hybrid";
+    bookingMode: "free" | "paid" | "quote_only";
+    requiresPayment: boolean;
+    quoteOnly: boolean;
+    status: "draft" | "published" | "scheduled" | "archived";
+  };
 };
 
 const hasPublishedBusyOverlap = async (
@@ -72,6 +84,7 @@ const insertHold = async (
     offeringSessionId: input.offeringSessionId,
     slotStartAt: input.startsAt,
     slotEndAt: input.endsAt,
+    holdSecretHash: input.holdSecretHash,
     status: "active",
     expiresAt: new Date(now.getTime() + input.holdDurationMinutes * 60_000),
   });
@@ -79,7 +92,7 @@ const insertHold = async (
 export const withAvailableSlotCapacity = async <T>(
   tx: CapacityTransaction,
   input: SlotCapacityInput,
-  options: { excludeBookingId?: string } = {},
+  options: { excludeBookingId?: string; excludeHoldId?: string } = {},
   mutate: (capacity: AvailableSlotCapacity) => Promise<T>,
 ): Promise<T | null> => {
     if (input.offeringSessionId) {
@@ -97,7 +110,14 @@ export const withAvailableSlotCapacity = async <T>(
           endsAt: offeringSessions.endsAt,
           timezone: offeringSessions.timezone,
           capacity: offeringSessions.capacity,
+          locationId: offeringSessions.locationId,
           sessionStatus: offeringSessions.status,
+          offeringTitle: offerings.title,
+          offeringSlug: offerings.slug,
+          offeringAttendanceMode: offerings.attendanceMode,
+          offeringBookingMode: offerings.bookingMode,
+          offeringRequiresPayment: offerings.requiresPayment,
+          offeringQuoteOnly: offerings.quoteOnly,
           offeringStatus: offerings.status,
         })
         .from(offeringSessions)
@@ -131,23 +151,39 @@ export const withAvailableSlotCapacity = async <T>(
         .select({ id: bookings.id })
         .from(bookings)
         .where(and(...bookingConditions));
+      const activeHoldConditions: SQL[] = [
+        eq(bookingSlotHolds.offeringSessionId, session.id),
+        eq(bookingSlotHolds.status, "active"),
+        gt(bookingSlotHolds.expiresAt, now),
+      ];
+      if (options.excludeHoldId) {
+        activeHoldConditions.push(ne(bookingSlotHolds.id, options.excludeHoldId));
+      }
       const activeHolds = await tx
         .select({ id: bookingSlotHolds.id })
         .from(bookingSlotHolds)
-        .where(
-          and(
-            eq(bookingSlotHolds.offeringSessionId, session.id),
-            eq(bookingSlotHolds.status, "active"),
-            gt(bookingSlotHolds.expiresAt, now),
-          ),
-        );
+        .where(and(...activeHoldConditions));
       const busy = await hasPublishedBusyOverlap(tx, input.startsAt, input.endsAt);
 
       if (busy || blockingBookings.length + activeHolds.length >= session.capacity) {
         return null;
       }
 
-      return mutate({ timezone: session.timezone, now });
+      return mutate({
+        timezone: session.timezone,
+        now,
+        sessionLocationId: session.locationId,
+        offering: {
+          id: session.offeringId,
+          title: session.offeringTitle,
+          slug: session.offeringSlug,
+          attendanceMode: session.offeringAttendanceMode,
+          bookingMode: session.offeringBookingMode,
+          requiresPayment: session.offeringRequiresPayment,
+          quoteOnly: session.offeringQuoteOnly,
+          status: session.offeringStatus,
+        },
+      });
     }
 
     await acquireCapacityLock(
@@ -168,6 +204,10 @@ export const withAvailableSlotCapacity = async <T>(
         durationMinutes: offerings.durationMinutes,
         capacity: offerings.capacity,
         status: offerings.status,
+        attendanceMode: offerings.attendanceMode,
+        bookingMode: offerings.bookingMode,
+        requiresPayment: offerings.requiresPayment,
+        quoteOnly: offerings.quoteOnly,
       })
       .from(offerings)
       .where(eq(offerings.id, input.offeringId))
@@ -259,25 +299,41 @@ export const withAvailableSlotCapacity = async <T>(
       .select({ id: bookings.id })
       .from(bookings)
       .where(and(...bookingConditions));
+    const activeHoldConditions: SQL[] = [
+      eq(bookingSlotHolds.offeringId, input.offeringId),
+      eq(bookingSlotHolds.status, "active"),
+      gt(bookingSlotHolds.expiresAt, now),
+      lt(bookingSlotHolds.slotStartAt, input.endsAt),
+      gt(bookingSlotHolds.slotEndAt, input.startsAt),
+    ];
+    if (options.excludeHoldId) {
+      activeHoldConditions.push(ne(bookingSlotHolds.id, options.excludeHoldId));
+    }
     const activeHolds = await tx
       .select({ id: bookingSlotHolds.id })
       .from(bookingSlotHolds)
-      .where(
-        and(
-          eq(bookingSlotHolds.offeringId, input.offeringId),
-          eq(bookingSlotHolds.status, "active"),
-          gt(bookingSlotHolds.expiresAt, now),
-          lt(bookingSlotHolds.slotStartAt, input.endsAt),
-          gt(bookingSlotHolds.slotEndAt, input.startsAt),
-        ),
-      );
+      .where(and(...activeHoldConditions));
     const busy = await hasPublishedBusyOverlap(tx, input.startsAt, input.endsAt);
 
     if (busy || blockingBookings.length + activeHolds.length >= offering.capacity) {
       return null;
     }
 
-    return mutate({ timezone: null, now });
+    return mutate({
+      timezone: null,
+      now,
+      sessionLocationId: null,
+      offering: {
+        id: offering.id,
+        title: offering.title,
+        slug: offering.slug,
+        attendanceMode: offering.attendanceMode,
+        bookingMode: offering.bookingMode,
+        requiresPayment: offering.requiresPayment,
+        quoteOnly: offering.quoteOnly,
+        status: offering.status,
+      },
+    });
 };
 
 export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>

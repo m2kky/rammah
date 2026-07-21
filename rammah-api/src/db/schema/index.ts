@@ -521,6 +521,7 @@ export const bookingSlotHolds = pgTable(
     slotStartAt: timestamp("slot_start_at", { withTimezone: true }).notNull(),
     slotEndAt: timestamp("slot_end_at", { withTimezone: true }).notNull(),
     bookingId: uuid("booking_id").references(() => bookings.id),
+    holdSecretHash: varchar("hold_secret_hash", { length: 64 }),
     status: holdStatusEnum("status").notNull().default("active"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: createdAt(),

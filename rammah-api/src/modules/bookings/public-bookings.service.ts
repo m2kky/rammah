@@ -18,6 +18,7 @@ import { findPublishedLocationsForOffering } from "../offerings/offerings.reposi
 
 export type PublicBookingInput = {
   holdId: string;
+  holdToken?: string | null;
   attendanceMode?: "online" | "offline" | "hybrid";
   locationId?: string | null;
   customer: {
@@ -158,7 +159,14 @@ const toPublicCalendar = (
 
 export const submitFreeBooking = async (input: PublicBookingInput) => {
   try {
-    const holdContext = await findPublicBookingHoldContextById(input.holdId);
+    if (!input.holdToken) {
+      throw slotUnavailableError();
+    }
+
+    const holdContext = await findPublicBookingHoldContextById(
+      input.holdId,
+      input.holdToken,
+    );
     const activeHold =
       holdContext?.holdStatus === "active" && holdContext.expiresAt > new Date()
         ? holdContext
@@ -178,6 +186,7 @@ export const submitFreeBooking = async (input: PublicBookingInput) => {
 
     const initialResult = await createFreeBookingFromHold({
       holdId: input.holdId,
+      holdToken: input.holdToken,
       attendanceMode: input.attendanceMode,
       locationId,
       customerFullName: input.customer.fullName.trim(),
