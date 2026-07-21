@@ -61,3 +61,16 @@ Commit: this slice's commit, subject `fix(api): serialize admin reschedules by c
 
 - Calendar and reschedule-email calls are still synchronous after commit and can finish out of order for two rapid moves of the same booking. The planned durable Calendar/email outbox handlers must replace those calls; no provider behavior was added in this slice.
 - Published external busy blocks remain global because the existing schema has no offering/calendar ownership key, matching SEC-03A behavior.
+
+## Reviewer follow-up: fixed capacity 3
+
+- Added the missing 20-way fixed-session capacity-3 regression test. It asserts exactly 3 fulfilled moves, 17 `SLOT_UNAVAILABLE` rejections, exactly 3 persisted target occupants, and all 20 source booking rows retained.
+- RED sensitivity check: after adding the test, a temporary local mutation changed the fixed-session admission ceiling from `session.capacity` to `1`.
+  - Command: `npm run test:integration -- src/modules/bookings/admin-bookings-capacity.integration.test.ts -t "fixed-session moves at capacity 3"`
+  - Result: exit 1; expected 3 fulfilled but observed 1.
+- The temporary mutation was reverted completely before GREEN; this follow-up contains no production-code change.
+- Focused GREEN: the same targeted command passed 1/1.
+- Final capacity GREEN:
+  - Command: `npm run test:integration -- src/modules/bookings/admin-bookings-capacity.integration.test.ts src/modules/availability/slot-capacity.integration.test.ts`
+  - Result: exit 0; 2 files, 26/26 tests passed.
+- API unit: 61/61 passed. Typecheck and build passed. No security integration test was run.

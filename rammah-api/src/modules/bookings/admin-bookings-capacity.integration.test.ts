@@ -223,6 +223,25 @@ describe.sequential("atomic admin booking reschedule capacity", () => {
     expect(await blockingAt(offering.id, slots[0]!)).toBe(3);
   });
 
+  it("admits exactly three of 20 fixed-session moves at capacity 3 without losing bookings", async () => {
+    const { db } = getTestDatabase();
+    const { offering, session } = await seedFixedSession(3);
+    const seeded = await Promise.all(
+      Array.from({ length: 20 }, () => seedBooking({ offeringId: offering.id })),
+    );
+
+    const results = await raceMoves(seeded.map(({ id }) => id), fixedInput(session));
+    const rejected = results.filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(3);
+    expect(rejected).toHaveLength(17);
+    expect(rejected.every(({ reason }) => reason?.code === "SLOT_UNAVAILABLE")).toBe(true);
+    expect(await blockingAt(offering.id, session, session.id)).toBe(3);
+    expect((await db.select({ id: bookings.id }).from(bookings)).length).toBe(20);
+  });
+
   it("serializes competing moves of the same booking and persists one valid final target", async () => {
     const { offering } = await seedRecurringOffering(1);
     const booking = await seedBooking({ offeringId: offering.id });
