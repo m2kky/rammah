@@ -626,10 +626,7 @@ export const handleKashierCallback = async (rawQuery: string) => {
     providerPaymentId: providerEventId,
   });
 
-  return {
-    processed: result.event.processingStatus === "processed",
-    publicToken: storedToken,
-  };
+  return storedEventResult(result.event);
 };
 
 export const reconcilePublicPayment = async (publicToken: string) => {
