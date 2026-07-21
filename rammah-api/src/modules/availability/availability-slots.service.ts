@@ -14,9 +14,9 @@ import {
 } from "./availability-slots.repository.js";
 
 type SlotStatus = "available" | "blocked" | "booked" | "held";
-type SlotSource = "rule" | "available_override";
+export type SlotSource = "rule" | "available_override";
 
-type SlotCandidate = {
+export type SlotCandidate = {
   date: string;
   startsAt: Date;
   endsAt: Date;
@@ -95,7 +95,7 @@ const addDays = (date: Date, days: number) => {
   return nextDate;
 };
 
-const toDateKey = (date: Date) => {
+export const toDateKey = (date: Date) => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -184,7 +184,7 @@ const generateSlotsInWindow = (input: {
   return slots;
 };
 
-const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
+export const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
   dates.flatMap((date) => {
     const dateKey = toDateKey(date);
     const weekday = date.getDay();
@@ -207,7 +207,7 @@ const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
       );
   });
 
-const buildAvailableOverrideSlots = (
+export const buildAvailableOverrideSlots = (
   offering: SlotOfferingRow,
   overrides: SlotOverrideRow[],
 ) =>
@@ -228,7 +228,7 @@ const buildAvailableOverrideSlots = (
       }),
     );
 
-const dedupeSlots = (slots: SlotCandidate[]) => {
+export const dedupeSlots = (slots: SlotCandidate[]) => {
   const slotMap = new Map<string, SlotCandidate>();
 
   for (const slot of slots) {
@@ -245,7 +245,7 @@ const dedupeSlots = (slots: SlotCandidate[]) => {
   );
 };
 
-const findBlockingOverride = (slot: SlotCandidate, overrides: SlotOverrideRow[]) =>
+export const findBlockingOverride = (slot: SlotCandidate, overrides: SlotOverrideRow[]) =>
   overrides.find((override) => {
     if (override.overrideType !== "blocked" || override.date !== slot.date) {
       return false;
@@ -288,7 +288,7 @@ const calculateSlotStatus = (input: {
   const blockingOverride = findBlockingOverride(input.slot, input.overrides);
   const bookedCount = countOverlaps(input.slot, input.bookings);
   const heldCount = countOverlaps(input.slot, input.holds);
-  const capacity = Math.max(input.offering.capacity, 1);
+  const capacity = input.offering.capacity;
   const blockedReason = blockingOverride?.reason ?? null;
   let status: SlotStatus = "available";
 

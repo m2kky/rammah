@@ -6,6 +6,7 @@ import {
   findAdminAvailabilityRuleById,
   findAdminAvailabilityRules,
   findOfferingForAvailability,
+  findPublishedRulesForInvariant,
   insertAdminAvailabilityRule,
   updateAdminAvailabilityRule,
   type AdminAvailabilityRuleFilters,
@@ -38,6 +39,17 @@ const notFoundError = () =>
     code: "NOT_FOUND",
     message: "Availability rule was not found.",
     statusCode: httpStatus.notFound,
+  });
+
+const validationError = (
+  message: string,
+  details: Array<{ field?: string; message: string }> = [],
+) =>
+  new AppError({
+    code: "VALIDATION_ERROR",
+    message,
+    statusCode: httpStatus.badRequest,
+    details,
   });
 
 const toAdminAvailabilityRule = (rule: AdminAvailabilityRuleRow) => ({
@@ -90,31 +102,70 @@ const assertTimeWindow = (input: {
   const endMinutes = timeToMinutes(input.endTime);
 
   if (startMinutes >= endMinutes) {
-    throw new AppError({
-      code: "VALIDATION_ERROR",
-      message: "Availability start time must be before end time.",
-      statusCode: httpStatus.badRequest,
-      details: [
+    throw validationError("Availability start time must be before end time.", [
         {
           field: "startTime",
           message: "Start time must be before end time.",
         },
-      ],
-    });
+      ]);
   }
 
   if (input.slotDurationMinutes > endMinutes - startMinutes) {
-    throw new AppError({
-      code: "VALIDATION_ERROR",
-      message: "Slot duration cannot exceed the availability window.",
-      statusCode: httpStatus.badRequest,
-      details: [
+    throw validationError("Slot duration cannot exceed the availability window.", [
         {
           field: "slotDurationMinutes",
           message: "Slot duration must fit inside the start/end window.",
         },
-      ],
-    });
+      ]);
+  }
+};
+
+const assertPublishedRuleInvariant = async (input: {
+  offeringId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  timezone: string;
+  status: AdminAvailabilityRuleInsert["status"];
+  excludeId?: string;
+}) => {
+  if (input.status !== "published") {
+    return;
+  }
+
+  const publishedRules = await findPublishedRulesForInvariant(
+    input.offeringId,
+    input.excludeId,
+  );
+  const timezoneConflict = publishedRules.find(
+    (rule) => rule.timezone !== input.timezone,
+  );
+
+  if (timezoneConflict) {
+    throw validationError("Published availability rules must use one timezone.", [
+      {
+        field: "timezone",
+        message: "Use the timezone already published for this offering.",
+      },
+    ]);
+  }
+
+  const startMinutes = timeToMinutes(input.startTime);
+  const endMinutes = timeToMinutes(input.endTime);
+  const overlap = publishedRules.find(
+    (rule) =>
+      rule.weekday === input.weekday &&
+      startMinutes < timeToMinutes(rule.endTime) &&
+      endMinutes > timeToMinutes(rule.startTime),
+  );
+
+  if (overlap) {
+    throw validationError("Published availability rules cannot overlap.", [
+      {
+        field: "startTime",
+        message: "Choose a window that does not overlap another published rule.",
+      },
+    ]);
   }
 };
 
@@ -148,13 +199,22 @@ export const createAdminAvailabilityRule = async (
     endTime,
     slotDurationMinutes: input.slotDurationMinutes,
   });
+  const timezone = input.timezone.trim();
+  await assertPublishedRuleInvariant({
+    offeringId: input.offeringId,
+    weekday: input.weekday,
+    startTime,
+    endTime,
+    timezone,
+    status: input.status,
+  });
 
   const rule = await insertAdminAvailabilityRule({
     offeringId: input.offeringId,
     weekday: input.weekday,
     startTime,
     endTime,
-    timezone: input.timezone.trim(),
+    timezone,
     slotDurationMinutes: input.slotDurationMinutes,
     bufferBeforeMinutes: input.bufferBeforeMinutes,
     bufferAfterMinutes: input.bufferAfterMinutes,
@@ -203,11 +263,24 @@ export const updateAdminAvailabilityRuleById = async (
     input.endTime !== undefined ? normalizeTime(input.endTime) : existingRule.endTime;
   const slotDurationMinutes =
     input.slotDurationMinutes ?? existingRule.slotDurationMinutes;
+  const offeringId = input.offeringId ?? existingRule.offeringId;
+  const weekday = input.weekday ?? existingRule.weekday;
+  const timezone = input.timezone?.trim() ?? existingRule.timezone;
+  const status = input.status ?? existingRule.status;
 
   assertTimeWindow({
     startTime,
     endTime,
     slotDurationMinutes,
+  });
+  await assertPublishedRuleInvariant({
+    offeringId,
+    weekday,
+    startTime,
+    endTime,
+    timezone,
+    status,
+    excludeId: id,
   });
 
   const beforeRule = toAdminAvailabilityRule(existingRule);
@@ -216,7 +289,7 @@ export const updateAdminAvailabilityRuleById = async (
     weekday: input.weekday,
     startTime: input.startTime !== undefined ? startTime : undefined,
     endTime: input.endTime !== undefined ? endTime : undefined,
-    timezone: input.timezone?.trim(),
+    timezone: input.timezone !== undefined ? timezone : undefined,
     slotDurationMinutes: input.slotDurationMinutes,
     bufferBeforeMinutes: input.bufferBeforeMinutes,
     bufferAfterMinutes: input.bufferAfterMinutes,

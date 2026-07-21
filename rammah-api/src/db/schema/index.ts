@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -299,6 +301,7 @@ export const offerings = pgTable(
     slugUnique: uniqueIndex("offerings_slug_unique").on(table.slug),
     statusIdx: index("offerings_status_idx").on(table.status),
     typeIdx: index("offerings_type_idx").on(table.offeringType),
+    capacityPositive: check("offerings_capacity_positive", sql`${table.capacity} > 0`),
   }),
 );
 
@@ -366,6 +369,10 @@ export const offeringSessions = pgTable(
   },
   (table) => ({
     offeringStartsIdx: index("offering_sessions_offering_starts_idx").on(table.offeringId, table.startsAt),
+    capacityPositive: check(
+      "offering_sessions_capacity_positive",
+      sql`${table.capacity} > 0`,
+    ),
   }),
 );
 
@@ -387,21 +394,43 @@ export const availabilityRules = pgTable(
   },
   (table) => ({
     offeringWeekdayIdx: index("availability_rules_offering_weekday_idx").on(table.offeringId, table.weekday),
+    slotDurationPositive: check(
+      "availability_rules_slot_duration_positive",
+      sql`${table.slotDurationMinutes} > 0`,
+    ),
+    buffersNonNegative: check(
+      "availability_rules_buffers_non_negative",
+      sql`${table.bufferBeforeMinutes} >= 0 AND ${table.bufferAfterMinutes} >= 0`,
+    ),
   }),
 );
 
-export const availabilityOverrides = pgTable("availability_overrides", {
-  id: id(),
-  availabilityRuleId: uuid("availability_rule_id").references(() => availabilityRules.id),
-  offeringId: uuid("offering_id").references(() => offerings.id),
-  date: varchar("date", { length: 10 }).notNull(),
-  overrideType: overrideTypeEnum("override_type").notNull(),
-  startsAt: timestamp("starts_at", { withTimezone: true }),
-  endsAt: timestamp("ends_at", { withTimezone: true }),
-  reason: text("reason"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const availabilityOverrides = pgTable(
+  "availability_overrides",
+  {
+    id: id(),
+    availabilityRuleId: uuid("availability_rule_id").references(() => availabilityRules.id),
+    offeringId: uuid("offering_id").references(() => offerings.id),
+    date: varchar("date", { length: 10 }).notNull(),
+    overrideType: overrideTypeEnum("override_type").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    reason: text("reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    offeringDateIdx: index("availability_overrides_offering_date_idx").on(
+      table.offeringId,
+      table.date,
+      table.overrideType,
+    ),
+    validWindow: check(
+      "availability_overrides_valid_window",
+      sql`(${table.startsAt} IS NULL AND ${table.endsAt} IS NULL) OR (${table.startsAt} IS NOT NULL AND ${table.endsAt} IS NOT NULL AND ${table.startsAt} < ${table.endsAt})`,
+    ),
+  }),
+);
 
 export const bookingFormFields = pgTable(
   "booking_form_fields",
@@ -458,6 +487,18 @@ export const bookings = pgTable(
     customerEmailIdx: index("bookings_customer_email_idx").on(table.customerEmail),
     locationIdx: index("bookings_location_idx").on(table.locationId),
     statusIdx: index("bookings_status_idx").on(table.status),
+    sessionStatusIdx: index("bookings_session_status_idx").on(
+      table.offeringSessionId,
+      table.status,
+    ),
+    validSlotInterval: check(
+      "bookings_valid_slot_interval",
+      sql`(${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL) OR (${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt})`,
+    ),
+    moneyNonNegative: check(
+      "bookings_money_non_negative",
+      sql`${table.baseAmountMinor} >= 0 AND ${table.discountAmountMinor} >= 0 AND ${table.taxAmountMinor} >= 0 AND ${table.totalAmountMinor} >= 0`,
+    ),
   }),
 );
 
@@ -487,6 +528,15 @@ export const bookingSlotHolds = pgTable(
   (table) => ({
     expiryIdx: index("booking_slot_holds_expiry_idx").on(table.status, table.expiresAt),
     slotIdx: index("booking_slot_holds_slot_idx").on(table.offeringId, table.slotStartAt, table.slotEndAt, table.status),
+    sessionIdx: index("booking_slot_holds_session_idx").on(
+      table.offeringSessionId,
+      table.status,
+      table.expiresAt,
+    ),
+    validSlotInterval: check(
+      "booking_slot_holds_valid_slot_interval",
+      sql`${table.slotStartAt} < ${table.slotEndAt}`,
+    ),
   }),
 );
 
@@ -553,6 +603,10 @@ export const payments = pgTable(
     bookingIdx: index("payments_booking_idx").on(table.bookingId),
     providerPaymentIdx: index("payments_provider_payment_idx").on(table.provider, table.providerPaymentId),
     idempotencyUnique: uniqueIndex("payments_idempotency_unique").on(table.idempotencyKey),
+    amountNonNegative: check(
+      "payments_amount_non_negative",
+      sql`${table.amountMinor} >= 0`,
+    ),
   }),
 );
 

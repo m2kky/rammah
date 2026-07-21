@@ -83,7 +83,7 @@ export const findSessionBlockingBookings = async (sessionId: string) =>
     .where(
       and(
         eq(bookings.offeringSessionId, sessionId),
-        inArray(bookings.status, ["pending_payment", "confirmed"]),
+        inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
       ),
     );
 

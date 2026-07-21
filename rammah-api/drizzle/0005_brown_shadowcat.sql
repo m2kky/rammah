@@ -1,0 +1,12 @@
+CREATE INDEX "availability_overrides_offering_date_idx" ON "availability_overrides" USING btree ("offering_id","date","override_type");--> statement-breakpoint
+CREATE INDEX "booking_slot_holds_session_idx" ON "booking_slot_holds" USING btree ("offering_session_id","status","expires_at");--> statement-breakpoint
+CREATE INDEX "bookings_session_status_idx" ON "bookings" USING btree ("offering_session_id","status");--> statement-breakpoint
+ALTER TABLE "availability_overrides" ADD CONSTRAINT "availability_overrides_valid_window" CHECK (("availability_overrides"."starts_at" IS NULL AND "availability_overrides"."ends_at" IS NULL) OR ("availability_overrides"."starts_at" IS NOT NULL AND "availability_overrides"."ends_at" IS NOT NULL AND "availability_overrides"."starts_at" < "availability_overrides"."ends_at"));--> statement-breakpoint
+ALTER TABLE "availability_rules" ADD CONSTRAINT "availability_rules_slot_duration_positive" CHECK ("availability_rules"."slot_duration_minutes" > 0);--> statement-breakpoint
+ALTER TABLE "availability_rules" ADD CONSTRAINT "availability_rules_buffers_non_negative" CHECK ("availability_rules"."buffer_before_minutes" >= 0 AND "availability_rules"."buffer_after_minutes" >= 0);--> statement-breakpoint
+ALTER TABLE "booking_slot_holds" ADD CONSTRAINT "booking_slot_holds_valid_slot_interval" CHECK ("booking_slot_holds"."slot_start_at" < "booking_slot_holds"."slot_end_at");--> statement-breakpoint
+ALTER TABLE "bookings" ADD CONSTRAINT "bookings_valid_slot_interval" CHECK (("bookings"."slot_start_at" IS NULL AND "bookings"."slot_end_at" IS NULL) OR ("bookings"."slot_start_at" IS NOT NULL AND "bookings"."slot_end_at" IS NOT NULL AND "bookings"."slot_start_at" < "bookings"."slot_end_at"));--> statement-breakpoint
+ALTER TABLE "bookings" ADD CONSTRAINT "bookings_money_non_negative" CHECK ("bookings"."base_amount_minor" >= 0 AND "bookings"."discount_amount_minor" >= 0 AND "bookings"."tax_amount_minor" >= 0 AND "bookings"."total_amount_minor" >= 0);--> statement-breakpoint
+ALTER TABLE "offering_sessions" ADD CONSTRAINT "offering_sessions_capacity_positive" CHECK ("offering_sessions"."capacity" > 0);--> statement-breakpoint
+ALTER TABLE "offerings" ADD CONSTRAINT "offerings_capacity_positive" CHECK ("offerings"."capacity" > 0);--> statement-breakpoint
+ALTER TABLE "payments" ADD CONSTRAINT "payments_amount_non_negative" CHECK ("payments"."amount_minor" >= 0);

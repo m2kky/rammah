@@ -4,8 +4,11 @@ import { bookingSlotHolds } from "../../db/schema/index.js";
 
 export type SlotHoldInsert = typeof bookingSlotHolds.$inferInsert;
 
-export const insertSlotHold = async (input: SlotHoldInsert) => {
-  const rows = await db
+export const insertSlotHold = async (
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  input: SlotHoldInsert,
+) => {
+  const rows = await tx
     .insert(bookingSlotHolds)
     .values(input)
     .returning({
@@ -21,8 +24,6 @@ export const insertSlotHold = async (input: SlotHoldInsert) => {
 
   return rows[0] ?? null;
 };
-
-export type SlotHoldRow = Awaited<ReturnType<typeof insertSlotHold>>;
 
 export const releaseSlotHold = async (id: string) => {
   const rows = await db

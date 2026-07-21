@@ -109,7 +109,7 @@ export const findBlockingBookings = async (
     .where(
       and(
         eq(bookings.offeringId, offeringId),
-        inArray(bookings.status, ["pending_payment", "confirmed"]),
+        inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
         lt(bookings.slotStartAt, rangeEnd),
         gt(bookings.slotEndAt, rangeStart),
       ),

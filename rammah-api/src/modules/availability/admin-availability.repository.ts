@@ -1,4 +1,4 @@
-import { and, asc, eq, type SQL } from "drizzle-orm";
+import { and, asc, eq, ne, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   availabilityRules,
@@ -90,6 +90,27 @@ export const findOfferingForAvailability = async (id: string) => {
 
   return rows[0] ?? null;
 };
+
+export const findPublishedRulesForInvariant = async (
+  offeringId: string,
+  excludeId?: string,
+) =>
+  db
+    .select({
+      id: availabilityRules.id,
+      weekday: availabilityRules.weekday,
+      startTime: availabilityRules.startTime,
+      endTime: availabilityRules.endTime,
+      timezone: availabilityRules.timezone,
+    })
+    .from(availabilityRules)
+    .where(
+      and(
+        eq(availabilityRules.offeringId, offeringId),
+        eq(availabilityRules.status, "published"),
+        excludeId ? ne(availabilityRules.id, excludeId) : undefined,
+      ),
+    );
 
 export const insertAdminAvailabilityRule = async (
   input: AdminAvailabilityRuleInsert,

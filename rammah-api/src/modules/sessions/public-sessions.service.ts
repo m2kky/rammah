@@ -110,7 +110,7 @@ const getSessionCounts = async (sessionId: string, now: Date) => {
 
 const toPublicSession = async (session: PublicSessionRow, now: Date) => {
   const { bookedCount, heldCount } = await getSessionCounts(session.id, now);
-  const capacity = Math.max(session.capacity, 1);
+  const capacity = session.capacity;
   const remainingCapacity = Math.max(capacity - bookedCount - heldCount, 0);
 
   return {

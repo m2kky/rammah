@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lt, lte, ne, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   availabilityOverrides,
@@ -95,6 +95,33 @@ export const findAdminAvailabilityOverrideById = async (id: string) => {
     .innerJoin(offerings, eq(availabilityOverrides.offeringId, offerings.id))
     .leftJoin(availabilityRules, eq(availabilityOverrides.availabilityRuleId, availabilityRules.id))
     .where(eq(availabilityOverrides.id, id))
+    .limit(1);
+
+  return rows[0] ?? null;
+};
+
+export const findOverlappingAvailableOverride = async (input: {
+  offeringId: string;
+  date: string;
+  startsAt: Date;
+  endsAt: Date;
+  excludeId?: string;
+}) => {
+  const rows = await db
+    .select({ id: availabilityOverrides.id })
+    .from(availabilityOverrides)
+    .where(
+      and(
+        eq(availabilityOverrides.offeringId, input.offeringId),
+        eq(availabilityOverrides.date, input.date),
+        eq(availabilityOverrides.overrideType, "available"),
+        lt(availabilityOverrides.startsAt, input.endsAt),
+        gt(availabilityOverrides.endsAt, input.startsAt),
+        input.excludeId
+          ? ne(availabilityOverrides.id, input.excludeId)
+          : undefined,
+      ),
+    )
     .limit(1);
 
   return rows[0] ?? null;

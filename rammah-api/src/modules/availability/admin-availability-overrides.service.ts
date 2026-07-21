@@ -9,6 +9,7 @@ import {
   deleteAdminAvailabilityOverride,
   findAdminAvailabilityOverrideById,
   findAdminAvailabilityOverrides,
+  findOverlappingAvailableOverride,
   insertAdminAvailabilityOverride,
   updateAdminAvailabilityOverride,
   type AdminAvailabilityOverrideFilters,
@@ -214,6 +215,36 @@ const normalizeReason = (value: string | null | undefined) => {
   return reason ? reason : null;
 };
 
+const assertAvailableOverrideInvariant = async (input: {
+  offeringId: string;
+  date: string;
+  overrideType: OverrideType;
+  startsAt: Date | null;
+  endsAt: Date | null;
+  excludeId?: string;
+}) => {
+  if (input.overrideType !== "available" || !input.startsAt || !input.endsAt) {
+    return;
+  }
+
+  const overlap = await findOverlappingAvailableOverride({
+    offeringId: input.offeringId,
+    date: input.date,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    excludeId: input.excludeId,
+  });
+
+  if (overlap) {
+    throw validationError("Available overrides cannot overlap.", [
+      {
+        field: "startsAt",
+        message: "Choose a window that does not overlap another available override.",
+      },
+    ]);
+  }
+};
+
 export const listAdminAvailabilityOverrides = async (
   filters: AdminAvailabilityOverrideFilters,
 ) => {
@@ -252,6 +283,13 @@ export const createAdminAvailabilityOverride = async (
     availabilityRuleId: input.availabilityRuleId,
   });
   assertOverrideWindow({
+    overrideType: input.overrideType,
+    startsAt,
+    endsAt,
+  });
+  await assertAvailableOverrideInvariant({
+    offeringId: input.offeringId,
+    date,
     overrideType: input.overrideType,
     startsAt,
     endsAt,
@@ -331,6 +369,14 @@ export const updateAdminAvailabilityOverrideById = async (
     overrideType,
     startsAt: startsAt ?? null,
     endsAt: endsAt ?? null,
+  });
+  await assertAvailableOverrideInvariant({
+    offeringId,
+    date,
+    overrideType,
+    startsAt: startsAt ?? null,
+    endsAt: endsAt ?? null,
+    excludeId: id,
   });
 
   const beforeOverride = toAdminAvailabilityOverride(existingOverride);
