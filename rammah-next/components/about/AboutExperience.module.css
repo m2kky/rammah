@@ -407,7 +407,9 @@
   position: relative;
   min-height: 100svh;
   overflow: hidden;
-  background: #02090b;
+  background:
+    radial-gradient(circle at 50% 108%, rgba(33, 116, 113, 0.2), transparent 46%),
+    #02090b;
 }
 
 .worldHeader {
@@ -447,12 +449,31 @@
   will-change: transform;
 }
 
+.globeWrap::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(125, 242, 199, 0.22) 0%,
+    rgba(35, 126, 128, 0.14) 45%,
+    transparent 72%
+  );
+  filter: blur(34px);
+  pointer-events: none;
+}
+
 .globeCanvas {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 100%;
   contain: layout paint size;
   cursor: grab;
   touch-action: none;
+  filter: drop-shadow(0 0 28px rgba(92, 221, 190, 0.2));
 }
 
 .stats {
@@ -713,6 +734,9 @@
   .world {
     min-height: 110svh;
     padding: 5.5rem 1.25rem 3rem;
+    background:
+      radial-gradient(circle at 50% 78%, rgba(45, 145, 137, 0.3), transparent 43%),
+      #031013;
   }
 
   .worldHeader {
@@ -729,6 +753,23 @@
   .globeWrap {
     bottom: 9rem;
     width: 145vw;
+  }
+
+  .globeWrap::before {
+    inset: 3%;
+    background: radial-gradient(
+      circle,
+      rgba(125, 242, 199, 0.3) 0%,
+      rgba(31, 119, 122, 0.2) 48%,
+      transparent 74%
+    );
+    filter: blur(26px);
+  }
+
+  .globeCanvas {
+    filter:
+      brightness(1.12)
+      drop-shadow(0 0 32px rgba(92, 221, 190, 0.28));
   }
 
   .stats {
