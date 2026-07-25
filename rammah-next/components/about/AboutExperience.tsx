@@ -43,6 +43,7 @@ const proof = [
 
 export default function AboutExperience({ page }: { page?: PublicPage | null }) {
   const rootRef = useRef<HTMLElement>(null);
+  const cinematicVideoRef = useRef<HTMLVideoElement>(null);
 
   const heroSec = findPublicSection(page, "hero");
   const marqueeSec = findPublicSection(page, "marquee");
@@ -98,6 +99,14 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
             reduceMotion: boolean;
           };
 
+          if (reduceMotion) {
+            cinematicVideoRef.current?.pause();
+          } else {
+            cinematicVideoRef.current?.play().catch(() => {
+              // The section remains useful as a still frame if autoplay is blocked.
+            });
+          }
+
           if (!reduceMotion) {
             // 1. Hero Section
             gsap
@@ -117,6 +126,52 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
                 scrub: true,
               },
             });
+
+            // 1.25 Cinematic identity section
+            gsap.fromTo(
+              "[data-cinematic-video]",
+              { scale: 1.08 },
+              {
+                scale: 1,
+                ease: "none",
+                scrollTrigger: {
+                  trigger: "[data-cinematic]",
+                  start: "top bottom",
+                  end: "bottom top",
+                  scrub: true,
+                },
+              },
+            );
+
+            gsap.fromTo(
+              "[data-cinematic-line='left']",
+              { xPercent: -18 },
+              {
+                xPercent: 8,
+                ease: "none",
+                scrollTrigger: {
+                  trigger: "[data-cinematic]",
+                  start: "top bottom",
+                  end: "bottom top",
+                  scrub: 1,
+                },
+              },
+            );
+
+            gsap.fromTo(
+              "[data-cinematic-line='right']",
+              { xPercent: 14 },
+              {
+                xPercent: -10,
+                ease: "none",
+                scrollTrigger: {
+                  trigger: "[data-cinematic]",
+                  start: "top bottom",
+                  end: "bottom top",
+                  scrub: 1,
+                },
+              },
+            );
 
             // 1.5 Marquee Section
             gsap.fromTo("[data-marquee-row-1]", 
@@ -285,6 +340,43 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
           </div>
 
           <p className={styles.heroAside} style={{ whiteSpace: "pre-wrap" }}>{heroAside}</p>
+        </div>
+      </section>
+
+      <section id="in-motion" className={styles.cinematic} data-cinematic aria-label="Ahmed Rammah in motion">
+        <div className={styles.cinematicSticky}>
+          <video
+            ref={cinematicVideoRef}
+            className={styles.cinematicVideo}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            aria-hidden="true"
+            tabIndex={-1}
+            data-cinematic-video
+          >
+            <source src="/videos/about-fastcut-mobile.webm" type="video/webm" media="(max-width: 899px)" />
+            <source src="/videos/about-fastcut-desktop.webm" type="video/webm" />
+          </video>
+          <div className={styles.cinematicShade} />
+
+          <div className={styles.cinematicCopy}>
+            <p className={styles.cinematicEyebrow}>The human operating system</p>
+            <p className={styles.cinematicLine} data-cinematic-line="left">Read the</p>
+            <p
+              className={`${styles.cinematicLine} ${styles.cinematicOutline}`}
+              data-cinematic-line="right"
+            >
+              pattern
+            </p>
+            <p className={styles.cinematicLine} data-cinematic-line="left">Rewrite the response</p>
+          </div>
+
+          <p className={styles.cinematicCaption}>
+            Behavior stops feeling random when its structure becomes visible.
+          </p>
         </div>
       </section>
 
