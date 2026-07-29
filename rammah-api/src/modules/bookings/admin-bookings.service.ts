@@ -60,6 +60,7 @@ const slotUnavailableError = () =>
 const toAdminBooking = (booking: AdminBookingRow) => ({
   id: booking.id,
   publicToken: booking.publicToken,
+  bookingReference: booking.bookingReference,
   offering: {
     id: booking.offeringId,
     title: booking.offeringTitle,

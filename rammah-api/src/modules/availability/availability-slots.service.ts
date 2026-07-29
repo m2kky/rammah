@@ -1,5 +1,6 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
+import { env } from "../../config/env.js";
 import {
   findActiveSlotHolds,
   findBlockingBookings,
@@ -344,7 +345,11 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
   const candidates = dedupeSlots([
     ...buildRuleSlots(dates, rules),
     ...buildAvailableOverrideSlots(offering, overrides),
-  ]);
+  ]).filter(
+    (slot) =>
+      slot.startsAt.getTime() - Date.now() >=
+      env.BOOKING_MINIMUM_NOTICE_MINUTES * millisecondsPerMinute,
+  );
   const calculatedSlots = candidates.map((slot) =>
     calculateSlotStatus({
       slot,

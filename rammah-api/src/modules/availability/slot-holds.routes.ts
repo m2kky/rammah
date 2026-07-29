@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { validateRequest } from "../../middleware/validate-request.js";
+import { publicSubmissionRateLimit } from "../../middleware/rate-limit.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { createSlotHold, releaseSlotHoldById } from "./slot-holds.service.js";
 
@@ -26,6 +27,7 @@ const slotHoldBodySchema = z.object({
 
 slotHoldsRouter.post(
   "/",
+  publicSubmissionRateLimit,
   validateRequest({ body: slotHoldBodySchema }),
   async (req, res, next) => {
     try {

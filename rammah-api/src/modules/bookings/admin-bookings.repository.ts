@@ -25,6 +25,7 @@ export type AdminBookingStatusUpdate = {
 const adminBookingSelect = {
   id: bookings.id,
   publicToken: bookings.publicToken,
+  bookingReference: bookings.bookingReference,
   offeringId: bookings.offeringId,
   offeringTitle: offerings.title,
   offeringSlug: offerings.slug,
@@ -71,6 +72,7 @@ export const findAdminBookings = async (filters: AdminBookingFilters = {}) => {
     const searchCondition = or(
       ilike(bookings.customerFullName, searchPattern),
       ilike(bookings.customerEmail, searchPattern),
+      ilike(bookings.bookingReference, searchPattern),
       ilike(offerings.title, searchPattern),
     );
 

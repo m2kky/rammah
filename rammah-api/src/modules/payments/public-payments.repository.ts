@@ -40,6 +40,7 @@ export type PaidBookingInput = {
 const bookingSelect = {
   id: bookings.id,
   publicToken: bookings.publicToken,
+  bookingReference: bookings.bookingReference,
   offeringId: bookings.offeringId,
   offeringSessionId: bookings.offeringSessionId,
   locationId: bookings.locationId,
@@ -440,6 +441,7 @@ export type TrustedPaymentFinalizationInput = {
   payload: Record<string, unknown>;
   status: "paid" | "failed" | "abandoned" | "expired" | "cancelled";
   providerPaymentId?: string | null;
+  claimedEventId?: string;
 };
 
 const paymentEventSelect = {
@@ -456,25 +458,57 @@ const paymentEventSelect = {
   createdAt: paymentWebhookEvents.createdAt,
 };
 
+export const claimVerifiedPaymentEvent = async (
+  input: Omit<TrustedPaymentFinalizationInput, "claimedEventId">,
+) => {
+  const rows = await db
+    .insert(paymentWebhookEvents)
+    .values({
+      provider: input.provider,
+      providerEventId: input.providerEventId,
+      paymentId: null,
+      bookingId: null,
+      eventType: input.eventType,
+      signatureValid: input.signatureValid,
+      payload: input.payload,
+      processingStatus: "pending",
+    })
+    .onConflictDoNothing({
+      target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
+    })
+    .returning(paymentEventSelect);
+
+  return rows[0] ?? null;
+};
+
 export const finalizeVerifiedPaymentEvent = async (input: TrustedPaymentFinalizationInput) =>
   db.transaction(async (tx) => {
-    const insertedEvents = await tx
-      .insert(paymentWebhookEvents)
-      .values({
-        provider: input.provider,
-        providerEventId: input.providerEventId,
-        paymentId: null,
-        bookingId: null,
-        eventType: input.eventType,
-        signatureValid: input.signatureValid,
-        payload: input.payload,
-        processingStatus: "pending",
-      })
-      .onConflictDoNothing({
-        target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
-      })
-      .returning(paymentEventSelect);
-    const insertedEvent = insertedEvents[0] ?? null;
+    const insertedEvent = input.claimedEventId
+      ? (
+          await tx
+            .select(paymentEventSelect)
+            .from(paymentWebhookEvents)
+            .where(eq(paymentWebhookEvents.id, input.claimedEventId))
+            .limit(1)
+        )[0] ?? null
+      : (
+          await tx
+            .insert(paymentWebhookEvents)
+            .values({
+              provider: input.provider,
+              providerEventId: input.providerEventId,
+              paymentId: null,
+              bookingId: null,
+              eventType: input.eventType,
+              signatureValid: input.signatureValid,
+              payload: input.payload,
+              processingStatus: "pending",
+            })
+            .onConflictDoNothing({
+              target: [paymentWebhookEvents.provider, paymentWebhookEvents.providerEventId],
+            })
+            .returning(paymentEventSelect)
+        )[0] ?? null;
 
     if (!insertedEvent) {
       const storedEvents = await tx
@@ -494,6 +528,13 @@ export const finalizeVerifiedPaymentEvent = async (input: TrustedPaymentFinaliza
       }
 
       return { event: storedEvent };
+    }
+    if (
+      insertedEvent.provider !== input.provider ||
+      insertedEvent.providerEventId !== input.providerEventId ||
+      insertedEvent.processingStatus !== "pending"
+    ) {
+      return { event: insertedEvent };
     }
 
     const paymentRows = await tx

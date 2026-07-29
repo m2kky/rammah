@@ -1,5 +1,6 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
+import { env } from "../../config/env.js";
 import {
   findPublicSessions,
   findSessionActiveHolds,
@@ -130,8 +131,12 @@ const toPublicSession = async (session: PublicSessionRow, now: Date) => {
       ? {
           id: session.locationId,
           name: session.locationName,
+          addressLine1: session.locationAddressLine1,
+          addressLine2: session.locationAddressLine2,
           city: session.locationCity,
           countryCode: session.locationCountryCode,
+          mapUrl: session.locationMapUrl,
+          instructions: session.locationInstructions,
         }
       : null,
     status: remainingCapacity > 0 ? "available" : "booked",
@@ -150,7 +155,10 @@ export const listPublicOfferingSessions = async (input: PublicSessionsInput) => 
     rangeEnd: range.rangeEnd,
   });
 
-  const futureSessions = sessions.filter((session) => session.startsAt > now);
+  const minimumStartAt = new Date(
+    now.getTime() + env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000,
+  );
+  const futureSessions = sessions.filter((session) => session.startsAt >= minimumStartAt);
 
   return {
     offeringId: input.offeringId,

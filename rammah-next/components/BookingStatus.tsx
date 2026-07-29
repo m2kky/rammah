@@ -4,9 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  cancelPublicBooking,
+  fetchPublicAvailabilitySlots,
   fetchPublicBookingStatus,
+  fetchPublicOfferingSessions,
+  publicBookingCalendarUrl,
   PublicApiError,
+  reschedulePublicBooking,
+  type PublicAvailabilitySlot,
   type PublicBooking,
+  type PublicOfferingSession,
 } from "@/lib/api/bookings";
 
 const uuidPattern =
@@ -93,6 +100,11 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   const [booking, setBooking] = useState<PublicBooking | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(publicToken));
   const [error, setError] = useState("");
+  const [changeError, setChangeError] = useState("");
+  const [isChanging, setIsChanging] = useState(false);
+  const [rescheduleOptions, setRescheduleOptions] = useState<
+    Array<PublicAvailabilitySlot | PublicOfferingSession>
+  >([]);
 
   const normalizedRouteToken = useMemo(
     () => (publicToken ? normalizeTokenInput(publicToken) : ""),
@@ -146,6 +158,86 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   }, [normalizedRouteToken, publicToken]);
 
   const statusMeta = booking ? getStatusMeta(booking.status) : null;
+  const canChange = Boolean(
+    booking &&
+      ["confirmed", "rescheduled"].includes(booking.status) &&
+      booking.slot.startsAt &&
+      new Date(booking.slot.startsAt) > new Date(),
+  );
+
+  const loadRescheduleOptions = async () => {
+    if (!booking) return;
+    setIsChanging(true);
+    setChangeError("");
+    const from = new Date();
+    const toDate = (date: Date) => date.toISOString().slice(0, 10);
+    const twoWeeks = new Date(from);
+    twoWeeks.setDate(twoWeeks.getDate() + 13);
+    const threeMonths = new Date(from);
+    threeMonths.setDate(threeMonths.getDate() + 89);
+
+    try {
+      const [sessionPreview, availabilityPreview] = await Promise.all([
+        fetchPublicOfferingSessions({
+          offeringId: booking.offering.id,
+          dateFrom: toDate(from),
+          dateTo: toDate(threeMonths),
+        }),
+        fetchPublicAvailabilitySlots({
+          offeringId: booking.offering.id,
+          dateFrom: toDate(from),
+          dateTo: toDate(twoWeeks),
+        }),
+      ]);
+      setRescheduleOptions([
+        ...sessionPreview.sessions.filter((session) => session.status === "available"),
+        ...availabilityPreview.days.flatMap((day) =>
+          day.slots.filter((slot) => slot.status === "available"),
+        ),
+      ].slice(0, 30));
+    } catch (loadError) {
+      setChangeError(loadError instanceof Error ? loadError.message : "Could not load times.");
+    } finally {
+      setIsChanging(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!booking || !window.confirm("Cancel this booking?")) return;
+    setIsChanging(true);
+    setChangeError("");
+    try {
+      setBooking(await cancelPublicBooking(booking.publicToken));
+      setRescheduleOptions([]);
+    } catch (change) {
+      setChangeError(change instanceof Error ? change.message : "Could not cancel booking.");
+    } finally {
+      setIsChanging(false);
+    }
+  };
+
+  const handleReschedule = async (
+    option: PublicAvailabilitySlot | PublicOfferingSession,
+  ) => {
+    if (!booking) return;
+    setIsChanging(true);
+    setChangeError("");
+    try {
+      setBooking(
+        await reschedulePublicBooking(booking.publicToken, {
+          offeringSessionId: "offering" in option ? option.id : null,
+          startsAt: option.startsAt,
+          endsAt: option.endsAt,
+          timezone: option.timezone,
+        }),
+      );
+      setRescheduleOptions([]);
+    } catch (change) {
+      setChangeError(change instanceof Error ? change.message : "Could not change the time.");
+    } finally {
+      setIsChanging(false);
+    }
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -302,10 +394,17 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                         Location
                       </dt>
                       <dd className="mt-2 font-inter text-sm text-[#102329]/72">
-                        {[booking.location.name, booking.location.city, booking.location.countryCode]
+                        {[booking.location.name, booking.location.addressLine1, booking.location.addressLine2, booking.location.city, booking.location.countryCode]
                           .filter(Boolean)
                           .join(", ")}
                       </dd>
+                      {booking.location.mapUrl && (
+                        <dd className="mt-2">
+                          <a href={booking.location.mapUrl} target="_blank" rel="noreferrer" className="font-inter text-xs font-semibold text-[#0F3B46] underline underline-offset-4">
+                            Open map
+                          </a>
+                        </dd>
+                      )}
                     </div>
                   )}
                   {booking.status === "confirmed" && (
@@ -336,7 +435,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                 <div className="grid gap-3 font-inter text-xs text-[#102329]/54">
                   <p className="break-all">
                     <span className="font-semibold text-[#102329]/70">Reference:</span>{" "}
-                    {booking.publicToken}
+                    {booking.bookingReference}
                   </p>
                   <p>
                     <span className="font-semibold text-[#102329]/70">Created:</span>{" "}
@@ -356,12 +455,58 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                   )}
                 </div>
 
-                <Link
-                  href="/booking"
-                  className="inline-flex h-11 items-center justify-center border border-[#102329]/18 px-5 font-inter text-sm font-semibold text-[#102329]/70 transition-colors hover:border-[#0F3B46] hover:text-[#0F3B46]"
-                >
-                  Book another service
-                </Link>
+                {changeError && (
+                  <p className="font-inter text-sm text-red-700">{changeError}</p>
+                )}
+                {rescheduleOptions.length > 0 && (
+                  <div className="grid max-h-64 gap-2 overflow-y-auto border-y border-[#102329]/10 py-4 sm:grid-cols-2">
+                    {rescheduleOptions.map((option) => (
+                      <button
+                        key={`${option.startsAt}-${"offering" in option ? option.id : "slot"}`}
+                        type="button"
+                        disabled={isChanging}
+                        onClick={() => void handleReschedule(option)}
+                        className="border border-[#102329]/14 px-3 py-2 text-left font-inter text-sm font-semibold hover:border-[#0F3B46] disabled:opacity-50"
+                      >
+                        {formatDateTime(option.startsAt, option.timezone)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-3">
+                  <a
+                    href={publicBookingCalendarUrl(booking.publicToken)}
+                    className="inline-flex h-11 items-center justify-center border border-[#102329]/18 px-5 font-inter text-sm font-semibold text-[#102329]/70 hover:border-[#0F3B46]"
+                  >
+                    Add to calendar
+                  </a>
+                  {canChange && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={isChanging}
+                        onClick={() => void loadRescheduleOptions()}
+                        className="h-11 border border-[#102329]/18 px-5 font-inter text-sm font-semibold text-[#102329]/70 hover:border-[#0F3B46] disabled:opacity-50"
+                      >
+                        Change time
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isChanging}
+                        onClick={() => void handleCancel()}
+                        className="h-11 border border-red-700/25 px-5 font-inter text-sm font-semibold text-red-700 hover:border-red-700 disabled:opacity-50"
+                      >
+                        Cancel booking
+                      </button>
+                    </>
+                  )}
+                  <Link
+                    href="/booking"
+                    className="inline-flex h-11 items-center justify-center border border-[#102329]/18 px-5 font-inter text-sm font-semibold text-[#102329]/70 transition-colors hover:border-[#0F3B46] hover:text-[#0F3B46]"
+                  >
+                    Book another service
+                  </Link>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">

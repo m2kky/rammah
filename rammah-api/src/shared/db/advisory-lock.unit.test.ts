@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bookingScheduleLockKeys,
   fixedSessionCapacityLockKey,
   recurringSlotCapacityLockKey,
 } from "./advisory-lock.js";
@@ -42,5 +43,23 @@ describe("capacity advisory lock keys", () => {
     });
 
     expect(new Set([fixed, anotherFixed, recurring])).toHaveLength(3);
+  });
+
+  it("shares schedule locks only when two time ranges overlap", () => {
+    const first = bookingScheduleLockKeys({
+      startsAt: new Date("2030-08-05T07:00:00.000Z"),
+      endsAt: new Date("2030-08-05T08:00:00.000Z"),
+    });
+    const overlapping = bookingScheduleLockKeys({
+      startsAt: new Date("2030-08-05T07:30:00.000Z"),
+      endsAt: new Date("2030-08-05T08:30:00.000Z"),
+    });
+    const separate = bookingScheduleLockKeys({
+      startsAt: new Date("2030-08-05T09:00:00.000Z"),
+      endsAt: new Date("2030-08-05T10:00:00.000Z"),
+    });
+
+    expect(first.some((key) => overlapping.includes(key))).toBe(true);
+    expect(first.some((key) => separate.includes(key))).toBe(false);
   });
 });

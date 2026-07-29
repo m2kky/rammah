@@ -80,6 +80,26 @@ type BookingConfigResponse = {
   };
 };
 
+export const filterOfferingLocationsByCountry = (
+  locations: readonly PublicOfferingLocation[],
+  countryCode: string,
+) => {
+  const normalized = countryCode.trim().toUpperCase();
+  return normalized
+    ? locations.filter((location) => location.countryCode.toUpperCase() === normalized)
+    : [...locations];
+};
+
+export type PublicCountryContext = {
+  countryCode: string;
+  detectedCountryCode: string | null;
+  source: "header" | "geoip" | "default";
+};
+
+type CountryContextResponse = {
+  data: PublicCountryContext;
+};
+
 const toServiceCard = (offering: PublicOffering): ServiceCard => ({
   slug: offering.slug,
   title: offering.title,
@@ -113,6 +133,29 @@ export const fetchPublicOfferings = async (signal?: AbortSignal) => {
   const offerings = await fetchPublicOfferingRecords(signal);
 
   return offerings.map(toServiceCard);
+};
+
+export const fetchPublicCountryContext = async (signal?: AbortSignal) => {
+  const response = await fetch(`${apiBaseUrl}/public/country`, {
+    method: "GET",
+    signal,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to detect country: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as CountryContextResponse;
+
+  if (
+    !payload.data?.countryCode ||
+    !["header", "geoip", "default"].includes(payload.data.source)
+  ) {
+    throw new Error("Invalid country context response.");
+  }
+
+  return payload.data;
 };
 
 export const fetchPublicOffering = async (slug: string, signal?: AbortSignal) => {

@@ -15,6 +15,11 @@ import { ensureGoogleCalendarEventForBooking } from "../calendar/google-calendar
 import { findCalendarEventByBookingId } from "../calendar/google-calendar.repository.js";
 import { sendBookingConfirmedEmails } from "../emails/email.service.js";
 import { findPublishedLocationsForOffering } from "../offerings/offerings.repository.js";
+import { env } from "../../config/env.js";
+import {
+  rescheduleAdminBookingById,
+  updateAdminBookingStatusById,
+} from "./admin-bookings.service.js";
 
 export type PublicBookingInput = {
   holdId: string;
@@ -109,6 +114,7 @@ const toPublicBooking = (
   return {
     id: result.booking.id,
     publicToken: result.booking.publicToken,
+    bookingReference: result.booking.bookingReference,
     offering: {
       id: result.booking.offeringId,
       title: result.hold.offeringTitle,
@@ -126,8 +132,12 @@ const toPublicBooking = (
       ? {
           id: result.booking.locationId,
           name: null,
+          addressLine1: null,
+          addressLine2: null,
           city: null,
           countryCode: null,
+          mapUrl: null,
+          instructions: null,
         }
       : null,
     slot: {
@@ -283,6 +293,7 @@ export const getPublicBookingStatus = async (publicToken: string) => {
   return {
     id: booking.id,
     publicToken: booking.publicToken,
+    bookingReference: booking.bookingReference,
     offering: {
       id: booking.offeringId,
       title: booking.offeringTitle,
@@ -300,8 +311,12 @@ export const getPublicBookingStatus = async (publicToken: string) => {
       ? {
           id: booking.locationId,
           name: booking.locationName,
+          addressLine1: booking.locationAddressLine1,
+          addressLine2: booking.locationAddressLine2,
           city: booking.locationCity,
           countryCode: booking.locationCountryCode,
+          mapUrl: booking.locationMapUrl,
+          instructions: booking.locationInstructions,
         }
       : null,
     slot: {
@@ -316,4 +331,86 @@ export const getPublicBookingStatus = async (publicToken: string) => {
     createdAt: booking.createdAt.toISOString(),
     updatedAt: booking.updatedAt.toISOString(),
   };
+};
+
+const assertCustomerChangeAllowed = (booking: Awaited<ReturnType<typeof findPublicBookingByToken>>) => {
+  if (!booking) {
+    throw new AppError({
+      code: "NOT_FOUND",
+      message: "Booking was not found.",
+      statusCode: httpStatus.notFound,
+    });
+  }
+  if (
+    !["confirmed", "rescheduled"].includes(booking.status) ||
+    !booking.slotStartAt ||
+    booking.slotStartAt.getTime() - Date.now()
+      < env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000
+  ) {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "This booking can no longer be changed online.",
+      statusCode: httpStatus.conflict,
+    });
+  }
+  return booking;
+};
+
+export const cancelPublicBooking = async (publicToken: string) => {
+  const booking = assertCustomerChangeAllowed(await findPublicBookingByToken(publicToken));
+  await updateAdminBookingStatusById(booking.id, { status: "cancelled" });
+  return getPublicBookingStatus(publicToken);
+};
+
+export const reschedulePublicBooking = async (
+  publicToken: string,
+  input: {
+    offeringSessionId?: string | null;
+    startsAt: string;
+    endsAt: string;
+    timezone?: string | null;
+  },
+) => {
+  const booking = assertCustomerChangeAllowed(await findPublicBookingByToken(publicToken));
+  await rescheduleAdminBookingById(booking.id, input);
+  return getPublicBookingStatus(publicToken);
+};
+
+const escapeIcs = (value: string) =>
+  value.replaceAll("\\", "\\\\").replaceAll("\n", "\\n").replaceAll(",", "\\,").replaceAll(";", "\\;");
+const toIcsTimestamp = (date: Date) =>
+  date.toISOString().replaceAll("-", "").replaceAll(":", "").replace(/\.\d{3}Z$/, "Z");
+
+export const buildPublicBookingCalendar = async (publicToken: string) => {
+  const booking = await findPublicBookingByToken(publicToken);
+  if (!booking || !booking.slotStartAt || !booking.slotEndAt) {
+    throw new AppError({
+      code: "NOT_FOUND",
+      message: "Booking was not found.",
+      statusCode: httpStatus.notFound,
+    });
+  }
+  const location = booking.locationName
+    ? [booking.locationName, booking.locationAddressLine1, booking.locationCity]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Rammah//Booking//EN",
+    "BEGIN:VEVENT",
+    `UID:${booking.publicToken}@rammah`,
+    `DTSTAMP:${toIcsTimestamp(new Date())}`,
+    `DTSTART:${toIcsTimestamp(booking.slotStartAt)}`,
+    `DTEND:${toIcsTimestamp(booking.slotEndAt)}`,
+    `SUMMARY:${escapeIcs(booking.offeringTitle)}`,
+    `DESCRIPTION:${escapeIcs(`Booking reference: ${booking.bookingReference}`)}`,
+    ...(location ? [`LOCATION:${escapeIcs(location)}`] : []),
+    `STATUS:${booking.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
+    "END:VEVENT",
+    "END:VCALENDAR",
+    "",
+  ].join("\r\n");
 };

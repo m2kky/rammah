@@ -1,0 +1,3 @@
+CREATE SEQUENCE "public"."booking_reference_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
+ALTER TABLE "bookings" ADD COLUMN "booking_reference" varchar(24) DEFAULT ('RMM-' || lpad(nextval('booking_reference_seq')::text, 6, '0')) NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "bookings_booking_reference_unique" ON "bookings" USING btree ("booking_reference");

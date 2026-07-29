@@ -282,6 +282,7 @@ export const findBookingEmailContextById = async (id: string) => {
     .select({
       id: bookings.id,
       publicToken: bookings.publicToken,
+      bookingReference: bookings.bookingReference,
       status: bookings.status,
       customerFullName: bookings.customerFullName,
       customerEmail: bookings.customerEmail,

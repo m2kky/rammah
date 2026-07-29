@@ -154,6 +154,64 @@ const seedBooking = async (
 };
 
 describe.sequential("atomic public slot-hold capacity", () => {
+  it("allows one group session to fill but blocks a different offering at the same time", async () => {
+    const first = await seedFixedTarget(3);
+    const second = await seedFixedTarget(3);
+    const { db } = getTestDatabase();
+
+    await db
+      .update(offeringSessions)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(offeringSessions.id, second.session.id));
+    second.input.startsAt = first.session.startsAt.toISOString();
+    second.input.endsAt = first.session.endsAt.toISOString();
+
+    await expect(createSlotHold(first.input)).resolves.toBeDefined();
+    await expect(createSlotHold(first.input)).resolves.toBeDefined();
+    await expectUnavailable(createSlotHold(second.input));
+  });
+
+  it("serializes competing offerings so only one overlapping schedule wins", async () => {
+    const first = await seedFixedTarget(1);
+    const second = await seedFixedTarget(1);
+    const { db } = getTestDatabase();
+
+    await db
+      .update(offeringSessions)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(offeringSessions.id, second.session.id));
+    second.input.startsAt = first.session.startsAt.toISOString();
+    second.input.endsAt = first.session.endsAt.toISOString();
+
+    const results = await Promise.allSettled([
+      createSlotHold(first.input),
+      createSlotHold(second.input),
+    ]);
+
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+  });
+
+  it("blocks a ninth distinct schedule group on the same day", async () => {
+    const target = await seedRecurringTarget(1);
+
+    for (let index = 0; index < env.BOOKING_DAILY_LIMIT; index += 1) {
+      const offering = await seedOffering(1);
+      await seedBooking(offering.id, "confirmed", {
+        startsAt: new Date(`${recurringDate}T${String(index).padStart(2, "0")}:00:00`),
+        endsAt: new Date(`${recurringDate}T${String(index).padStart(2, "0")}:30:00`),
+      });
+    }
+
+    await expectUnavailable(createSlotHold(target.input));
+  });
+
   it.each([1, 3])(
     "persists exactly capacity=%i recurring holds from 20 parallel requests",
     async (capacity) => {

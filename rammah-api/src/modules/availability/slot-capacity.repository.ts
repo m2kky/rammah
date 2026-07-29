@@ -1,4 +1,5 @@
 import { and, eq, gt, inArray, lt, ne, type SQL } from "drizzle-orm";
+import { env } from "../../config/env.js";
 import { db } from "../../db/client.js";
 import {
   availabilityOverrides,
@@ -11,6 +12,8 @@ import {
 } from "../../db/schema/index.js";
 import {
   acquireCapacityLock,
+  acquireCapacityLocks,
+  bookingScheduleLockKeys,
   fixedSessionCapacityLockKey,
   recurringSlotCapacityLockKey,
 } from "../../shared/db/advisory-lock.js";
@@ -54,6 +57,144 @@ type AvailableSlotCapacity = {
   };
 };
 
+export const meetsMinimumNotice = (
+  startsAt: Date,
+  now: Date,
+  minimumMinutes = env.BOOKING_MINIMUM_NOTICE_MINUTES,
+) => startsAt.getTime() - now.getTime() >= minimumMinutes * 60_000;
+
+const scheduleGroupKey = (input: {
+  offeringId: string;
+  offeringSessionId: string | null;
+  startsAt: Date;
+  endsAt: Date;
+}) =>
+  input.offeringSessionId
+    ? `session:${input.offeringSessionId}`
+    : `slot:${input.offeringId}:${input.startsAt.toISOString()}:${input.endsAt.toISOString()}`;
+
+const hasGlobalScheduleConflict = async (
+  tx: CapacityTransaction,
+  input: SlotCapacityInput,
+  now: Date,
+  options: { excludeBookingId?: string; excludeHoldId?: string },
+) => {
+  const bookingConditions: SQL[] = [
+    inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+    lt(bookings.slotStartAt, input.endsAt),
+    gt(bookings.slotEndAt, input.startsAt),
+  ];
+  if (options.excludeBookingId) {
+    bookingConditions.push(ne(bookings.id, options.excludeBookingId));
+  }
+  const holdConditions: SQL[] = [
+    eq(bookingSlotHolds.status, "active"),
+    gt(bookingSlotHolds.expiresAt, now),
+    lt(bookingSlotHolds.slotStartAt, input.endsAt),
+    gt(bookingSlotHolds.slotEndAt, input.startsAt),
+  ];
+  if (options.excludeHoldId) {
+    holdConditions.push(ne(bookingSlotHolds.id, options.excludeHoldId));
+  }
+  const [bookingRows, holdRows] = await Promise.all([
+    tx
+      .select({
+        offeringId: bookings.offeringId,
+        offeringSessionId: bookings.offeringSessionId,
+        startsAt: bookings.slotStartAt,
+        endsAt: bookings.slotEndAt,
+      })
+      .from(bookings)
+      .where(and(...bookingConditions)),
+    tx
+      .select({
+        offeringId: bookingSlotHolds.offeringId,
+        offeringSessionId: bookingSlotHolds.offeringSessionId,
+        startsAt: bookingSlotHolds.slotStartAt,
+        endsAt: bookingSlotHolds.slotEndAt,
+      })
+      .from(bookingSlotHolds)
+      .where(and(...holdConditions)),
+  ]);
+  const targetKey = scheduleGroupKey(input);
+
+  return [...bookingRows, ...holdRows].some(
+    (row) =>
+      row.startsAt &&
+      row.endsAt &&
+      scheduleGroupKey({
+        offeringId: row.offeringId,
+        offeringSessionId: row.offeringSessionId,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+      }) !== targetKey,
+  );
+};
+
+const exceedsDailyScheduleLimit = async (
+  tx: CapacityTransaction,
+  input: SlotCapacityInput,
+  now: Date,
+  options: { excludeBookingId?: string; excludeHoldId?: string },
+) => {
+  const dayStart = new Date(input.startsAt);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const bookingConditions: SQL[] = [
+    inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+    gt(bookings.slotStartAt, new Date(dayStart.getTime() - 1)),
+    lt(bookings.slotStartAt, dayEnd),
+  ];
+  if (options.excludeBookingId) {
+    bookingConditions.push(ne(bookings.id, options.excludeBookingId));
+  }
+  const holdConditions: SQL[] = [
+    eq(bookingSlotHolds.status, "active"),
+    gt(bookingSlotHolds.expiresAt, now),
+    gt(bookingSlotHolds.slotStartAt, new Date(dayStart.getTime() - 1)),
+    lt(bookingSlotHolds.slotStartAt, dayEnd),
+  ];
+  if (options.excludeHoldId) {
+    holdConditions.push(ne(bookingSlotHolds.id, options.excludeHoldId));
+  }
+  const [bookingRows, holdRows] = await Promise.all([
+    tx
+      .select({
+        offeringId: bookings.offeringId,
+        offeringSessionId: bookings.offeringSessionId,
+        startsAt: bookings.slotStartAt,
+        endsAt: bookings.slotEndAt,
+      })
+      .from(bookings)
+      .where(and(...bookingConditions)),
+    tx
+      .select({
+        offeringId: bookingSlotHolds.offeringId,
+        offeringSessionId: bookingSlotHolds.offeringSessionId,
+        startsAt: bookingSlotHolds.slotStartAt,
+        endsAt: bookingSlotHolds.slotEndAt,
+      })
+      .from(bookingSlotHolds)
+      .where(and(...holdConditions)),
+  ]);
+  const groupKeys = new Set(
+    [...bookingRows, ...holdRows]
+      .filter((row) => row.startsAt && row.endsAt)
+      .map((row) =>
+        scheduleGroupKey({
+          offeringId: row.offeringId,
+          offeringSessionId: row.offeringSessionId,
+          startsAt: row.startsAt!,
+          endsAt: row.endsAt!,
+        }),
+      ),
+  );
+  const targetKey = scheduleGroupKey(input);
+
+  return !groupKeys.has(targetKey) && groupKeys.size >= env.BOOKING_DAILY_LIMIT;
+};
+
 const hasPublishedBusyOverlap = async (
   tx: CapacityTransaction,
   startsAt: Date,
@@ -95,13 +236,21 @@ export const withAvailableSlotCapacity = async <T>(
   options: { excludeBookingId?: string; excludeHoldId?: string } = {},
   mutate: (capacity: AvailableSlotCapacity) => Promise<T>,
 ): Promise<T | null> => {
+    await acquireCapacityLocks(tx, bookingScheduleLockKeys(input));
+
     if (input.offeringSessionId) {
       await acquireCapacityLock(
         tx,
         fixedSessionCapacityLockKey(input.offeringSessionId),
       );
       const now = new Date();
-
+      if (
+        !meetsMinimumNotice(input.startsAt, now) ||
+        (await hasGlobalScheduleConflict(tx, input, now, options)) ||
+        (await exceedsDailyScheduleLimit(tx, input, now, options))
+      ) {
+        return null;
+      }
       const sessionRows = await tx
         .select({
           id: offeringSessions.id,
@@ -195,7 +344,13 @@ export const withAvailableSlotCapacity = async <T>(
       }),
     );
     const now = new Date();
-
+    if (
+      !meetsMinimumNotice(input.startsAt, now) ||
+      (await hasGlobalScheduleConflict(tx, input, now, options)) ||
+      (await exceedsDailyScheduleLimit(tx, input, now, options))
+    ) {
+      return null;
+    }
     const offeringRows = await tx
       .select({
         id: offerings.id,

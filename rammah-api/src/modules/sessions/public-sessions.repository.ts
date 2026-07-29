@@ -24,8 +24,12 @@ const publicSessionSelect = {
   attendanceMode: offeringSessions.attendanceMode,
   locationId: offeringSessions.locationId,
   locationName: offlineLocations.name,
+  locationAddressLine1: offlineLocations.addressLine1,
+  locationAddressLine2: offlineLocations.addressLine2,
   locationCity: offlineLocations.city,
   locationCountryCode: offlineLocations.countryCode,
+  locationMapUrl: offlineLocations.mapUrl,
+  locationInstructions: offlineLocations.instructions,
   status: offeringSessions.status,
 };
 

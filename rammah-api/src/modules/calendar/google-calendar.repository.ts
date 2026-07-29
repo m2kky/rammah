@@ -272,6 +272,7 @@ export const findConfirmedBookingForCalendarSync = async (bookingId: string) => 
     .select({
       id: bookings.id,
       publicToken: bookings.publicToken,
+      bookingReference: bookings.bookingReference,
       status: bookings.status,
       attendanceMode: bookings.attendanceMode,
       customerFullName: bookings.customerFullName,

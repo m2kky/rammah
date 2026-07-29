@@ -18,6 +18,7 @@ import { publicBookingsRouter } from "./modules/bookings/public-bookings.routes.
 import { adminGoogleCalendarRouter } from "./modules/calendar/admin-google-calendar.routes.js";
 import { adminCmsRouter } from "./modules/cms/admin-cms.routes.js";
 import { publicCmsRouter } from "./modules/cms/public-cms.routes.js";
+import { publicCountryRouter } from "./modules/country/public-country.routes.js";
 import { adminEmailsRouter } from "./modules/emails/admin-emails.routes.js";
 import { healthRouter } from "./modules/health/health.routes.js";
 import { adminLocationsRouter } from "./modules/locations/admin-locations.routes.js";
@@ -35,6 +36,7 @@ import { publicSessionsRouter } from "./modules/sessions/public-sessions.routes.
 export const createApp = () => {
   const app = express();
 
+  app.set("trust proxy", 1);
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(
@@ -49,6 +51,7 @@ export const createApp = () => {
 
   app.use(`${env.API_BASE_PATH}`, openApiRouter);
   app.use(`${env.API_BASE_PATH}/health`, healthRouter);
+  app.use(`${env.API_BASE_PATH}/public/country`, publicCountryRouter);
   app.use(`${env.API_BASE_PATH}/public/offerings`, publicOfferingsRouter);
   app.use(`${env.API_BASE_PATH}/public/availability-slots`, publicAvailabilitySlotsRouter);
   app.use(`${env.API_BASE_PATH}/public/sessions`, publicSessionsRouter);

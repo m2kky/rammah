@@ -44,7 +44,7 @@ const defaultTemplates: Record<EmailTemplateKey, { subject: string; body: string
       "<p>{{slotLabel}}</p>",
       "<p>{{paymentLabel}}</p>",
       "<p>{{meetLine}}</p>",
-      "<p>Booking reference: {{publicToken}}</p>",
+      "<p>Booking reference: {{bookingReference}}</p>",
     ].join("\n"),
   },
   booking_confirmed_admin: {
@@ -64,7 +64,7 @@ const defaultTemplates: Record<EmailTemplateKey, { subject: string; body: string
       "<p>Hi {{customerFullName}},</p>",
       "<p>Your booking for <strong>{{offeringTitle}}</strong> was cancelled.</p>",
       "<p>{{slotLabel}}</p>",
-      "<p>Booking reference: {{publicToken}}</p>",
+      "<p>Booking reference: {{bookingReference}}</p>",
     ].join("\n"),
   },
   booking_cancelled_admin: {
@@ -84,7 +84,7 @@ const defaultTemplates: Record<EmailTemplateKey, { subject: string; body: string
       "<p>Your booking for <strong>{{offeringTitle}}</strong> was rescheduled.</p>",
       "<p>{{slotLabel}}</p>",
       "<p>{{meetLine}}</p>",
-      "<p>Booking reference: {{publicToken}}</p>",
+      "<p>Booking reference: {{bookingReference}}</p>",
     ].join("\n"),
   },
   booking_rescheduled_admin: {
@@ -362,6 +362,7 @@ const bookingVariables = async (
     variables: {
       bookingId: booking.id,
       publicToken: booking.publicToken,
+      bookingReference: booking.bookingReference,
       customerFullName: booking.customerFullName,
       customerEmail: booking.customerEmail,
       customerPhone: booking.customerPhone,

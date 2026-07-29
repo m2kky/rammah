@@ -250,7 +250,7 @@ const persistRefreshedTokens = async (
   });
 };
 
-const getAuthorizedCalendarClient = async () => {
+export const getAuthorizedCalendarClient = async () => {
   const connection = await findGoogleCalendarConnection();
 
   if (!connection?.refreshTokenEncrypted || connection.status !== "connected") {
@@ -308,7 +308,7 @@ const buildEventDescription = (booking: Awaited<ReturnType<typeof findConfirmedB
   if (!booking) return "";
 
   return [
-    `Booking reference: ${booking.publicToken}`,
+    `Booking reference: ${booking.bookingReference}`,
     `Customer: ${booking.customerFullName}`,
     `Email: ${booking.customerEmail}`,
     booking.customerPhone ? `Phone: ${booking.customerPhone}` : null,

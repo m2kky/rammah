@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgEnum,
+  pgSequence,
   pgTable,
   text,
   timestamp,
@@ -54,6 +55,9 @@ export const bookingStatusEnum = pgEnum("booking_status", [
   "expired",
   "rejected",
 ]);
+export const bookingReferenceSequence = pgSequence("booking_reference_seq", {
+  startWith: 1,
+});
 export const holdStatusEnum = pgEnum("hold_status", ["active", "expired", "released", "converted"]);
 export const paymentStatusEnum = pgEnum("payment_status", [
   "created",
@@ -458,6 +462,9 @@ export const bookings = pgTable(
   {
     id: id(),
     publicToken: uuid("public_token").notNull().defaultRandom(),
+    bookingReference: varchar("booking_reference", { length: 24 })
+      .notNull()
+      .default(sql`('RMM-' || lpad(nextval('booking_reference_seq')::text, 6, '0'))`),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
     locationId: uuid("location_id").references(() => offlineLocations.id),
@@ -483,6 +490,9 @@ export const bookings = pgTable(
   },
   (table) => ({
     publicTokenUnique: uniqueIndex("bookings_public_token_unique").on(table.publicToken),
+    bookingReferenceUnique: uniqueIndex("bookings_booking_reference_unique").on(
+      table.bookingReference,
+    ),
     offeringSlotIdx: index("bookings_offering_slot_idx").on(table.offeringId, table.slotStartAt, table.status),
     customerEmailIdx: index("bookings_customer_email_idx").on(table.customerEmail),
     locationIdx: index("bookings_location_idx").on(table.locationId),

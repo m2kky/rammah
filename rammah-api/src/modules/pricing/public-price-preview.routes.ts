@@ -2,9 +2,11 @@ import type { Request } from "express";
 import { Router } from "express";
 import { z } from "zod";
 import { validateRequest } from "../../middleware/validate-request.js";
+import { detectCountryFromRequest } from "../../shared/geo/request-country.js";
 import { previewPublicOfferingPrice } from "./public-price-preview.service.js";
 
 export const publicPricePreviewRouter = Router();
+export { detectCountryFromRequest };
 
 const pricePreviewBodySchema = z.object({
   offeringId: z.string().uuid(),
@@ -17,25 +19,6 @@ const pricePreviewBodySchema = z.object({
   couponCode: z.string().trim().max(80).nullable().optional(),
 });
 
-const readDetectedCountryCode = (req: Request) => {
-  const headerNames = [
-    "x-country-code",
-    "x-vercel-ip-country",
-    "cf-ipcountry",
-    "x-geo-country",
-  ];
-
-  for (const headerName of headerNames) {
-    const value = req.header(headerName);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-};
-
 publicPricePreviewRouter.post(
   "/",
   validateRequest({ body: pricePreviewBodySchema }),
@@ -43,7 +26,7 @@ publicPricePreviewRouter.post(
     try {
       const preview = await previewPublicOfferingPrice({
         ...req.body,
-        detectedCountryCode: readDetectedCountryCode(req),
+        detectedCountryCode: detectCountryFromRequest(req).countryCode,
       });
 
       res.json({

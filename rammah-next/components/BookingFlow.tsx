@@ -19,8 +19,10 @@ import {
   type PublicQuoteRequest,
 } from "@/lib/api/bookings";
 import {
+  fetchPublicCountryContext,
   fetchPublicOffering,
   fetchPublicOfferingBookingConfig,
+  filterOfferingLocationsByCountry,
   type PublicBookingFormField,
   type PublicOffering,
   type PublicOfferingLocation,
@@ -164,6 +166,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [selectedSession, setSelectedSession] = useState<PublicOfferingSession | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
+  const [attendanceCountryCode, setAttendanceCountryCode] = useState("");
   const [attendanceMode, setAttendanceMode] =
     useState<PublicOffering["attendanceMode"]>("online");
   const [form, setForm] = useState(initialForm);
@@ -203,6 +206,13 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const isBookableOffering = isFreeBooking || isPaidOffering;
   const hasSessionOptions = sessions.length > 0;
   const selectedBookableTime = selectedSession ?? selectedSlot;
+  const locationCountries = Array.from(
+    new Set(locations.map((location) => location.countryCode.toUpperCase())),
+  );
+  const filteredLocations = filterOfferingLocationsByCountry(
+    locations,
+    attendanceCountryCode,
+  );
   const selectedFormLocation =
     locations.find((location) => location.id === selectedLocationId) ?? null;
   const selectedLocation = selectedSession?.location ?? selectedFormLocation;
@@ -279,6 +289,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setPriceCountryCode("");
       setLocations([]);
       setSelectedLocationId("");
+      setAttendanceCountryCode("");
       setStep("details");
       setSessions([]);
       setSlots([]);
@@ -287,7 +298,14 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setSelectedDate("");
 
       try {
-        const nextOffering = await fetchPublicOffering(slug);
+        const [nextOffering, countryContext] = await Promise.all([
+          fetchPublicOffering(slug),
+          fetchPublicCountryContext().catch(() => ({
+            countryCode: "EG",
+            detectedCountryCode: null,
+            source: "default" as const,
+          })),
+        ]);
         const bookingConfig = await fetchPublicOfferingBookingConfig(nextOffering.id);
         const configuredOffering = bookingConfig.offering;
 
@@ -297,9 +315,22 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         setFields(bookingConfig.fields);
         setLocations(bookingConfig.locations);
         setAnswers({});
+        setForm({
+          ...initialForm,
+          countryCode: countryContext.countryCode,
+        });
+        const detectedLocationCountry = bookingConfig.locations.some(
+          (location) => location.countryCode === countryContext.countryCode,
+        )
+          ? countryContext.countryCode
+          : bookingConfig.locations[0]?.countryCode ?? "";
+        const firstCountryLocation = bookingConfig.locations.find(
+          (location) => location.countryCode === detectedLocationCountry,
+        );
+        setAttendanceCountryCode(detectedLocationCountry);
         setSelectedLocationId(
           configuredOffering.attendanceMode === "offline"
-            ? bookingConfig.locations[0]?.id ?? ""
+            ? firstCountryLocation?.id ?? ""
             : "",
         );
         setAttendanceMode(
@@ -369,6 +400,13 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       isCancelled = true;
     };
   }, [dateRange.from, dateRange.to, sessionDateRange.from, sessionDateRange.to, slug]);
+
+  useEffect(() => {
+    if (!needsLocation || filteredLocations.length === 0) return;
+    if (!filteredLocations.some((location) => location.id === selectedLocationId)) {
+      setSelectedLocationId(filteredLocations[0]!.id);
+    }
+  }, [filteredLocations, needsLocation, selectedLocationId]);
 
   useEffect(() => {
     if (!offering || !isPaidOffering) {
@@ -546,7 +584,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       }
       setSelectedSlot(null);
       setSelectedSession(null);
-      setForm(initialForm);
+      setForm((currentForm) => ({
+        ...initialForm,
+        countryCode: currentForm.countryCode,
+      }));
       setAnswers({});
       setStep("details");
     } catch (submitError) {
@@ -814,10 +855,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 </p>
                 <div className="border-y border-[#102329]/10 py-4">
                   <p className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
-                    Reference token
+                    Booking reference
                   </p>
                   <p className="mt-2 break-all font-inter text-sm text-[#102329]/68">
-                    {booking.publicToken}
+                    {booking.bookingReference}
                   </p>
                 </div>
                 <div className="flex flex-col gap-3 sm:flex-row">
@@ -1031,9 +1072,24 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                       {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt)}
                     </p>
                     {selectedLocation && (
-                      <p className="mt-1 font-inter text-xs text-[#102329]/48">
-                        {formatPublicLocation(selectedLocation)}
-                      </p>
+                      <div className="mt-1 font-inter text-xs leading-5 text-[#102329]/48">
+                        <p>{formatPublicLocation(selectedLocation)}</p>
+                        <p>
+                          {[selectedLocation.addressLine1, selectedLocation.addressLine2]
+                            .filter(Boolean)
+                            .join(", ")}
+                        </p>
+                        {selectedLocation.mapUrl && (
+                          <a
+                            href={selectedLocation.mapUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold text-[#0F3B46] underline underline-offset-4"
+                          >
+                            Open map
+                          </a>
+                        )}
+                      </div>
                     )}
                   </div>
                   <div>
@@ -1327,7 +1383,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                         const nextMode = event.target.value as PublicOffering["attendanceMode"];
                         setAttendanceMode(nextMode);
                         setSelectedLocationId(
-                          nextMode === "online" ? "" : selectedLocationId || locations[0]?.id || "",
+                          nextMode === "online"
+                            ? ""
+                            : selectedLocationId || filteredLocations[0]?.id || "",
                         );
                       }}
                       className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
@@ -1339,29 +1397,70 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 )}
 
                 {needsLocation && (
-                  <label className="block">
+                  <div className="grid gap-3">
                     <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
                       Location
                     </span>
-                    <select
-                      value={selectedLocationId}
-                      onChange={(event) => setSelectedLocationId(event.target.value)}
-                      className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
-                      required
-                    >
-                      <option value="">Select location</option>
-                      {locations.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {formatPublicLocation(location)}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedFormLocation?.instructions && (
-                      <p className="mt-2 font-inter text-xs leading-5 text-[#102329]/48">
-                        {selectedFormLocation.instructions}
-                      </p>
+                    {locationCountries.length > 1 && (
+                      <select
+                        value={attendanceCountryCode}
+                        onChange={(event) => setAttendanceCountryCode(event.target.value)}
+                        className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
+                      >
+                        {locationCountries.map((countryCode) => (
+                          <option key={countryCode} value={countryCode}>
+                            {countryCode}
+                          </option>
+                        ))}
+                      </select>
                     )}
-                  </label>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {filteredLocations.map((location) => {
+                        const selected = location.id === selectedLocationId;
+                        return (
+                          <div
+                            key={location.id}
+                            className={`border transition-colors ${
+                              selected
+                                ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                                : "border-[#102329]/14 bg-white/45 hover:border-[#0F3B46]"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => setSelectedLocationId(location.id)}
+                              className="w-full p-4 text-left"
+                            >
+                              <span className="block font-inter text-sm font-semibold">
+                                {location.name}
+                              </span>
+                              <span className={`mt-2 block font-inter text-xs leading-5 ${selected ? "text-white/72" : "text-[#102329]/56"}`}>
+                                {[location.addressLine1, location.addressLine2, location.city]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </span>
+                              {location.instructions && (
+                                <span className={`mt-2 block font-inter text-xs leading-5 ${selected ? "text-white/65" : "text-[#102329]/48"}`}>
+                                  {location.instructions}
+                                </span>
+                              )}
+                            </button>
+                            {location.mapUrl && (
+                              <a
+                                href={location.mapUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={`mx-4 mb-4 inline-flex font-inter text-xs font-semibold underline underline-offset-4 ${selected ? "text-white" : "text-[#0F3B46]"}`}
+                              >
+                                Open map
+                              </a>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 )}
 
                 <div className="grid gap-4">

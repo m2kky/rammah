@@ -5,6 +5,9 @@ import { PermanentJobError } from "./handler-registry.js";
 const mocks = vi.hoisted(() => ({
   ensureCalendar: vi.fn(),
   sendConfirmedEmails: vi.fn(),
+  expireHolds: vi.fn(),
+  reconcilePayments: vi.fn(),
+  syncBusy: vi.fn(),
 }));
 
 vi.mock("../modules/calendar/google-calendar.service.js", () => ({
@@ -12,6 +15,15 @@ vi.mock("../modules/calendar/google-calendar.service.js", () => ({
 }));
 vi.mock("../modules/emails/email.service.js", () => ({
   sendBookingConfirmedEmails: mocks.sendConfirmedEmails,
+}));
+vi.mock("../modules/availability/booking-maintenance.service.js", () => ({
+  expireStaleBookingHolds: mocks.expireHolds,
+}));
+vi.mock("../modules/payments/payment-maintenance.service.js", () => ({
+  reconcilePendingPayments: mocks.reconcilePayments,
+}));
+vi.mock("../modules/calendar/google-calendar-busy.service.js", () => ({
+  syncGoogleCalendarBusyBlocks: mocks.syncBusy,
 }));
 
 import { productHandlers } from "./product-handlers.js";
@@ -63,5 +75,24 @@ describe("product worker handlers", () => {
         context,
       ),
     ).rejects.toBeInstanceOf(PermanentJobError);
+  });
+
+  it("runs scheduled booking maintenance jobs", async () => {
+    await productHandlers["maintenance.holds.expire"]!(
+      event("maintenance.holds.expire", {}),
+      context,
+    );
+    await productHandlers["maintenance.payments.reconcile"]!(
+      event("maintenance.payments.reconcile", {}),
+      context,
+    );
+    await productHandlers["calendar.busy.sync"]!(
+      event("calendar.busy.sync", {}),
+      context,
+    );
+
+    expect(mocks.expireHolds).toHaveBeenCalledOnce();
+    expect(mocks.reconcilePayments).toHaveBeenCalledOnce();
+    expect(mocks.syncBusy).toHaveBeenCalledOnce();
   });
 });

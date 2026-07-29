@@ -4,6 +4,7 @@ import { env } from "../../config/env.js";
 import { publicSubmissionRateLimit } from "../../middleware/rate-limit.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import { httpStatus } from "../../shared/http/status.js";
+import { detectCountryFromRequest } from "../../shared/geo/request-country.js";
 import {
   getPublicPaymentSession,
   handleKashierCallback,
@@ -73,7 +74,10 @@ publicPaymentsRouter.post(
   validateRequest({ body: createPaidBookingBodySchema }),
   async (req, res, next) => {
     try {
-      const result = await submitPaidBooking(req.body);
+      const result = await submitPaidBooking({
+        ...req.body,
+        detectedCountryCode: detectCountryFromRequest(req).countryCode,
+      });
 
       res.status(httpStatus.created).json({
         data: result,

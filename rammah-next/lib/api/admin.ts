@@ -187,6 +187,7 @@ export type AdminAvailabilitySlotPreview = {
 export type AdminBooking = {
   id: string;
   publicToken: string;
+  bookingReference: string;
   offering: {
     id: string;
     title: string;

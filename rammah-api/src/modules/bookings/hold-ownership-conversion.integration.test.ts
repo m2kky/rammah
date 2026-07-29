@@ -26,7 +26,13 @@ import {
   submitPaidBooking,
 } from "../payments/public-payments.service.js";
 import { createFreeBookingFromHold } from "./public-bookings.repository.js";
-import { submitFreeBooking } from "./public-bookings.service.js";
+import {
+  buildPublicBookingCalendar,
+  cancelPublicBooking,
+  getPublicBookingStatus,
+  reschedulePublicBooking,
+  submitFreeBooking,
+} from "./public-bookings.service.js";
 
 const recurringDate = "2031-03-03";
 const recurringSlot = {
@@ -231,6 +237,35 @@ const seedRequiredGoalField = async (offeringId: string) => {
 const expectUnavailable = async (promise: Promise<unknown>) => {
   await expect(promise).rejects.toMatchObject({ code: "SLOT_UNAVAILABLE" });
 };
+
+it("gives customers a human reference and lets them reschedule then cancel", async () => {
+  const { offering, holdInput } = await seedRecurringTarget({ bookingMode: "free" });
+  const hold = await createSlotHold(holdInput);
+  const created = await submitFreeBooking(
+    freeServiceInput(hold.id, hold.holdToken, []),
+  );
+
+  expect(created.bookingReference).toMatch(/^RMM-\d{6}$/);
+  await expect(buildPublicBookingCalendar(created.publicToken)).resolves.toContain(
+    `DESCRIPTION:Booking reference: ${created.bookingReference}`,
+  );
+  const rescheduled = await reschedulePublicBooking(created.publicToken, {
+    startsAt: new Date(`${recurringDate}T11:00:00`).toISOString(),
+    endsAt: new Date(`${recurringDate}T12:00:00`).toISOString(),
+    timezone: "Africa/Cairo",
+  });
+  expect(rescheduled.slot.startsAt).toBe(
+    new Date(`${recurringDate}T11:00:00`).toISOString(),
+  );
+
+  const cancelled = await cancelPublicBooking(created.publicToken);
+  expect(cancelled.status).toBe("cancelled");
+  await expect(getPublicBookingStatus(created.publicToken)).resolves.toMatchObject({
+    bookingReference: created.bookingReference,
+    status: "cancelled",
+    offering: { id: offering.id },
+  });
+});
 
 const countRows = async (offeringId: string) => {
   const { db } = getTestDatabase();

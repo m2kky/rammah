@@ -21,6 +21,7 @@ import {
 } from "./kashier.adapter.js";
 import {
   createRetryPaymentForBooking,
+  claimVerifiedPaymentEvent,
   createPaidBookingFromHold,
   findPaymentByIdempotencyKey,
   findPublicBookingPaymentContextByBookingId,
@@ -42,6 +43,7 @@ type PublicPaidBookingInput = {
     phone?: string | null;
   };
   countryCode?: string | null;
+  detectedCountryCode?: string | null;
   timezone: string;
   answers: Array<{
     fieldId?: string | null;
@@ -176,6 +178,7 @@ const toPublicPaidBooking = (input: {
   booking: {
     id: input.booking.id,
     publicToken: input.booking.publicToken,
+    bookingReference: input.booking.bookingReference,
     offering: {
       id: input.booking.offeringId,
       title: input.hold.offeringTitle,
@@ -193,8 +196,12 @@ const toPublicPaidBooking = (input: {
       ? {
           id: input.booking.locationId,
           name: null,
+          addressLine1: null,
+          addressLine2: null,
           city: null,
           countryCode: null,
+          mapUrl: null,
+          instructions: null,
         }
       : null,
     slot: {
@@ -319,6 +326,7 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
   const pricePreview = await previewPublicOfferingPrice({
     offeringId: holdContext.offeringId,
     countryCode: input.countryCode,
+    detectedCountryCode: input.detectedCountryCode,
   });
 
   const result = await createPaidBookingFromHold({
@@ -561,6 +569,21 @@ const storedEventResult = async (event: {
   };
 };
 
+const waitForSettledWebhookEvent = async (providerEventId: string) => {
+  let event = await findWebhookEventByProviderEventId({
+    provider: "kashier",
+    providerEventId,
+  });
+  for (let attempt = 0; event?.processingStatus === "pending" && attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    event = await findWebhookEventByProviderEventId({
+      provider: "kashier",
+      providerEventId,
+    });
+  }
+  return event;
+};
+
 const claimAndApplyReconciliation = async (input: {
   payment: NonNullable<Awaited<ReturnType<typeof findPaymentByIdempotencyKey>>>;
   reconciliation: Awaited<ReturnType<typeof reconcileKashierPayment>>;
@@ -596,7 +619,7 @@ const reconcileCallbackPayment = async (
   payment: NonNullable<Awaited<ReturnType<typeof findPaymentByIdempotencyKey>>>,
 ) => {
   try {
-    // ponytail: JOB-01/07 replace this one bounded lookup with durable reconciliation.
+    // ponytail: callback fallback stays bounded; the worker retries pending payments durably.
     const reconciliation = await reconcileKashierPayment(payment.idempotencyKey!);
     return claimAndApplyReconciliation({ payment, reconciliation });
   } catch {
@@ -617,12 +640,13 @@ export const handleKashierCallback = async (rawQuery: string) => {
   const transactionId = callbackParam(params, "transactionId");
   const orderReference = callbackParam(params, "orderReference");
   const providerEventId = transactionId ?? orderReference;
+  let pendingExistingEvent = false;
   if (providerEventId) {
-    const existingEvent = await findWebhookEventByProviderEventId({
-      provider: "kashier",
-      providerEventId,
-    });
-    if (existingEvent) return storedEventResult(existingEvent);
+    const existingEvent = await waitForSettledWebhookEvent(providerEventId);
+    if (existingEvent && existingEvent.processingStatus !== "pending") {
+      return storedEventResult(existingEvent);
+    }
+    pendingExistingEvent = Boolean(existingEvent);
   }
 
   const merchantOrderId = callbackParam(params, "merchantOrderId");
@@ -635,6 +659,9 @@ export const handleKashierCallback = async (rawQuery: string) => {
 
   const context = await findPublicBookingPaymentContextByBookingId(payment.bookingId);
   const storedToken = context?.publicToken ?? null;
+  if (pendingExistingEvent) {
+    return { processed: false, publicToken: storedToken };
+  }
   const statusValue = callbackParam(params, "paymentStatus");
   const providerStatus = normalizeProviderStatus(statusValue);
   const amountValue = callbackParam(params, "amount");
@@ -657,7 +684,7 @@ export const handleKashierCallback = async (rawQuery: string) => {
     return { processed, publicToken: storedToken };
   }
 
-  const result = await applyTrustedPaymentResult({
+  const trustedInput = {
     provider: "kashier",
     providerEventId: providerEventId!,
     paymentId: payment.id,
@@ -674,6 +701,19 @@ export const handleKashierCallback = async (rawQuery: string) => {
     },
     status: providerStatus,
     providerPaymentId: providerEventId,
+  } as const;
+  const claimedEvent = await claimVerifiedPaymentEvent(trustedInput);
+  if (!claimedEvent) {
+    const existingEvent = await waitForSettledWebhookEvent(providerEventId!);
+    return existingEvent
+      ? existingEvent.processingStatus === "pending"
+        ? { processed: false, publicToken: storedToken }
+        : storedEventResult(existingEvent)
+      : { processed: false, publicToken: storedToken };
+  }
+  const result = await applyTrustedPaymentResult({
+    ...trustedInput,
+    claimedEventId: claimedEvent.id,
   });
 
   return storedEventResult(result.event);

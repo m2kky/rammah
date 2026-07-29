@@ -544,10 +544,10 @@ export default function AdminBookingsInbox() {
                 </div>
                 <div>
                   <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
-                    Token
+                    Reference
                   </p>
                   <p className="mt-2 break-all font-inter text-xs text-[#102329]/55">
-                    {selectedBooking.publicToken}
+                    {selectedBooking.bookingReference}
                   </p>
                 </div>
               </div>

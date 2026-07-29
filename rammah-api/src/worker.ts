@@ -13,6 +13,7 @@ import { productHandlers } from "./worker/product-handlers.js";
 import { createJobRunner, type Sleep } from "./worker/runner.js";
 import { createWorkerRuntime } from "./worker/runtime.js";
 import { createDurableScheduler } from "./worker/scheduler.js";
+import { scheduledJobs } from "./worker/scheduled-jobs.js";
 
 const sleep: Sleep = (milliseconds, signal) => new Promise<void>((resolve, reject) => {
   if (signal?.aborted) {
@@ -39,7 +40,7 @@ const repository = {
 const handlers = createHandlerRegistry(productHandlers);
 const scheduler = createDurableScheduler({
   enqueue: enqueueOutboxEvent,
-  definitions: [],
+  definitions: scheduledJobs,
 });
 const runner = createJobRunner({
   repository,

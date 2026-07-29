@@ -4,8 +4,12 @@ import type { PublicOffering } from "./offerings";
 type PublicBookingLocation = {
   id: string;
   name: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
   city: string | null;
   countryCode: string | null;
+  mapUrl: string | null;
+  instructions: string | null;
 } | null;
 
 export type PublicAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
@@ -77,8 +81,12 @@ export type PublicOfferingSession = {
   location: {
     id: string;
     name: string | null;
+    addressLine1: string | null;
+    addressLine2: string | null;
     city: string | null;
     countryCode: string | null;
+    mapUrl: string | null;
+    instructions: string | null;
   } | null;
   status: "available" | "booked";
   remainingCapacity: number;
@@ -97,6 +105,7 @@ export type PublicOfferingSessionPreview = {
 export type PublicBooking = {
   id: string;
   publicToken: string;
+  bookingReference: string;
   offering: {
     id: string;
     title: string;
@@ -459,6 +468,33 @@ export const fetchPublicBookingStatus = async (publicToken: string) => {
 
   return payload.data;
 };
+
+export const cancelPublicBooking = async (publicToken: string) => {
+  const payload = await publicRequest<{ data: PublicBooking }>(
+    `/public/bookings/${encodeURIComponent(publicToken)}/cancel`,
+    { method: "POST" },
+  );
+  return payload.data;
+};
+
+export const reschedulePublicBooking = async (
+  publicToken: string,
+  input: {
+    offeringSessionId?: string | null;
+    startsAt: string;
+    endsAt: string;
+    timezone?: string | null;
+  },
+) => {
+  const payload = await publicRequest<{ data: PublicBooking }>(
+    `/public/bookings/${encodeURIComponent(publicToken)}/reschedule`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const publicBookingCalendarUrl = (publicToken: string) =>
+  `${apiBaseUrl}/public/bookings/${encodeURIComponent(publicToken)}/calendar.ics`;
 
 export const fetchPublicPaymentSession = async (publicToken: string) => {
   const payload = await publicRequest<{ data: PublicPaymentSessionResult }>(

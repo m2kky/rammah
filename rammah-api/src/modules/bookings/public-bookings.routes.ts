@@ -3,7 +3,14 @@ import { z } from "zod";
 import { publicSubmissionRateLimit } from "../../middleware/rate-limit.js";
 import { validateRequest } from "../../middleware/validate-request.js";
 import { httpStatus } from "../../shared/http/status.js";
-import { getPublicBookingStatus, submitFreeBooking } from "./public-bookings.service.js";
+import { detectCountryFromRequest } from "../../shared/geo/request-country.js";
+import {
+  buildPublicBookingCalendar,
+  cancelPublicBooking,
+  getPublicBookingStatus,
+  reschedulePublicBooking,
+  submitFreeBooking,
+} from "./public-bookings.service.js";
 
 export const publicBookingsRouter = Router();
 
@@ -39,6 +46,12 @@ const createBookingBodySchema = z.object({
 const publicTokenParamsSchema = z.object({
   publicToken: z.string().uuid(),
 });
+const rescheduleBodySchema = z.object({
+  offeringSessionId: z.string().uuid().nullable().optional(),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  timezone: z.string().trim().min(1).max(80).nullable().optional(),
+});
 
 publicBookingsRouter.post(
   "/",
@@ -46,7 +59,10 @@ publicBookingsRouter.post(
   validateRequest({ body: createBookingBodySchema }),
   async (req, res, next) => {
     try {
-      const booking = await submitFreeBooking(req.body);
+      const booking = await submitFreeBooking({
+        ...req.body,
+        countryCode: req.body.countryCode ?? detectCountryFromRequest(req).countryCode,
+      });
 
       res.status(httpStatus.created).json({
         data: booking,
@@ -67,6 +83,53 @@ publicBookingsRouter.get(
       res.status(httpStatus.ok).json({
         data: booking,
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+publicBookingsRouter.post(
+  "/:publicToken/cancel",
+  publicSubmissionRateLimit,
+  validateRequest({ params: publicTokenParamsSchema }),
+  async (req, res, next) => {
+    try {
+      res.status(httpStatus.ok).json({
+        data: await cancelPublicBooking(req.params.publicToken),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+publicBookingsRouter.post(
+  "/:publicToken/reschedule",
+  publicSubmissionRateLimit,
+  validateRequest({ params: publicTokenParamsSchema, body: rescheduleBodySchema }),
+  async (req, res, next) => {
+    try {
+      res.status(httpStatus.ok).json({
+        data: await reschedulePublicBooking(req.params.publicToken, req.body),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+publicBookingsRouter.get(
+  "/:publicToken/calendar.ics",
+  validateRequest({ params: publicTokenParamsSchema }),
+  async (req, res, next) => {
+    try {
+      const calendar = await buildPublicBookingCalendar(req.params.publicToken);
+      res
+        .status(httpStatus.ok)
+        .type("text/calendar")
+        .attachment(`rammah-${req.params.publicToken}.ics`)
+        .send(calendar);
     } catch (error) {
       next(error);
     }
