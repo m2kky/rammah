@@ -1,16 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import type { PublicPageSection } from "@/lib/api/cms";
+import type { getHomePageContent } from "@/lib/api/cms-content";
 
 type HeroSectionProps = {
   entryReady: boolean;
-  section?: PublicPageSection | null;
+  content: ReturnType<typeof getHomePageContent>["hero"];
 };
 
-export default function HeroSection({ entryReady, section }: HeroSectionProps) {
-  const roles = (section?.config?.roles as string[]) || ["Engineer", "Systematizer", "Trainer", "Coach"];
-  const bodyText = section?.body || "I don't just coach. I map your psychological system, find the bugs and rewrite the code";
+export default function HeroSection({ entryReady, content }: HeroSectionProps) {
+  const { roles, body: bodyText, displayWord } = content;
   return (
     <section className="relative w-full min-h-[100dvh] bg-[#0F3B46] overflow-hidden">
       {/* White background with blurred elliptical top */}
@@ -68,14 +67,14 @@ export default function HeroSection({ entryReady, section }: HeroSectionProps) {
           transitionDelay: entryReady ? "760ms" : "0ms",
         }}
       >
-        DECODE
+        {displayWord}
       </div>
 
       {/* Portrait — centered, fills height */}
       <div className="absolute inset-0 flex justify-center items-end z-10 pointer-events-none">
         <Image
           src="/hero-final-frame.png"
-          alt="Ahmed Ramah"
+          alt={content.section?.title || "Ahmed Ramah"}
           width={1080}
           height={1920}
           sizes="(min-width: 768px) 51vh, (min-width: 640px) 42vh, 41vh"

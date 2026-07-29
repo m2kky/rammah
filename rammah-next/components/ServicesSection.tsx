@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { fetchPublicOfferings } from "@/lib/api/offerings";
 import { servicesFallback } from "@/data/servicesFallback";
+import type { getHomePageContent } from "@/lib/api/cms-content";
 
 /* ─── config ─── */
 const TOTAL_FRAMES = 192;   // 4s clip at 24fps
@@ -14,10 +15,13 @@ const FRAME_VERSION = "v4s_6";
 const FRAME_PATH   = (n: number) =>
   `/frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
 
-const roles = ["Engineer", "Systematizer", "Trainer", "Coach"];
-
-export default function ServicesSection() {
+export default function ServicesSection({
+  content,
+}: {
+  content: ReturnType<typeof getHomePageContent>["services"];
+}) {
   const [services, setServices] = useState(servicesFallback);
+  const { title, body, roles, programLabel, bookingCta } = content;
   const router = useRouter();
 
   const sectionRef     = useRef<HTMLDivElement>(null);
@@ -511,12 +515,12 @@ export default function ServicesSection() {
       >
         {/* label */}
         <p className="absolute top-8 left-6 md:left-16 text-[#0F3B46] text-xs font-bold tracking-[0.2em] uppercase z-20">
-          SERVICES
+          {title}
         </p>
 
         {/* scroll hint */}
         <p className="absolute bottom-8 left-6 md:left-16 text-white/30 text-sm tracking-widest z-20 max-md:hidden">
-          Scroll to Discover ———
+          {body}
         </p>
 
         {/* ── STACKED SERVICE PANELS ── */}
@@ -540,7 +544,7 @@ export default function ServicesSection() {
               >
                 <div>
                   <p className="font-inter mb-5 text-xs font-semibold uppercase tracking-[0.18em] opacity-60">
-                    {String(i + 1).padStart(2, "0")} · Program
+                    {String(i + 1).padStart(2, "0")} · {programLabel}
                   </p>
                   <h2
                     className="font-bold leading-none"
@@ -563,7 +567,7 @@ export default function ServicesSection() {
                     className="pointer-events-auto inline-flex items-center justify-center gap-3 rounded-full border px-8 py-4 font-inter text-sm font-bold transition-transform hover:scale-[1.03]"
                     style={{ borderColor: `${s.text}66`, color: s.text }}
                   >
-                    Book Now
+                    {bookingCta}
                     <svg width="20" height="10" viewBox="0 0 51 21" fill="none" aria-hidden="true">
                       <path
                         d="M50.1 10.9C51.3 9.7 51.3 7.8 50.1 6.6L37-6.5C35.8-7.7 33.9-7.7 32.7-6.5C31.5-5.3 31.5-3.4 32.7-2.2L44.7 9.8 32.7 21.7C31.5 22.9 31.5 24.8 32.7 26 33.9 27.2 35.8 27.2 37 26L50.1 12.9ZM0 11.8H48V7.8H0V11.8Z"
@@ -697,7 +701,7 @@ export default function ServicesSection() {
               >
                 <div ref={(el) => { mobileDetailContentRefs.current[i] = el; }}>
                   <p className="font-inter mb-4 text-xs font-semibold uppercase tracking-[0.18em] opacity-60">
-                    {String(i + 1).padStart(2, "0")} · Program
+                    {String(i + 1).padStart(2, "0")} · {programLabel}
                   </p>
                   <p
                     className="font-bold leading-none mb-4"
@@ -717,7 +721,7 @@ export default function ServicesSection() {
                     className="inline-flex items-center gap-2 rounded-full border px-6 py-3 text-sm font-semibold pointer-events-auto"
                     style={{ color: s.text, borderColor: `${s.text}66` }}
                   >
-                    Book Now →
+                    {bookingCta} →
                   </Link>
                 </div>
               </div>

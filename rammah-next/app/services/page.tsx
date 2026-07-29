@@ -1,7 +1,8 @@
 import PublicFrame from "@/components/PublicFrame";
 import ServicesStack from "@/components/services/ServicesStack";
 import { fetchPublicOfferingRecords, type PublicOffering } from "@/lib/api/offerings";
-import { fetchPublicPage, findPublicSection } from "@/lib/api/cms";
+import { fetchPublicPage } from "@/lib/api/cms";
+import { getPageMetadata, getServicesPageContent } from "@/lib/api/cms-content";
 import { servicesFallback } from "@/data/servicesFallback";
 
 const fallbackOfferings = servicesFallback.map((service) => ({
@@ -31,10 +32,14 @@ const getOfferings = async () => {
   }
 };
 
-export const metadata = {
-  title: "Services | Ahmed Rammah",
-  description: "Coaching, therapy-style sessions, workshops, and corporate aCRL programs.",
-};
+export async function generateMetadata() {
+  const page = await fetchPublicPage("services").catch(() => null);
+  return getPageMetadata(
+    page,
+    "Services | Ahmed Rammah",
+    "Coaching, therapy-style sessions, workshops, and corporate aCRL programs.",
+  );
+}
 
 export default async function ServicesPage() {
   const [offerings, page] = await Promise.all([
@@ -45,9 +50,7 @@ export default async function ServicesPage() {
     new Set(offerings.map((offering) => offering.category?.name ?? "Programs")),
   );
 
-  const headerSec = findPublicSection(page, "header");
-  const headerTitle = headerSec?.title || "Work on the system.";
-  const headerBody = headerSec?.body || "Choose the format that matches the work: personal decoding, therapy-style support, intensive workshops, or custom team programs.";
+  const content = getServicesPageContent(page);
 
   return (
     <PublicFrame>
@@ -58,10 +61,10 @@ export default async function ServicesPage() {
           </p>
           <div className="mt-5 grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
             <h1 className="text-[clamp(4.2rem,13vw,13rem)] font-extrabold leading-[0.82] tracking-normal">
-              {headerTitle}
+              {content.hero.title}
             </h1>
             <p className="max-w-xl font-inter text-base leading-7 text-white/64 md:text-lg">
-              {headerBody}
+              {content.hero.body}
             </p>
           </div>
           <div className="mt-10 flex flex-wrap gap-3 font-inter text-sm font-semibold text-white/70">
@@ -74,7 +77,11 @@ export default async function ServicesPage() {
         </div>
       </section>
 
-      <ServicesStack offerings={offerings} />
+      <ServicesStack
+        offerings={offerings}
+        marquee={content.marquee}
+        listing={content.listing}
+      />
     </PublicFrame>
   );
 }

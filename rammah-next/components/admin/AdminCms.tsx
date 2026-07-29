@@ -919,7 +919,7 @@ export default function AdminCms() {
               <div className="grid gap-4">
                 <label className="space-y-2">
                   <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
-                    Title
+                    Page title (browser/admin)
                   </span>
                   <input
                     value={pageForm.title}
@@ -927,6 +927,9 @@ export default function AdminCms() {
                     disabled={!selectedCmsPage}
                     className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46] disabled:opacity-45"
                   />
+                  <span className="block font-inter text-xs leading-5 text-[#102329]/50">
+                    Visible page copy is edited from the matching section below.
+                  </span>
                 </label>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -1132,8 +1135,12 @@ export default function AdminCms() {
                     disabled={!selectedPageSection}
                     rows={10}
                     spellCheck={false}
+                    aria-label="Section configuration JSON"
                     className="w-full resize-none border border-[#102329]/18 bg-[#F7F4EC] px-3 py-3 font-mono text-xs leading-5 outline-none focus:border-[#0F3B46] disabled:opacity-45"
                   />
+                  <p className="font-inter text-xs leading-5 text-[#102329]/50">
+                    Title, body, and supported JSON values are read directly by the matching website section.
+                  </p>
 
                   <button
                     type="button"

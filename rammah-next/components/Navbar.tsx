@@ -72,9 +72,14 @@ function AnimatedaCRLGlyph() {
 type NavbarProps = {
   entryReady: boolean;
   navigation?: PublicNavigationItem[];
+  siteName?: string;
 };
 
-export default function Navbar({ entryReady, navigation = [] }: NavbarProps) {
+export default function Navbar({
+  entryReady,
+  navigation = [],
+  siteName = "Rammah",
+}: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -127,7 +132,7 @@ export default function Navbar({ entryReady, navigation = [] }: NavbarProps) {
             style={{ transitionDelay: entryReady ? "460ms" : "0ms" }}
           >
             <div className="flex items-center text-lg md:text-xl font-bricolage font-bold tracking-[0.2em] leading-none">
-              <Link href="/" className="hover:opacity-70 transition-opacity uppercase">Rammah</Link>
+              <Link href="/" className="hover:opacity-70 transition-opacity uppercase">{siteName}</Link>
             </div>
           </div>
 

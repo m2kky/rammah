@@ -1,17 +1,21 @@
 "use client";
 import { ShapeBlue, ShapeGreen, ShapeOrange, ShapeRed } from "@/components/aCRLShapes";
 import { useInViewOnce } from "@/lib/useInViewOnce";
-import type { PublicPageSection } from "@/lib/api/cms";
+import type { getHomePageContent } from "@/lib/api/cms-content";
 
 const iconFilter = { filter: "brightness(0) invert(1)" };
 
-export default function StatementSection({ section }: { section?: PublicPageSection | null }) {
+export default function StatementSection({
+  content,
+}: {
+  content: ReturnType<typeof getHomePageContent>["statement"];
+}) {
   const { ref, inView } = useInViewOnce<HTMLElement>(0.32, "0px 0px -10% 0px");
-  const titleText = section?.title || "REWRITE YOUR MIND";
+  const { title: titleText, body: bodyText } = content;
   const words = titleText.split(" ");
   const word1 = words[0] || "REWRITE";
   const word2 = words[1] || "YOUR";
-  const word3 = words[2] || "MIND";
+  const word3 = words.slice(2).join(" ") || "MIND";
 
   return (
     <section
@@ -91,6 +95,11 @@ export default function StatementSection({ section }: { section?: PublicPageSect
               {word3}
             </span>
           </p>
+          {bodyText && (
+            <p className="mt-7 max-w-2xl text-center font-inter text-base leading-7 text-white/70 md:text-lg">
+              {bodyText}
+            </p>
+          )}
         </div>
       </div>
     </section>

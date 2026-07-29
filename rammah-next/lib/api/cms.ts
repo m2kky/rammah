@@ -2,6 +2,7 @@ import { apiBaseUrl } from "./config";
 
 export type PublicSiteSettings = {
   siteName: string;
+  defaultLocale: string;
   contactEmail: string | null;
   contactPhone: string | null;
   socialLinks: Record<string, string>;

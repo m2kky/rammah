@@ -1,12 +1,17 @@
 import Link from "next/link";
 import ContactForm from "@/components/ContactForm";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicSiteSettings, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
+import { fetchPublicSiteSettings, fetchPublicPage } from "@/lib/api/cms";
+import { getContactPageContent, getPageMetadata } from "@/lib/api/cms-content";
 
-export const metadata = {
-  title: "Contact | Ahmed Rammah",
-  description: "Send a message, request a program, or start a booking conversation.",
-};
+export async function generateMetadata() {
+  const page = await fetchPublicPage("contact").catch(() => null);
+  return getPageMetadata(
+    page,
+    "Contact | Ahmed Rammah",
+    "Send a message, request a program, or start a booking conversation.",
+  );
+}
 
 export default async function ContactPage() {
   const [settings, page] = await Promise.all([
@@ -14,9 +19,7 @@ export default async function ContactPage() {
     fetchPublicPage("contact").catch(() => null)
   ]);
 
-  const headerSec = findPublicSection(page, "header");
-  const headerTitle = headerSec?.title || "Start with context.";
-  const headerBody = headerSec?.body || "Send the problem, the pattern, or the program you want to build. The reply can route you to a session, quote, or the right next step.";
+  const content = getContactPageContent(page);
 
   return (
     <PublicFrame>
@@ -24,20 +27,26 @@ export default async function ContactPage() {
         <div className="mx-auto grid max-w-[1440px] gap-12 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">
           <div>
             <p className="font-inter text-xs font-semibold uppercase tracking-[0.22em] text-white/64">
-              Contact
+              {content.details.title}
             </p>
             <h1 className="mt-5 text-[clamp(4rem,12vw,12rem)] font-extrabold leading-[0.82] tracking-normal">
-              {headerTitle}
+              {content.hero.title}
             </h1>
             <p className="mt-7 max-w-xl font-inter text-base leading-7 text-white/70 md:text-lg">
-              {headerBody}
+              {content.hero.body}
             </p>
+            {content.details.body && (
+              <p className="mt-5 max-w-xl whitespace-pre-wrap font-inter text-sm leading-7 text-white/58">
+                {content.details.body}
+              </p>
+            )}
             <div className="mt-8 grid gap-2 font-inter text-sm text-white/62">
               {settings?.contactEmail && <a href={`mailto:${settings.contactEmail}`}>{settings.contactEmail}</a>}
               {settings?.contactPhone && <a href={`tel:${settings.contactPhone}`}>{settings.contactPhone}</a>}
-              <Link href="/booking" className="font-semibold text-white">
-                Prefer a slot? Open booking
+              <Link href={content.cta.ctaHref} className="font-semibold text-white">
+                {content.cta.title} {content.cta.ctaText}
               </Link>
+              {content.cta.body && <p>{content.cta.body}</p>}
             </div>
           </div>
 

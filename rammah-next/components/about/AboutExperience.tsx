@@ -9,6 +9,7 @@ import AboutGlobe from "./AboutGlobe";
 import { ShapeBlue } from "../aCRLShapes";
 import styles from "./AboutExperience.module.css";
 import { findPublicSection, type PublicPage } from "@/lib/api/cms";
+import { getMarqueeContent } from "@/lib/api/cms-content";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -58,8 +59,13 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
   const heroBody = heroSec?.body || "I spent years understanding technical systems. Then I turned to the most complex system of all: human behavior.";
   const heroAside = (heroSec?.config?.aside as string) || "Based in Cairo\nWorking globally";
 
-  const marqueeRow1 = (marqueeSec?.config?.row1 as string) || "Engineer | Systematizer | Trainer | Coach |";
-  const marqueeRow2 = (marqueeSec?.config?.row2 as string) || "First & Only aCRL Master Trainer in the Middle East |";
+  const { row1: marqueeRow1, row2: marqueeRow2 } = getMarqueeContent(
+    marqueeSec,
+    [
+      "Engineer | Systematizer | Trainer | Coach |",
+      "First & Only aCRL Master Trainer in the Middle East |",
+    ],
+  );
 
   const premiseTitle = premiseSec?.title || "(01) The premise";
   const premiseLead = premiseSec?.body || "Most people do not need more motivation.";

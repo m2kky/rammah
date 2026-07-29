@@ -6,6 +6,7 @@ import {
 
 const fallbackSettings: PublicSiteSettings = {
   siteName: "Ahmed Rammah",
+  defaultLocale: "en",
   contactEmail: "hello@rammah.local",
   contactPhone: null,
   socialLinks: {},

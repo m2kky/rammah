@@ -11,14 +11,18 @@ export const metadata: Metadata = {
 };
 
 import FloatingCTA from "@/components/FloatingCTA";
+import { fetchPublicSiteSettings } from "@/lib/api/cms";
+import { getSiteLocale } from "@/lib/api/cms-content";
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const settings = await fetchPublicSiteSettings().catch(() => null);
+
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang={getSiteLocale(settings)} className="h-full antialiased">
       <body className="min-h-full flex flex-col" suppressHydrationWarning>
         {children}
         <FloatingCTA />

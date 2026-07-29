@@ -14,7 +14,15 @@ const modeLabel: Record<PublicOffering["bookingMode"], string> = {
   quote_only: "Quote request",
 };
 
-export default function ServicesStack({ offerings }: { offerings: PublicOffering[] }) {
+export default function ServicesStack({
+  offerings,
+  marquee,
+  listing,
+}: {
+  offerings: PublicOffering[];
+  marquee: { row1: string; row2: string };
+  listing: { title: string; body: string };
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useGSAP(() => {
@@ -56,16 +64,33 @@ export default function ServicesStack({ offerings }: { offerings: PublicOffering
         <div className="flex flex-col gap-4" style={{ transform: "rotate(-3deg) scale(1.1)", transformOrigin: "center" }}>
           <div className="flex w-max whitespace-nowrap text-[clamp(2rem,6vw,5rem)] font-extrabold leading-none uppercase tracking-[-0.02em]" data-marquee-row-1>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r1-${i}`} className="px-6">Engineer | Systematizer | Trainer | Coach |</span>
+              <span key={`r1-${i}`} className="px-6">{marquee.row1}</span>
             ))}
           </div>
           <div className="flex w-max whitespace-nowrap text-[clamp(2rem,6vw,5rem)] font-extrabold leading-none uppercase tracking-[-0.02em] text-transparent" style={{ WebkitTextStroke: "1.5px #0f3b46" }} data-marquee-row-2>
             {Array.from({ length: 8 }).map((_, i) => (
-              <span key={`r2-${i}`} className="px-6">First & Only aCRL Master Trainer in the Middle East |</span>
+              <span key={`r2-${i}`} className="px-6">{marquee.row2}</span>
             ))}
           </div>
         </div>
       </section>
+
+      {(listing.title || listing.body) && (
+        <section className="bg-[#02040A] px-5 py-16 text-white md:px-8 md:py-24">
+          <div className="mx-auto grid max-w-[1440px] gap-5 lg:grid-cols-[0.35fr_1fr]">
+            {listing.title && (
+              <p className="font-inter text-xs font-semibold uppercase tracking-[0.22em] text-white/52">
+                {listing.title}
+              </p>
+            )}
+            {listing.body && (
+              <p className="max-w-4xl text-3xl font-semibold leading-tight md:text-5xl">
+                {listing.body}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
 
       {offerings.map((offering, index) => {
         const isEven = index % 2 === 0;

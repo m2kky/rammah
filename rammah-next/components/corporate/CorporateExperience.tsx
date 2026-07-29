@@ -7,6 +7,7 @@ import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import CorporateQuoteForm from "./CorporateQuoteForm";
 import styles from "./CorporateExperience.module.css";
 import { findPublicSection, type PublicPage } from "@/lib/api/cms";
+import { getMarqueeContent } from "@/lib/api/cms-content";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -55,10 +56,16 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
   const heroTitleLines = heroSec?.title ? heroSec.title.split("\n") : ["Change the", "operating", "system."];
   const heroBody = heroSec?.body || "Stop giving your teams motivational speeches. Give them a robust behavioral framework they can execute under pressure.";
 
-  const marqueeRow1 = (marqueeSec?.config?.row1 as string) || "Performance | Systems | Culture | Alignment |";
-  const marqueeRow2 = (marqueeSec?.config?.row2 as string) || "Decision-making | Leadership | Communication | Strategy |";
+  const { row1: marqueeRow1, row2: marqueeRow2 } = getMarqueeContent(
+    marqueeSec,
+    [
+      "Performance | Systems | Culture | Alignment |",
+      "Decision-making | Leadership | Communication | Strategy |",
+    ],
+  );
 
   const hiddenLead = hiddenSec?.body || "Companies invest heavily in strategy, software, and market positioning.";
+  const hiddenTitle = hiddenSec?.title ?? "";
   const hiddenStatement = (hiddenSec?.config?.statement as string) || "But the actual ceiling of your growth is rarely an operational flaw—it is the psychological capacity of your team to handle friction, communicate without ego, and execute together.";
 
   const premiseTitle = premiseSec?.title || "(01) The Corporate Reality";
@@ -344,6 +351,11 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
 
       {/* 2.8 The Hidden Variable */}
       <section className={styles.hiddenVariable} data-hidden-variable>
+        {hiddenTitle && (
+          <p className={styles.sectionIndex} data-hidden-reveal>
+            {hiddenTitle}
+          </p>
+        )}
         <p className={styles.hiddenLead} data-hidden-reveal>
           {hiddenLead}
         </p>
