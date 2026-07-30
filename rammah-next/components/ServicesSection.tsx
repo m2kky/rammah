@@ -10,10 +10,10 @@ import { servicesFallback } from "@/data/servicesFallback";
 import type { getHomePageContent } from "@/lib/api/cms-content";
 
 /* ─── config ─── */
-const TOTAL_FRAMES = 192;   // 4s clip at 24fps
-const FRAME_VERSION = "v4s_6";
+const TOTAL_FRAMES = 168;   // 7s clip at 24fps; stops before the closing blink
+const FRAME_VERSION = "services_v1";
 const FRAME_PATH   = (n: number) =>
-  `/frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
+  `/services-frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
 
 export default function ServicesSection({
   content,
@@ -83,37 +83,49 @@ export default function ServicesSection({
     return () => controller.abort();
   }, []);
 
-  /* helper: draw image in "contain" mode to avoid any stretch/zoom artifacts */
-  const drawImageContain = (
+  /* draw the portrait on a full black stage without stretching or cropping it */
+  const drawPortraitFrame = (
     img: HTMLImageElement,
-    canvas: HTMLCanvasElement | null
+    canvas: HTMLCanvasElement | null,
+    anchorX: number
   ) => {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    /* keep canvas pixel size in sync with its CSS size */
-    const w = canvas.offsetWidth || img.naturalWidth;
-    const h = canvas.offsetHeight || img.naturalHeight;
-    if (canvas.width !== w) canvas.width = w;
-    if (canvas.height !== h) canvas.height = h;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cssWidth = canvas.offsetWidth || img.naturalWidth;
+    const cssHeight = canvas.offsetHeight || img.naturalHeight;
+    const width = Math.round(cssWidth * dpr);
+    const height = Math.round(cssHeight * dpr);
 
-    ctx.clearRect(0, 0, w, h);
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
 
-    const scale = Math.min(w / img.naturalWidth, h / img.naturalHeight);
-    const dw = img.naturalWidth * scale;
-    const dh = img.naturalHeight * scale;
-    const dx = (w - dw) / 2;
-    const dy = (h - dh) / 2;
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, width, height);
 
-    ctx.drawImage(img, dx, dy, dw, dh);
+    const scale = Math.min(
+      width / img.naturalWidth,
+      height / img.naturalHeight
+    );
+    const drawWidth = img.naturalWidth * scale;
+    const drawHeight = img.naturalHeight * scale;
+    const x = width * anchorX - drawWidth / 2;
+    const y = (height - drawHeight) / 2;
+
+    ctx.drawImage(img, x, y, drawWidth, drawHeight);
   };
 
   /* helper: draw a frame index (0-based) onto the canvas */
-  const drawFrame = (index: number, targetCanvas: HTMLCanvasElement | null) => {
+  const drawFrame = (
+    index: number,
+    targetCanvas: HTMLCanvasElement | null,
+    anchorX: number
+  ) => {
     const img = framesRef.current[index];
     if (!img?.complete) return;
-    drawImageContain(img, targetCanvas);
+    drawPortraitFrame(img, targetCanvas, anchorX);
   };
 
   /* ─── Preload all frames ─── */
@@ -127,8 +139,8 @@ export default function ServicesSection({
         loadedRef.current += 1;
         /* draw first frame as soon as it arrives */
         if (i === 1) {
-          drawImageContain(img, canvasRef.current);
-          drawImageContain(img, mobileCanvasRef.current);
+          drawPortraitFrame(img, canvasRef.current, 0.75);
+          drawPortraitFrame(img, mobileCanvasRef.current, 0.5);
         }
       };
       imgs.push(img);
@@ -181,7 +193,7 @@ export default function ServicesSection({
             const idx    = Math.round(raw * (TOTAL_FRAMES - 1));
             if (idx !== frameProxy.frame) {
               frameProxy.frame = idx;
-              drawFrame(idx, canvasRef.current);
+              drawFrame(idx, canvasRef.current, 0.75);
             }
           },
         });
@@ -202,7 +214,7 @@ export default function ServicesSection({
         tl.fromTo(
           videoWrapRef.current,
           { xPercent: 0 },
-          { xPercent: -100, duration: 0.22, ease: "none" },
+          { xPercent: -50, duration: 0.22, ease: "none" },
           0.15
         );
         tl.to(
@@ -363,7 +375,7 @@ export default function ServicesSection({
             const idx = Math.round(raw * (TOTAL_FRAMES - 1));
             if (idx !== mobileFrameProxy.frame) {
               mobileFrameProxy.frame = idx;
-              drawFrame(idx, mobileCanvasRef.current);
+              drawFrame(idx, mobileCanvasRef.current, 0.5);
             }
           },
         });
@@ -598,17 +610,17 @@ export default function ServicesSection({
           ))}
         </div>
 
-        {/* ── RIGHT 50%: canvas (image sequence) + cards ── */}
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 flex items-center justify-center z-20 max-md:hidden">
+        {/* ── FULL-SCREEN PORTRAIT STAGE + cards ── */}
+        <div className="pointer-events-none absolute inset-0 z-10 max-md:hidden">
 
           {/* canvas wrap — animates left into left half during phase 2 */}
           <div
             ref={videoWrapRef}
-            className="absolute inset-0 pr-6 xl:pr-10"
+            className="absolute inset-0"
           >
             <canvas
               ref={canvasRef}
-              className="w-full h-full"
+              className="block h-full w-full"
               style={{ display: "block", mixBlendMode: "lighten" }}
             />
           </div>
@@ -653,11 +665,11 @@ export default function ServicesSection({
 
           <div
             ref={mobileVideoWrapRef}
-            className="relative z-10 mt-4 mx-auto w-full max-w-[360px]"
+            className="pointer-events-none absolute inset-0 z-10"
           >
             <canvas
               ref={mobileCanvasRef}
-              className="w-full aspect-[5/6] block"
+              className="block h-full w-full"
             />
           </div>
 
