@@ -79,7 +79,7 @@ export default function HeroSection({ entryReady, content }: HeroSectionProps) {
       {/* Portrait — centered, fills height */}
       <div className="absolute inset-0 flex justify-center items-end z-10 pointer-events-none">
         <Image
-          src="/intro-hero-final.jpg"
+          src="/hero.png"
           alt={content.section?.title || "Ahmed Ramah"}
           width={720}
           height={1280}

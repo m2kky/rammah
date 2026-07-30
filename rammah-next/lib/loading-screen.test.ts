@@ -31,7 +31,7 @@ describe("LoadingScreen mobile video", () => {
       )
     ).toBe(true);
     expect(
-      existsSync(resolve(projectRoot, "public", "intro-hero-final.jpg"))
+      existsSync(resolve(projectRoot, "public", "hero.png"))
     ).toBe(true);
   });
 
@@ -46,7 +46,7 @@ describe("LoadingScreen mobile video", () => {
   });
 
   it("uses the video's final frame with matching loader geometry in the hero", () => {
-    expect(heroSource).toContain('src="/intro-hero-final.jpg"');
+    expect(heroSource).toContain('src="/hero.png"');
     expect(heroSource).toContain("width={720}");
     expect(heroSource).toContain("height={1280}");
     expect(heroSource).toContain(
