@@ -15,6 +15,10 @@ const roles = [
   { label: "Coach", Shape: ShapeRed },
 ];
 
+const INTRO_DURATION_SECONDS = 7.2;
+const INTRO_START_TIMEOUT_MS = 6000;
+const INTRO_PLAYBACK_TIMEOUT_MS = 9000;
+
 export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   const [progress, setProgress] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -22,8 +26,6 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
   const videoWrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const completedRef = useRef(false);
-  const startedPlaybackRef = useRef(false);
-  const pendingPlaybackRef = useRef(false);
   const progressRafRef = useRef<number | null>(null);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -41,22 +43,14 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
 
   const startPlayback = useCallback(() => {
     const video = videoRef.current;
-    if (!video || startedPlaybackRef.current) return;
+    if (!video || !video.paused) return;
 
-    if (video.readyState < 2) {
-      pendingPlaybackRef.current = true;
-      return;
-    }
-
-    startedPlaybackRef.current = true;
-    pendingPlaybackRef.current = false;
-    video.currentTime = 0;
-    setProgress(0);
-
-    video.play().catch(() => {
-      /* fallback timers will finish loading if autoplay fails */
+    void video.play().catch(() => {
+      /* The poster remains visible and canplay/visibilitychange retry playback. */
     });
+  }, []);
 
+  const startProgressTracking = useCallback(() => {
     const tick = () => {
       const currentVideo = videoRef.current;
       if (!currentVideo || completedRef.current) return;
@@ -64,7 +58,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       const duration =
         Number.isFinite(currentVideo.duration) && currentVideo.duration > 0
           ? currentVideo.duration
-          : 4.04;
+          : INTRO_DURATION_SECONDS;
       const nextProgress = Math.max(
         0,
         Math.min(100, Math.round((currentVideo.currentTime / duration) * 100))
@@ -135,21 +129,46 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       finishLoading();
     };
     const handleCanPlay = () => {
-      if (pendingPlaybackRef.current && !startedPlaybackRef.current) {
-        startPlayback();
+      startPlayback();
+    };
+    const handlePlaying = () => {
+      if (fallbackTimerRef.current) {
+        clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
       }
+      if (!hardTimeoutRef.current) {
+        hardTimeoutRef.current = setTimeout(
+          () => finishLoading(),
+          INTRO_PLAYBACK_TIMEOUT_MS
+        );
+      }
+      startProgressTracking();
+    };
+    const handleVideoError = () => {
+      finishLoading();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") startPlayback();
     };
 
     video?.addEventListener("ended", handleEnded);
-    video?.addEventListener("canplay", handleCanPlay, { once: true });
+    video?.addEventListener("canplay", handleCanPlay);
+    video?.addEventListener("playing", handlePlaying);
+    video?.addEventListener("error", handleVideoError);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    fallbackTimerRef.current = setTimeout(() => finishLoading(), 6500);
-    hardTimeoutRef.current = setTimeout(() => finishLoading(), 9000);
+    fallbackTimerRef.current = setTimeout(
+      () => finishLoading(),
+      INTRO_START_TIMEOUT_MS
+    );
 
     return () => {
       ctx.revert();
       video?.removeEventListener("ended", handleEnded);
       video?.removeEventListener("canplay", handleCanPlay);
+      video?.removeEventListener("playing", handlePlaying);
+      video?.removeEventListener("error", handleVideoError);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (progressRafRef.current !== null) {
         cancelAnimationFrame(progressRafRef.current);
         progressRafRef.current = null;
@@ -157,7 +176,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
       if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
       if (hardTimeoutRef.current) clearTimeout(hardTimeoutRef.current);
     };
-  }, [finishLoading, startPlayback]);
+  }, [finishLoading, startPlayback, startProgressTracking]);
 
   const circleRadius = 27;
   const circleCircumference = 2 * Math.PI * circleRadius;
@@ -193,11 +212,13 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         <div ref={videoWrapRef} className="absolute inset-0 z-10 flex items-end justify-center">
           <video
             ref={videoRef}
-            src="/videos/ramma_loadingscreen.mp4"
+            src="/videos/intro-loading.mp4"
+            poster="/videos/intro-loading-poster.jpg"
+            autoPlay
             muted
             playsInline
             preload="auto"
-            className="h-[74dvh] sm:h-[80dvh] md:h-[88dvh] lg:h-[90dvh] w-auto object-contain object-bottom"
+            className="h-[100dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
           />
         </div>
 

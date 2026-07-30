@@ -11,7 +11,13 @@ type HeroSectionProps = {
 export default function HeroSection({ entryReady, content }: HeroSectionProps) {
   const { roles, body: bodyText, displayWord } = content;
   return (
-    <section className="relative w-full min-h-[100dvh] bg-[#0F3B46] overflow-hidden">
+    <section className="relative w-full min-h-[100dvh] bg-black overflow-hidden">
+      <div
+        className={`absolute inset-0 bg-[#0F3B46] transition-opacity duration-700 ${
+          entryReady ? "opacity-100" : "opacity-0"
+        }`}
+      />
+
       {/* White background with blurred elliptical top */}
       <div className={`absolute inset-x-0 top-[48%] sm:top-[46%] md:top-[43%] bottom-0 bg-white transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
         entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1/4"
@@ -73,16 +79,13 @@ export default function HeroSection({ entryReady, content }: HeroSectionProps) {
       {/* Portrait — centered, fills height */}
       <div className="absolute inset-0 flex justify-center items-end z-10 pointer-events-none">
         <Image
-          src="/hero-final-frame.png"
+          src="/intro-hero-final.jpg"
           alt={content.section?.title || "Ahmed Ramah"}
-          width={1080}
-          height={1920}
-          sizes="(min-width: 768px) 51vh, (min-width: 640px) 42vh, 41vh"
+          width={720}
+          height={1280}
+          sizes="(min-width: 768px) 54vh, 57vh"
           preload
-          className={`h-[72dvh] sm:h-[74dvh] md:h-[90dvh] lg:h-[90dvh] w-auto object-contain object-bottom transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] origin-bottom ${
-            entryReady ? "opacity-100 scale-100 translate-y-0" : "opacity-0 scale-95 translate-y-12"
-          }`}
-          style={{ transitionDelay: entryReady ? "150ms" : "0ms" }}
+          className="h-[100dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
         />
       </div>
 

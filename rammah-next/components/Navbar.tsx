@@ -161,8 +161,9 @@ export default function Navbar({
 
       {/* Fullscreen menu overlay */}
       <div
-        className={`fixed inset-0 z-[70] transition-all duration-500 ${menuOpen ? "opacity-100 visible" : "opacity-0 invisible"
-          }`}
+        className={`fixed inset-0 z-[70] transition-all duration-500 ${
+          menuOpen ? "opacity-100 visible" : "hidden"
+        }`}
       >
         <video
           className="absolute inset-0 h-full w-full object-cover"
