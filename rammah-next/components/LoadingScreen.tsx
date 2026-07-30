@@ -156,11 +156,13 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
     video?.addEventListener("playing", handlePlaying);
     video?.addEventListener("error", handleVideoError);
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    startProgressTracking();
 
     fallbackTimerRef.current = setTimeout(
       () => finishLoading(),
       INTRO_START_TIMEOUT_MS
     );
+    if (video && !video.paused) handlePlaying();
 
     return () => {
       ctx.revert();

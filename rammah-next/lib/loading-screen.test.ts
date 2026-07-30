@@ -45,6 +45,12 @@ describe("LoadingScreen mobile video", () => {
     );
   });
 
+  it("starts progress polling even when the initial playing event was missed", () => {
+    expect(componentSource).toMatch(
+      /document\.addEventListener\("visibilitychange", handleVisibilityChange\);\s*startProgressTracking\(\);/
+    );
+  });
+
   it("uses the video's final frame with matching loader geometry in the hero", () => {
     expect(heroSource).toContain('src="/hero.png"');
     expect(heroSource).toContain("width={720}");
