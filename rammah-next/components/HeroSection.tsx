@@ -85,7 +85,7 @@ export default function HeroSection({ entryReady, content }: HeroSectionProps) {
           height={1280}
           sizes="(min-width: 768px) 54vh, 57vh"
           preload
-          className="h-[100dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
+          className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
         />
       </div>
 

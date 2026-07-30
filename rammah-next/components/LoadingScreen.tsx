@@ -220,7 +220,7 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
             muted
             playsInline
             preload="auto"
-            className="h-[100dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
+            className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
           />
         </div>
 

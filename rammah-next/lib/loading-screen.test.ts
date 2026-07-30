@@ -52,11 +52,13 @@ describe("LoadingScreen mobile video", () => {
   });
 
   it("uses the video's final frame with matching loader geometry in the hero", () => {
+    const synchronizedGeometry =
+      'className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"';
+
     expect(heroSource).toContain('src="/hero.png"');
     expect(heroSource).toContain("width={720}");
     expect(heroSource).toContain("height={1280}");
-    expect(heroSource).toContain(
-      'className="h-[100dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"'
-    );
+    expect(componentSource).toContain(synchronizedGeometry);
+    expect(heroSource).toContain(synchronizedGeometry);
   });
 });
