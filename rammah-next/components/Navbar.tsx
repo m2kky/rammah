@@ -167,13 +167,15 @@ export default function Navbar({
       >
         <video
           className="absolute inset-0 h-full w-full object-cover"
-          src="/videos/rammah%20vid.mp4"
           autoPlay
           muted
           loop
           playsInline
-          preload="auto"
-        />
+          preload="metadata"
+        >
+          <source src="/videos/about-fastcut-mobile.webm" type="video/webm" media="(max-width: 899px)" />
+          <source src="/videos/about-fastcut-desktop.webm" type="video/webm" />
+        </video>
         <div className="absolute inset-0 bg-black/68 backdrop-blur-[2px]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(15,59,70,0.18)_0%,rgba(0,0,0,0.8)_70%)]" />
 
