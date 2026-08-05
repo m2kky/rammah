@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Run `npm --prefix rammah-api run db:migrations:preflight` before generating the migration; current prefix must be `0007` and Drizzle alone assigns the next prefix.
-- Never edit or renumber migrations `0000` through `0007`; add the new SQL/snapshot hashes to `drizzle/meta/migration-lock.json` only after reviewing the generated migration.
+- Never edit or renumber migrations `0000` through `0007`; add the new SQL/snapshot hashes to `drizzle/migration-lock.json` only after reviewing the generated migration.
 - Do not generate another product migration until A2 fresh and upgrade migration gates pass.
 - A mixed Offering with future published fixed sessions and published recurring rules must fail preflight with its Offering ID; never infer its canonical mode.
 - Preserve customer identity, booking references, payment amounts/status, audit history, hold ownership, calendar IDs and completed history.
@@ -80,7 +80,7 @@ git commit -m "test: add scheduling migration preflight"
 - Create: `rammah-api/drizzle/0008_<drizzle-generated-name>.sql`
 - Create: `rammah-api/drizzle/meta/0008_snapshot.json`
 - Modify: `rammah-api/drizzle/meta/_journal.json`
-- Modify: `rammah-api/drizzle/meta/migration-lock.json`
+- Modify: `rammah-api/drizzle/migration-lock.json`
 - Modify: `rammah-api/src/test/database-harness.integration.test.ts`
 - Create: `rammah-api/src/test/canonical-booking-upgrade.integration.test.ts`
 

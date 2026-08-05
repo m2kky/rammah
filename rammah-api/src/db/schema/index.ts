@@ -33,6 +33,9 @@ export const offeringTypeEnum = pgEnum("offering_type", [
 ]);
 export const attendanceModeEnum = pgEnum("attendance_mode", ["online", "offline", "hybrid"]);
 export const bookingModeEnum = pgEnum("booking_mode", ["free", "paid", "quote_only"]);
+export const schedulingModeEnum = pgEnum("scheduling_mode", ["appointment", "scheduled_program"]);
+export const availabilityOverrideModeEnum = pgEnum("availability_override_mode", ["unavailable", "available"]);
+export const programOccurrenceStatusEnum = pgEnum("program_occurrence_status", ["scheduled", "cancelled"]);
 export const fieldTypeEnum = pgEnum("field_type", [
   "text",
   "email",
@@ -287,7 +290,10 @@ export const offerings = pgTable(
     offeringType: offeringTypeEnum("offering_type").notNull(),
     attendanceMode: attendanceModeEnum("attendance_mode").notNull().default("online"),
     bookingMode: bookingModeEnum("booking_mode").notNull().default("free"),
-    durationMinutes: integer("duration_minutes").notNull(),
+    schedulingMode: schedulingModeEnum("scheduling_mode").notNull().default("appointment"),
+    durationMinutes: integer("duration_minutes"),
+    bufferBeforeMinutes: integer("buffer_before_minutes").notNull().default(0),
+    bufferAfterMinutes: integer("buffer_after_minutes").notNull().default(0),
     capacity: integer("capacity").notNull().default(1),
     requiresPayment: boolean("requires_payment").notNull().default(false),
     quoteOnly: boolean("quote_only").notNull().default(false),
@@ -306,6 +312,10 @@ export const offerings = pgTable(
     statusIdx: index("offerings_status_idx").on(table.status),
     typeIdx: index("offerings_type_idx").on(table.offeringType),
     capacityPositive: check("offerings_capacity_positive", sql`${table.capacity} > 0`),
+    validSchedulingConfiguration: check(
+      "offerings_valid_scheduling_configuration",
+      sql`((${table.schedulingMode} = 'appointment' AND ${table.durationMinutes} IS NOT NULL AND ${table.durationMinutes} > 0) OR (${table.schedulingMode} = 'scheduled_program' AND ${table.durationMinutes} IS NULL)) AND ${table.bufferBeforeMinutes} >= 0 AND ${table.bufferAfterMinutes} >= 0`,
+    ),
   }),
 );
 
@@ -376,6 +386,121 @@ export const offeringSessions = pgTable(
     capacityPositive: check(
       "offering_sessions_capacity_positive",
       sql`${table.capacity} > 0`,
+    ),
+  }),
+);
+
+export const scheduledPrograms = pgTable(
+  "scheduled_programs",
+  {
+    id: id(),
+    offeringId: uuid("offering_id").notNull().references(() => offerings.id),
+    title: varchar("title", { length: 220 }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).notNull(),
+    attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
+    locationId: uuid("location_id").references(() => offlineLocations.id),
+    capacity: integer("capacity").notNull(),
+    registrationOpensAt: timestamp("registration_opens_at", { withTimezone: true }),
+    registrationClosesAt: timestamp("registration_closes_at", { withTimezone: true }),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    offeringStatusIdx: index("scheduled_programs_offering_status_idx").on(
+      table.offeringId,
+      table.status,
+    ),
+    capacityPositive: check("scheduled_programs_capacity_positive", sql`${table.capacity} > 0`),
+    validRegistrationWindow: check(
+      "scheduled_programs_valid_registration_window",
+      sql`${table.registrationOpensAt} IS NULL OR ${table.registrationClosesAt} IS NULL OR ${table.registrationOpensAt} < ${table.registrationClosesAt}`,
+    ),
+  }),
+);
+
+export const scheduledProgramOccurrences = pgTable(
+  "scheduled_program_occurrences",
+  {
+    id: id(),
+    scheduledProgramId: uuid("scheduled_program_id").notNull().references(() => scheduledPrograms.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).notNull(),
+    attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
+    locationId: uuid("location_id").references(() => offlineLocations.id),
+    sortOrder: integer("sort_order").notNull().default(0),
+    googleCalendarEventId: text("google_calendar_event_id"),
+    meetUrl: text("meet_url"),
+    status: programOccurrenceStatusEnum("status").notNull().default("scheduled"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    programStartsIdx: index("scheduled_program_occurrences_program_starts_idx").on(
+      table.scheduledProgramId,
+      table.startsAt,
+    ),
+    validInterval: check(
+      "scheduled_program_occurrences_valid_interval",
+      sql`${table.startsAt} < ${table.endsAt}`,
+    ),
+    sortOrderNonNegative: check(
+      "scheduled_program_occurrences_sort_order_non_negative",
+      sql`${table.sortOrder} >= 0`,
+    ),
+  }),
+);
+
+export const availabilityWindows = pgTable(
+  "availability_windows",
+  {
+    id: id(),
+    weekday: integer("weekday").notNull(),
+    startLocalTime: varchar("start_local_time", { length: 8 }).notNull(),
+    endLocalTime: varchar("end_local_time", { length: 8 }).notNull(),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    weekdayStatusIdx: index("availability_windows_weekday_status_idx").on(
+      table.weekday,
+      table.status,
+    ),
+    windowUnique: uniqueIndex("availability_windows_unique").on(
+      table.weekday,
+      table.startLocalTime,
+      table.endLocalTime,
+      table.status,
+    ),
+    validWindow: check(
+      "availability_windows_valid_window",
+      sql`${table.weekday} BETWEEN 0 AND 6 AND ${table.startLocalTime} < ${table.endLocalTime}`,
+    ),
+  }),
+);
+
+export const globalAvailabilityOverrides = pgTable(
+  "global_availability_overrides",
+  {
+    id: id(),
+    date: varchar("date", { length: 10 }).notNull(),
+    overrideMode: availabilityOverrideModeEnum("override_mode").notNull(),
+    startLocalTime: varchar("start_local_time", { length: 8 }),
+    endLocalTime: varchar("end_local_time", { length: 8 }),
+    reason: text("reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    dateModeIdx: index("global_availability_overrides_date_mode_idx").on(
+      table.date,
+      table.overrideMode,
+    ),
+    validShape: check(
+      "global_availability_overrides_valid_shape",
+      sql`(${table.overrideMode} = 'unavailable' AND ${table.startLocalTime} IS NULL AND ${table.endLocalTime} IS NULL) OR (${table.overrideMode} = 'available' AND ${table.startLocalTime} IS NOT NULL AND ${table.endLocalTime} IS NOT NULL AND ${table.startLocalTime} < ${table.endLocalTime})`,
     ),
   }),
 );
@@ -467,6 +592,7 @@ export const bookings = pgTable(
       .default(sql`('RMM-' || lpad(nextval('booking_reference_seq')::text, 6, '0'))`),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
+    scheduledProgramId: uuid("scheduled_program_id").references(() => scheduledPrograms.id),
     locationId: uuid("location_id").references(() => offlineLocations.id),
     attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
     status: bookingStatusEnum("status").notNull().default("draft"),
@@ -501,9 +627,13 @@ export const bookings = pgTable(
       table.offeringSessionId,
       table.status,
     ),
-    validSlotInterval: check(
-      "bookings_valid_slot_interval",
-      sql`(${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL) OR (${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt})`,
+    programStatusIdx: index("bookings_program_status_idx").on(
+      table.scheduledProgramId,
+      table.status,
+    ),
+    validSchedulingTarget: check(
+      "bookings_valid_scheduling_target",
+      sql`(${table.scheduledProgramId} IS NULL AND ${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt}) OR (${table.scheduledProgramId} IS NOT NULL AND ${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL)`,
     ),
     moneyNonNegative: check(
       "bookings_money_non_negative",
@@ -528,8 +658,9 @@ export const bookingSlotHolds = pgTable(
     id: id(),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
-    slotStartAt: timestamp("slot_start_at", { withTimezone: true }).notNull(),
-    slotEndAt: timestamp("slot_end_at", { withTimezone: true }).notNull(),
+    scheduledProgramId: uuid("scheduled_program_id").references(() => scheduledPrograms.id),
+    slotStartAt: timestamp("slot_start_at", { withTimezone: true }),
+    slotEndAt: timestamp("slot_end_at", { withTimezone: true }),
     bookingId: uuid("booking_id").references(() => bookings.id),
     holdSecretHash: varchar("hold_secret_hash", { length: 64 }),
     status: holdStatusEnum("status").notNull().default("active"),
@@ -544,9 +675,14 @@ export const bookingSlotHolds = pgTable(
       table.status,
       table.expiresAt,
     ),
-    validSlotInterval: check(
-      "booking_slot_holds_valid_slot_interval",
-      sql`${table.slotStartAt} < ${table.slotEndAt}`,
+    programIdx: index("booking_slot_holds_program_idx").on(
+      table.scheduledProgramId,
+      table.status,
+      table.expiresAt,
+    ),
+    validSchedulingTarget: check(
+      "booking_slot_holds_valid_scheduling_target",
+      sql`(${table.scheduledProgramId} IS NULL AND ${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt}) OR (${table.scheduledProgramId} IS NOT NULL AND ${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL)`,
     ),
   }),
 );

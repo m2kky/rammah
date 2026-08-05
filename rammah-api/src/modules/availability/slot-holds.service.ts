@@ -62,7 +62,7 @@ export const createSlotHold = async (input: SlotHoldInput) => {
     holdSecretHash: owner.digest,
   });
 
-  if (!hold) {
+  if (!hold || !hold.slotStartAt || !hold.slotEndAt) {
     throw slotUnavailableError();
   }
 

@@ -1,14 +1,13 @@
-import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   contentStatusEnum,
-  availabilityRules,
   offlineLocations,
   offeringCategories,
   offeringLocations,
   offeringPrices,
-  offeringSessions,
   offerings,
+  siteSettings,
 } from "../../db/schema/index.js";
 
 const publishedStatus = contentStatusEnum.enumValues[1];
@@ -26,7 +25,10 @@ export const findPublishedOfferings = async () => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -55,7 +57,10 @@ export const findPublishedOfferingBySlug = async (slug: string) => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -84,7 +89,10 @@ export const findPublishedOfferingById = async (id: string) => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -102,43 +110,14 @@ export const findPublishedOfferingById = async (id: string) => {
   return rows[0] ?? null;
 };
 
-export const findPublicOfferingSchedulingSources = async (offeringId: string) => {
-  const [availabilityRows, sessionRows] = await Promise.all([
-    db
-      .select({
-        id: availabilityRules.id,
-        timezone: availabilityRules.timezone,
-      })
-      .from(availabilityRules)
-      .where(
-        and(
-          eq(availabilityRules.offeringId, offeringId),
-          eq(availabilityRules.status, publishedStatus),
-        ),
-      )
-      .limit(1),
-    db
-      .select({
-        id: offeringSessions.id,
-        timezone: offeringSessions.timezone,
-      })
-      .from(offeringSessions)
-      .where(
-        and(
-          eq(offeringSessions.offeringId, offeringId),
-          eq(offeringSessions.status, publishedStatus),
-          gt(offeringSessions.endsAt, new Date()),
-        ),
-      )
-      .limit(1),
-  ]);
+export const findPublicBookingTimezone = async () => {
+  const rows = await db
+    .select({ timezone: siteSettings.bookingDefaultTimezone })
+    .from(siteSettings)
+    .orderBy(asc(siteSettings.createdAt))
+    .limit(1);
 
-  return {
-    hasPublishedAvailability: availabilityRows.length > 0,
-    hasPublishedSessions: sessionRows.length > 0,
-    availabilityTimezone: availabilityRows[0]?.timezone ?? null,
-    sessionTimezone: sessionRows[0]?.timezone ?? null,
-  };
+  return rows[0]?.timezone ?? "Africa/Cairo";
 };
 
 export const findPublishedPricesByOfferingIds = async (offeringIds: string[]) => {

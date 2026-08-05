@@ -104,7 +104,12 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
       return { booking, hold, converted: true, rejection: null } as const;
     }
 
-    if (hold.holdStatus !== "active" || hold.expiresAt <= new Date()) {
+    if (
+      hold.holdStatus !== "active" ||
+      hold.expiresAt <= new Date() ||
+      !hold.slotStartAt ||
+      !hold.slotEndAt
+    ) {
       return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
     }
 

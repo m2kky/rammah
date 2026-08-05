@@ -28,7 +28,7 @@ const seedOffering = async () => {
   return offering!;
 };
 
-const seedBooking = async () => {
+const seedBooking = async (withSchedulingTarget = true) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering();
   const [booking] = await db
@@ -38,6 +38,8 @@ const seedBooking = async () => {
       attendanceMode: "online",
       customerFullName: "Constraint Test",
       customerEmail: `${crypto.randomUUID()}@example.test`,
+      slotStartAt: withSchedulingTarget ? new Date("2030-08-05T08:00:00.000Z") : null,
+      slotEndAt: withSchedulingTarget ? new Date("2030-08-05T09:00:00.000Z") : null,
       timezone: "Africa/Cairo",
     })
     .returning();
@@ -96,8 +98,8 @@ describe.sequential("capacity-core database constraints", () => {
     ).rejects.toThrow();
   });
 
-  it("permits the historical both-null booking interval", async () => {
-    await expect(seedBooking()).resolves.toBeDefined();
+  it("rejects a booking without an appointment slot or scheduled Program", async () => {
+    await expect(seedBooking(false)).rejects.toThrow();
   });
 
   it.each([
@@ -181,6 +183,8 @@ describe.sequential("capacity-core database constraints", () => {
         attendanceMode: "online",
         customerFullName: "Invalid money",
         customerEmail: `${crypto.randomUUID()}@example.test`,
+        slotStartAt: new Date("2030-08-05T08:00:00.000Z"),
+        slotEndAt: new Date("2030-08-05T09:00:00.000Z"),
         timezone: "Africa/Cairo",
         ...invalid,
       }),

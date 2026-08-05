@@ -219,20 +219,27 @@ export const buildAvailableOverrideSlots = (
 ) =>
   overrides
     .filter((override) => override.overrideType === "available" && override.startsAt && override.endsAt)
-    .flatMap((override) =>
-      generateSlotsInWindow({
+    .flatMap((override) => {
+      const slotDurationMinutes =
+        override.ruleSlotDurationMinutes ?? offering.durationMinutes;
+
+      if (slotDurationMinutes === null) {
+        return [];
+      }
+
+      return generateSlotsInWindow({
         date: override.date,
         windowStart: override.startsAt as Date,
         windowEnd: override.endsAt as Date,
         timezone: override.ruleTimezone ?? "Africa/Cairo",
-        slotDurationMinutes: override.ruleSlotDurationMinutes ?? offering.durationMinutes,
+        slotDurationMinutes,
         bufferBeforeMinutes: override.ruleBufferBeforeMinutes ?? 0,
         bufferAfterMinutes: override.ruleBufferAfterMinutes ?? 0,
         availabilityRuleId: override.availabilityRuleId,
         availabilityOverrideId: override.id,
         source: "available_override",
-      }),
-    );
+      });
+    });
 
 export const dedupeSlots = (slots: SlotCandidate[]) => {
   const slotMap = new Map<string, SlotCandidate>();

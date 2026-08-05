@@ -40,6 +40,11 @@
       "tag": "0007_flippant_molecule_man",
       "sqlSha256": "58ee726eddda5ab6f4da90308c96841b35966ce4c0d5c66f786d5efcdae5fe9c",
       "snapshotSha256": "cd8d295f6e4771618bc495d28cff6d3a4f7474582ae379422b453af9611b0a57"
+    },
+    {
+      "tag": "0008_cultured_unus",
+      "sqlSha256": "cd5cf5cf3cf6d8bcd6d8bd9b8d7591d5bbbf1a4cb8b1a2ba97ffc179ef4d5a59",
+      "snapshotSha256": "b231762cf6b8b715092e77166fbff64e2cfc11b9e63fee5cb183be414fad18cb"
     }
   ]
 }

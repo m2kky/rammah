@@ -12,7 +12,7 @@ export type SlotOfferingRow = {
   id: string;
   title: string;
   slug: string;
-  durationMinutes: number;
+  durationMinutes: number | null;
   capacity: number;
   status: "draft" | "published" | "scheduled" | "archived";
 };

@@ -9,6 +9,7 @@ import {
   findAdminOfferingPriceById,
   findAdminOfferingPricesByOfferingId,
   findAdminOfferings,
+  findOfferingSchedulingDependencies,
   findOfferingPriceByCountryCurrency,
   findOfferingBySlug,
   findOfferingCategoryById,
@@ -35,7 +36,10 @@ export type AdminOfferingInput = {
   offeringType: AdminOfferingInsert["offeringType"];
   attendanceMode: AdminOfferingInsert["attendanceMode"];
   bookingMode: AdminOfferingInsert["bookingMode"];
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -91,7 +95,10 @@ const toAdminOffering = (offering: AdminOfferingRow) => ({
   offeringType: offering.offeringType,
   attendanceMode: offering.attendanceMode,
   bookingMode: offering.bookingMode,
+  schedulingMode: offering.schedulingMode,
   durationMinutes: offering.durationMinutes,
+  bufferBeforeMinutes: offering.bufferBeforeMinutes,
+  bufferAfterMinutes: offering.bufferAfterMinutes,
   capacity: offering.capacity,
   requiresPayment: offering.requiresPayment,
   quoteOnly: offering.quoteOnly,
@@ -160,6 +167,66 @@ const assertSlugAvailable = async (slug: string, excludeId?: string) => {
         {
           field: "slug",
           message: "Use a unique offering slug.",
+        },
+      ],
+    });
+  }
+};
+
+const assertSchedulingConfiguration = (input: {
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+}) => {
+  const durationIsInvalid =
+    input.schedulingMode === "appointment"
+      ? input.durationMinutes === null || input.durationMinutes <= 0
+      : input.durationMinutes !== null;
+
+  if (
+    durationIsInvalid ||
+    input.bufferBeforeMinutes < 0 ||
+    input.bufferAfterMinutes < 0
+  ) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Offering scheduling configuration is invalid.",
+      statusCode: httpStatus.badRequest,
+      details: [
+        {
+          field: "durationMinutes",
+          message:
+            input.schedulingMode === "appointment"
+              ? "Appointments require a positive duration."
+              : "Scheduled programs must not define an appointment duration.",
+        },
+      ],
+    });
+  }
+};
+
+const assertSchedulingModeChangeAllowed = async (
+  offeringId: string,
+  currentMode: "appointment" | "scheduled_program",
+  nextMode: "appointment" | "scheduled_program",
+) => {
+  if (currentMode === nextMode) return;
+
+  const dependencies = await findOfferingSchedulingDependencies(offeringId);
+  const blocked =
+    (nextMode === "scheduled_program" && dependencies.hasAppointmentTargets) ||
+    (nextMode === "appointment" && dependencies.hasProgramTargets);
+
+  if (blocked) {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "Scheduling mode cannot change while incompatible future bookings or events exist.",
+      statusCode: httpStatus.conflict,
+      details: [
+        {
+          field: "schedulingMode",
+          message: "Archive or resolve the incompatible future schedule before changing modes.",
         },
       ],
     });
@@ -236,6 +303,7 @@ export const createAdminOffering = async (
 
   await assertCategoryExists(input.categoryId);
   await assertSlugAvailable(slug);
+  assertSchedulingConfiguration(input);
 
   const offering = await insertAdminOffering({
     categoryId: input.categoryId ?? null,
@@ -246,7 +314,10 @@ export const createAdminOffering = async (
     offeringType: input.offeringType,
     attendanceMode: input.attendanceMode,
     bookingMode: input.bookingMode,
+    schedulingMode: input.schedulingMode,
     durationMinutes: input.durationMinutes,
+    bufferBeforeMinutes: input.bufferBeforeMinutes,
+    bufferAfterMinutes: input.bufferAfterMinutes,
     capacity: input.capacity,
     requiresPayment: input.requiresPayment,
     quoteOnly: input.quoteOnly,
@@ -338,6 +409,24 @@ export const updateAdminOfferingById = async (
     await assertSlugAvailable(input.slug.toLowerCase(), id);
   }
 
+  const nextSchedulingConfiguration = {
+    schedulingMode: input.schedulingMode ?? existingOffering.schedulingMode,
+    durationMinutes:
+      input.durationMinutes !== undefined
+        ? input.durationMinutes
+        : existingOffering.durationMinutes,
+    bufferBeforeMinutes:
+      input.bufferBeforeMinutes ?? existingOffering.bufferBeforeMinutes,
+    bufferAfterMinutes:
+      input.bufferAfterMinutes ?? existingOffering.bufferAfterMinutes,
+  };
+  assertSchedulingConfiguration(nextSchedulingConfiguration);
+  await assertSchedulingModeChangeAllowed(
+    id,
+    existingOffering.schedulingMode,
+    nextSchedulingConfiguration.schedulingMode,
+  );
+
   const updatePayload = removeUndefined<AdminOfferingUpdate>({
     categoryId: input.categoryId,
     title: input.title?.trim(),
@@ -347,7 +436,10 @@ export const updateAdminOfferingById = async (
     offeringType: input.offeringType,
     attendanceMode: input.attendanceMode,
     bookingMode: input.bookingMode,
+    schedulingMode: input.schedulingMode,
     durationMinutes: input.durationMinutes,
+    bufferBeforeMinutes: input.bufferBeforeMinutes,
+    bufferAfterMinutes: input.bufferAfterMinutes,
     capacity: input.capacity,
     requiresPayment: input.requiresPayment,
     quoteOnly: input.quoteOnly,

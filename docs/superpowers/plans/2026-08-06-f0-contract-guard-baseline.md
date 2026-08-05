@@ -40,7 +40,7 @@ npm --prefix rammah-api run db:migrate:test
 Before generating a migration, run `db:migrations:preflight`. After Drizzle generates the next journal entry:
 
 1. Inspect the SQL and generated snapshot; do not edit or renumber existing history.
-2. Append the new tag and SHA-256 hashes for its SQL and snapshot to `drizzle/meta/migration-lock.json`.
+2. Append the new tag and SHA-256 hashes for its SQL and snapshot to `drizzle/migration-lock.json`. The lock intentionally lives outside `drizzle/meta`, because Drizzle parses every JSON file in that directory as migration metadata.
 3. Run `db:migrations:preflight` again. It intentionally fails until every journal entry is locked.
 4. Run `db:migrate:test` and the focused integration tests before review.
 

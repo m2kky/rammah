@@ -21,7 +21,7 @@ const readMatchingFiles = (directory: string, pattern: RegExp) =>
 
 const result = validateMigrationHistory({
   journal: readJson<MigrationJournal>(resolve(metaDirectory, "_journal.json")),
-  manifest: readJson<LockedMigrationManifest>(resolve(metaDirectory, "migration-lock.json")),
+  manifest: readJson<LockedMigrationManifest>(resolve(drizzleDirectory, "migration-lock.json")),
   sqlFiles: readMatchingFiles(drizzleDirectory, /^\d{4}_.+\.sql$/),
   snapshotFiles: readMatchingFiles(metaDirectory, /^\d{4}_snapshot\.json$/),
 });

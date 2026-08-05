@@ -150,7 +150,12 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
       return { booking, payment, hold, rejection: null } as const;
     }
 
-    if (hold.holdStatus !== "active" || hold.expiresAt <= new Date()) {
+    if (
+      hold.holdStatus !== "active" ||
+      hold.expiresAt <= new Date() ||
+      !hold.slotStartAt ||
+      !hold.slotEndAt
+    ) {
       return { booking: null, payment: null, hold, rejection: "hold_unavailable" } as const;
     }
 

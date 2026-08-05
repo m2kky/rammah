@@ -1,10 +1,26 @@
-import { and, asc, eq, ilike, ne, or, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  type SQL,
+} from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   contentStatusEnum,
+  bookingSlotHolds,
+  bookings,
   offeringCategories,
   offeringPrices,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 
 export type ContentStatus = (typeof contentStatusEnum.enumValues)[number];
@@ -38,7 +54,10 @@ const adminOfferingSelect = {
   offeringType: offerings.offeringType,
   attendanceMode: offerings.attendanceMode,
   bookingMode: offerings.bookingMode,
+  schedulingMode: offerings.schedulingMode,
   durationMinutes: offerings.durationMinutes,
+  bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+  bufferAfterMinutes: offerings.bufferAfterMinutes,
   capacity: offerings.capacity,
   requiresPayment: offerings.requiresPayment,
   quoteOnly: offerings.quoteOnly,
@@ -47,6 +66,84 @@ const adminOfferingSelect = {
   status: offerings.status,
   createdAt: offerings.createdAt,
   updatedAt: offerings.updatedAt,
+};
+
+export const findOfferingSchedulingDependencies = async (
+  offeringId: string,
+  now = new Date(),
+) => {
+  const [appointmentBookingRows, appointmentHoldRows, programOccurrenceRows, programBookingRows, programHoldRows] =
+    await Promise.all([
+      db
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.offeringId, offeringId),
+            isNull(bookings.scheduledProgramId),
+            inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+            gt(bookings.slotStartAt, now),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ id: bookingSlotHolds.id })
+        .from(bookingSlotHolds)
+        .where(
+          and(
+            eq(bookingSlotHolds.offeringId, offeringId),
+            isNull(bookingSlotHolds.scheduledProgramId),
+            eq(bookingSlotHolds.status, "active"),
+            gt(bookingSlotHolds.expiresAt, now),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ id: scheduledProgramOccurrences.id })
+        .from(scheduledProgramOccurrences)
+        .innerJoin(
+          scheduledPrograms,
+          eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+        )
+        .where(
+          and(
+            eq(scheduledPrograms.offeringId, offeringId),
+            ne(scheduledPrograms.status, "archived"),
+            eq(scheduledProgramOccurrences.status, "scheduled"),
+            gt(scheduledProgramOccurrences.endsAt, now),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.offeringId, offeringId),
+            isNotNull(bookings.scheduledProgramId),
+            inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ id: bookingSlotHolds.id })
+        .from(bookingSlotHolds)
+        .where(
+          and(
+            eq(bookingSlotHolds.offeringId, offeringId),
+            isNotNull(bookingSlotHolds.scheduledProgramId),
+            eq(bookingSlotHolds.status, "active"),
+            gt(bookingSlotHolds.expiresAt, now),
+          ),
+        )
+        .limit(1),
+    ]);
+
+  return {
+    hasAppointmentTargets: appointmentBookingRows.length > 0 || appointmentHoldRows.length > 0,
+    hasProgramTargets:
+      programOccurrenceRows.length > 0 || programBookingRows.length > 0 || programHoldRows.length > 0,
+  };
 };
 
 export const findAdminOfferingCategories = async () => {

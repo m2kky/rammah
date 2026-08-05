@@ -20,7 +20,10 @@ export type PublicOffering = {
   offeringType: string;
   attendanceMode: string;
   bookingMode: string;
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
