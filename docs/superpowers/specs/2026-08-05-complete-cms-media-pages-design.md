@@ -34,6 +34,8 @@ Administrators will be able to:
 6. Create pages from a fixed catalog of reusable section types.
 7. Create and publish arbitrary legal pages.
 8. Manage global media such as the loading video, its poster, the menu video, and the default social-sharing image.
+9. Preview draft pages through an authenticated, short-lived preview link before publication.
+10. Permanently delete unused archived media, including its R2 objects, through an explicit destructive action.
 
 ## Scope
 
@@ -52,12 +54,16 @@ Each media item exposes:
 - Public URL
 - File size when known
 - Alternative text for images
-- Optional poster relationship for videos where a component requires one
 - Status
+- Processing state: `pending`, `ready`, or `failed`
 - Created and updated timestamps
 - Usage locations
 
 The library supports grid and list-friendly metadata, image/video previews, search, kind/source/status filters, and safe archival. An asset with active usages cannot be archived until those usages are removed or replaced. The API returns the usage locations in the validation error so the dashboard can link the administrator to them.
+
+Archival hides an unused asset from pickers but retains its record and object. Permanent deletion is a separate, confirmed action available only for an unused archived asset. Deleting an R2 asset removes all of its R2 objects before deleting the database record; deleting an external asset removes only its database record. Every destructive action is written to the existing audit log.
+
+Replacing a file never overwrites an existing R2 key. It creates a new immutable asset and reassigns the selected slot, which avoids stale CDN caches and preserves the old asset for other usages.
 
 ### R2 Upload Flow
 
@@ -67,11 +73,13 @@ R2 credentials remain server-side. The browser never receives permanent credenti
 2. The API validates the requested type and size, creates a collision-resistant R2 object key, and returns the presigned URL, object key, and eventual public URL.
 3. The browser uploads directly to R2 and shows progress.
 4. The dashboard asks the API to finalize the asset.
-5. The API performs an R2 `HEAD` check, confirms that the uploaded object exists and matches the declared metadata, then creates the media asset row.
+5. The API performs an R2 `HEAD` check, confirms that the uploaded object exists and matches the declared byte size, then reads the minimum required byte ranges to identify the actual file signature. The detected type must match an allowed image or video type before the media asset becomes ready.
 
 If upload or finalization fails, the dashboard preserves the form state and offers retry. A periodic cleanup job is not part of this delivery; abandoned unfinalized objects use a dedicated temporary prefix so an R2 lifecycle rule can expire them.
 
-External URLs must use HTTPS. The application renders them directly and does not proxy or fetch arbitrary external content through the API.
+The R2 bucket CORS policy must allow presigned `PUT` requests from the configured admin origin. API verification uses server-to-server `HEAD` and byte-range requests and does not depend on browser CORS. The public/CDN endpoint must support `GET`, `HEAD`, byte-range video requests, and the required response headers. Uploaded objects use immutable, collision-resistant keys and long-lived cache headers.
+
+External URLs must use HTTPS. The application renders them directly and does not proxy or fetch arbitrary external content through the API. Because arbitrary remote URLs cannot be trusted or guaranteed to remain available, the dashboard requires a successful browser preview before saving and displays a persistent external-source badge. Public rendering uses native `img` and `video` elements for arbitrary external assets; R2 assets may use the optimized Next.js image path. The site security policy permits HTTPS image and media sources while retaining the existing script and frame restrictions.
 
 ### Media Assignments
 
@@ -84,7 +92,7 @@ Media is assigned through named slots rather than raw IDs or arbitrary JSON. Exa
 - `backgroundImage`
 - `galleryImages`
 
-Each assignment records the owning section or global setting, slot key, media asset, order for multi-value slots, and optional usage-specific alternative text. Usage-specific alternative text takes precedence over the asset library default.
+Each assignment records the owning section or global setting, slot key, media asset, order for multi-value slots, optional usage-specific alternative text, and whether an image is decorative. Usage-specific alternative text takes precedence over the asset library default. Decorative images render with an empty alternative text value and are ignored by assistive technology; all other content images require meaningful alternative text.
 
 The database will add dedicated section-media and global-media assignment tables with foreign keys. This preserves referential integrity and makes usage lookup and safe archival straightforward. The existing single `page_sections.media_asset_id` value will be migrated into the appropriate default slot where present and removed from the public contract after migration.
 
@@ -101,7 +109,7 @@ New general-purpose pages use a fixed catalog:
 7. **CTA** — heading, body, button fields, and optional background image.
 8. **Divider/Spacer** — controlled visual separation without media.
 
-A shared section-definition registry describes the editable text, choice, boolean, link, and media fields for each type. The dashboard uses the registry to build clear forms, and the public renderer uses the same stable section types. Administrators never edit raw JSON or media UUIDs.
+The API owns the authoritative section-definition registry and exposes its safe form contract to the admin frontend. The public frontend maintains the component mapping for those stable section types, with contract tests that fail if the API definitions and renderer diverge. The registry describes the editable text, Markdown, choice, boolean, link, and media fields for each type. Administrators never edit raw JSON or media UUIDs.
 
 ### Existing Custom Pages
 
@@ -120,7 +128,9 @@ The first inventory includes:
 
 During implementation, a repository-wide scan of rendered `Image`, `video`, `source`, CSS background URLs, posters, and canvas image sources will extend this list. Acceptance requires that every media reference actually displayed by the site resolves through a CMS assignment. Code-owned icons, SVG interface marks, favicons, and non-rendered development/review assets remain code assets.
 
-Frame sequences used by animated canvases are represented as one named sequence bundle with a manifest, poster, dimensions, frame count, and URL pattern. The administrator replaces the bundle as a unit instead of editing hundreds of individual frames.
+Frame sequences used by animated canvases are represented as one `animation_bundle` media kind with a manifest, poster, dimensions, frame count, file extension, and URL pattern. The administrator replaces the bundle as a unit instead of editing hundreds of individual frames.
+
+An animation bundle is uploaded as a ZIP to the temporary R2 prefix. Finalization queues an existing-worker-compatible processing job that validates safe relative paths, rejects executable or traversal entries, expands the frames into an immutable R2 prefix, validates consistent dimensions and numbering, writes the manifest, and marks the asset `ready`. Failed bundles retain a visible error and cannot be assigned or published. The original ZIP is removed after successful processing. Existing frame sequences are registered during migration as ready bundles without changing the current animation behavior.
 
 ### Global Media
 
@@ -146,11 +156,18 @@ The **Pages** view supports:
 - Duplicate a section
 - Archive a section
 - Preview the media selected for every slot
+- Open an authenticated full-page draft preview
 - Publish or archive the page
 
-New general-purpose pages render at `/<slug>` through a generic Next.js route. Existing static routes take precedence. Slugs are lowercase, single-segment URL slugs for this delivery. Reserved application slugs such as `admin`, `api`, `booking`, `blog`, `services`, `about`, `contact`, `privacy`, `terms`, and their aliases cannot be assigned to a general page.
+New general-purpose pages render at `/<slug>` through a generic Next.js route. Existing static routes take precedence. Slugs are lowercase, single-segment URL slugs for this delivery. A single server-owned reserved-slug set covers all static and system routes, including `admin`, `api`, `booking`, `blog`, `services`, `about`, `contact`, `legal`, `privacy`, `terms`, `thank-you`, and their aliases. API validation is authoritative and contract tests keep the dashboard validation aligned.
 
 The public route renders only published pages and published sections, ordered by `sortOrder`. Draft and archived pages return the normal not-found experience.
+
+Section reordering uses one purpose-built endpoint that accepts the complete ordered section ID list. The API verifies ownership and completeness, then updates all sort positions in one database transaction so partial or duplicate ordering cannot be exposed.
+
+Draft preview uses a short-lived, signed, page-scoped token issued only to an authenticated administrator. A one-time bootstrap URL exchanges the token for an HTTP-only preview cookie and immediately redirects to a clean preview URL. The preview route is `noindex`, bypasses public publication filters only for the token's page, and never exposes draft navigation or unrelated drafts. The cookie expires automatically and can be cleared from the preview toolbar.
+
+`scheduled` has operational meaning: a page or legal page must have a future `publishedAt`, and a CMS publication handler registered with the existing worker publishes due records, re-runs publication validation, writes an audit event, and is idempotent. If validation fails at publish time, the item remains scheduled with an actionable dashboard error. Public routes never treat `scheduled` content as published directly.
 
 ### Legal Pages
 
@@ -158,7 +175,7 @@ The **Legal Pages** view supports create, edit, search, publish/schedule, and ar
 
 Arbitrary legal pages render at `/legal/<slug>`. Existing `/privacy`, `/privacy-policy`, `/terms`, and `/terms-and-conditions` routes remain as stable aliases for their current legal slugs.
 
-Legal body content uses the same safe rich-text format selected for Rich Text sections. Rendering sanitizes supported markup and does not allow arbitrary scripts or embedded HTML.
+Legal bodies and Rich Text sections use Markdown with a formatting toolbar and side-by-side preview. Raw HTML is disabled. The renderer supports an explicit safe subset—headings, paragraphs, emphasis, lists, blockquotes, links, and tables—and sanitizes generated output before rendering.
 
 ### Navigation
 
@@ -177,6 +194,8 @@ The CMS navigation is organized as:
 
 The page editor separates page details, SEO, and sections. Media fields are labeled by purpose and always show the current preview. A media picker modal provides library selection plus upload and external-URL tabs without navigating away from the editor.
 
+Upload and bundle-processing progress persists while the editor remains open. Media items that are pending, failed, archived, or missing cannot be selected for a publishable slot.
+
 ## API and Data Contracts
 
 The existing page, section, legal, navigation, media, and SEO endpoints remain the base. The frontend adds the currently missing create/archive calls for pages and sections and media/SEO client functions.
@@ -185,11 +204,16 @@ New API capabilities include:
 
 - Create a presigned R2 upload intent
 - Finalize and verify an R2 upload
+- Process and report animation-bundle status
 - List media with source/kind/status/search filters
 - Return media usage locations
-- Create/update/archive media records
+- Create/update/archive/permanently-delete media records
 - Read and update named section media assignments
 - Read and update named global media assignments
+- Return the authoritative admin section-definition contract
+- Reorder page sections transactionally
+- Issue and validate short-lived draft-preview tokens
+- Publish scheduled CMS records through an idempotent worker handler
 - Return resolved media objects in public page and settings responses
 
 Public media objects contain only safe display fields: ID, kind, MIME type, public URL, alternative text, dimensions/duration when known, and poster data where applicable. Storage credentials and internal upload details are never exposed.
@@ -198,16 +222,21 @@ Public media objects contain only safe display fields: ID, kind, MIME type, publ
 
 - Only configured image and video MIME types are accepted.
 - Upload size limits are configurable separately for images and videos.
-- File extensions are not trusted as MIME validation.
+- File extensions and submitted MIME headers are not trusted; R2 finalization verifies file signatures from object bytes.
 - Presigned URLs expire quickly and are scoped to one generated object key.
 - External media URLs must be valid HTTPS URLs.
 - Section payloads are validated against the selected section definition.
 - Required media slots must be assigned before a section or page can be published.
-- An image assignment requires usable alternative text, either from the usage or asset default.
+- A non-decorative image assignment requires usable alternative text, either from the usage or asset default.
 - Video sections that require a poster cannot publish without one.
+- Autoplay video always renders muted and `playsInline`; contradictory dashboard options are rejected.
+- Only `ready`, active media can be assigned to published content.
 - Duplicate page or legal slugs return a field-level conflict error.
 - Reserved slugs return a field-level validation error.
 - Archiving a used asset returns a conflict response containing its usages.
+- Permanent deletion requires an unused archived asset and explicit confirmation.
+- ZIP processing rejects absolute paths, traversal entries, executable content, unexpected file types, inconsistent dimensions, and configured expanded-size or frame-count limits.
+- Scheduled publication revalidates the complete item and records a visible failure instead of publishing invalid content.
 - Public rendering handles a missing optional asset without breaking the page and logs an observable server-side warning.
 
 ## Configuration
@@ -224,14 +253,19 @@ The API environment adds:
 - Maximum video bytes
 - Allowed image MIME types
 - Allowed video MIME types
+- Maximum animation-bundle ZIP bytes, expanded bytes, and frame count
+- R2 temporary-object prefix and lifecycle retention
+- Admin origin allowed by the R2 CORS policy
+- Public media/CDN cache and byte-range requirements
+- Draft-preview signing secret and expiry
 
 Example environment files and deployment documentation will describe these values without committing secrets.
 
 ## Migration and Compatibility
 
-1. Add the media source metadata and assignment tables.
+1. Add media source, processing-state, processing-error metadata, and assignment tables.
 2. Preserve existing media rows and migrate current section media IDs into assignments.
-3. Seed global and custom-page slot definitions with the currently displayed static asset URLs so the site remains visually unchanged immediately after deployment.
+3. Register the existing frame sequences as ready animation bundles and seed global and custom-page slot definitions with the currently displayed static asset URLs so the site remains visually unchanged immediately after deployment.
 4. Update public contracts and components to resolve assignments.
 5. Add the generic page and legal routes.
 6. Remove rendered hard-coded media paths only after the equivalent assignment has a fallback seed.
@@ -245,13 +279,16 @@ Follow test-driven development for each behavior.
 API unit and integration tests cover:
 
 - Upload-intent validation
-- R2 finalization verification
+- R2 finalization signature, size, and object verification
+- Animation-bundle path, content, dimension, limit, processing, retry, and cleanup behavior
 - External URL creation
 - Media filtering and serialization
-- Usage lookup and safe archival conflicts
-- Page and section creation, ordering, publication validation, and archival
+- Usage lookup, safe archival conflicts, and permanent R2 deletion
+- Page and section creation, transactional ordering, publication validation, and archival
 - Reserved and duplicate slug validation
 - Legal-page creation and public retrieval
+- Scheduled publication success, validation failure, audit, and idempotency
+- Draft-preview authorization, page scoping, expiry, and `noindex` behavior
 - Resolved section and global media contracts
 
 Frontend unit tests cover:
@@ -261,16 +298,23 @@ Frontend unit tests cover:
 - Existing custom page media fallback and override behavior
 - Generic page rendering data mapping
 - Legal route aliases
+- Markdown safe-subset rendering and raw-HTML rejection
+- Decorative and required alternative-text behavior
+- R2 optimized rendering and external native-media rendering
 
 Browser verification covers:
 
 - Upload an image and a video to R2
 - Register external image and video URLs
 - Select, replace, and remove media from a section
+- Upload, process, and replace an animation bundle
 - Create, arrange, publish, and visit a new page
+- Preview that page while it is still a draft
 - Create, publish, and visit a legal page
+- Schedule a page and confirm it is not public before the worker publishes it
 - Edit every global media slot
 - Confirm used media cannot be archived
+- Permanently delete an unused archived R2 asset and confirm its objects are gone
 - Confirm existing animated pages preserve their layouts at mobile and desktop breakpoints
 
 The final verification runs API and frontend unit/integration tests, type checking, linting, production builds, and a rendered-media inventory scan.
@@ -287,14 +331,19 @@ The final verification runs API and frontend unit/integration tests, type checki
 ## Acceptance Criteria
 
 - An administrator can upload images and videos directly to R2.
+- An administrator can upload and process a frame-sequence animation bundle as one asset.
 - An administrator can register and use external HTTPS media.
 - Every displayed content image/video and every approved global media asset can be changed from the dashboard.
 - Every media-bearing section exposes named fields with preview, choose, upload, external URL, replace, and remove actions.
 - No administrator must enter raw JSON or a media UUID.
 - A used media asset cannot be archived and its usage locations are shown.
+- An unused archived asset can be permanently deleted, removing its R2 objects when applicable.
 - An administrator can create, reorder, publish, visit, and archive a general page built from the approved section catalog.
+- An administrator can securely preview a draft page before publication.
+- Scheduled content is published by the worker at its configured time or remains scheduled with a visible validation error.
 - An administrator can create, publish, visit, and archive an arbitrary legal page.
 - Existing privacy and terms URLs continue to work.
 - Existing custom page visuals and animations remain intact while their media becomes CMS-managed.
+- Non-decorative images require alternative text; decorative images render with an empty alternative text value.
 - Draft and archived content is not publicly rendered.
 - API/frontend tests, type checking, linting, production builds, and the browser verification flow pass.
