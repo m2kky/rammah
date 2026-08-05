@@ -36,7 +36,7 @@ export type PublicAvailabilitySlotPreview = {
     title: string;
     slug: string;
     capacity: number;
-    durationMinutes: number;
+    durationMinutes: number | null;
     status: string;
   };
   dateFrom: string;

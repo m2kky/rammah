@@ -73,7 +73,10 @@ export type AdminOffering = {
     | "custom";
   attendanceMode: "online" | "offline" | "hybrid";
   bookingMode: "free" | "paid" | "quote_only";
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -167,7 +170,7 @@ export type AdminAvailabilitySlotPreview = {
     title: string;
     slug: string;
     capacity: number;
-    durationMinutes: number;
+    durationMinutes: number | null;
     status: AdminOfferingStatus;
   };
   dateFrom: string;
@@ -541,7 +544,10 @@ export type AdminOfferingPayload = {
   offeringType: AdminOffering["offeringType"];
   attendanceMode: AdminOffering["attendanceMode"];
   bookingMode: AdminOffering["bookingMode"];
-  durationMinutes: number;
+  schedulingMode: AdminOffering["schedulingMode"];
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;

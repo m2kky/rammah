@@ -34,7 +34,10 @@ export type PublicOffering = {
   offeringType: string;
   attendanceMode: "online" | "offline" | "hybrid";
   bookingMode: "free" | "paid" | "quote_only";
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -48,7 +51,6 @@ export type PublicOffering = {
 export type PublicSchedulingMode = "appointment" | "scheduled_program";
 
 export type PublicBookingOffering = PublicOffering & {
-  schedulingMode: PublicSchedulingMode;
   schedulingTimezone: string;
 };
 
