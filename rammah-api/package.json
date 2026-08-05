@@ -29,6 +29,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:test": "tsx src/scripts/migrate-test-database.ts",
     "db:migrations:preflight": "tsx src/scripts/migration-preflight.ts",
+    "db:scheduling:preflight": "tsx src/scripts/scheduling-migration-preflight.ts",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx src/db/seed.ts",
     "clean": "node -e \"for (const path of ['dist', 'coverage']) require('node:fs').rmSync(path, { recursive: true, force: true })\""
