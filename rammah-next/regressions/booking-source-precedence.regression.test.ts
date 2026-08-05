@@ -6,6 +6,10 @@ const bookingFlowSource = readFileSync(
   resolve(process.cwd(), "components/BookingFlow.tsx"),
   "utf8",
 );
+const bookingDateTimeSource = readFileSync(
+  resolve(process.cwd(), "lib/booking-datetime.ts"),
+  "utf8",
+);
 
 describe("reported fixed-session and availability regression", () => {
   it("selects the schedule source from explicit Offering scheduling mode", () => {
@@ -17,12 +21,20 @@ describe("reported fixed-session and availability regression", () => {
       bookingFlowSource.includes("const hasSessionOptions = sessions.length > 0"),
       "Fixed sessions must not gain precedence merely because rows exist",
     ).toBe(false);
+    expect(bookingFlowSource).toContain(
+      "dateKeyForInstantInTimeZone(new Date(), configuredOffering.schedulingTimezone)",
+    );
   });
 
   it("formats returned instants in their authoritative schedule timezone", () => {
     expect(
-      /Intl\.DateTimeFormat\([\s\S]*timeZone:/.test(bookingFlowSource),
+      /Intl\.DateTimeFormat\([\s\S]*timeZone:/.test(bookingDateTimeSource),
       "Booking time formatting must pass the DTO timezone to Intl.DateTimeFormat",
     ).toBe(true);
+    expect(bookingFlowSource).toContain("formatTime(session.startsAt, session.timezone)");
+    expect(bookingFlowSource).toContain("formatTime(slot.startsAt, slot.timezone)");
+    expect(bookingFlowSource).toContain(
+      "formatTime(selectedBookableTime.startsAt, selectedBookableTime.timezone)",
+    );
   });
 });

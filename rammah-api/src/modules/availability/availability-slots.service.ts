@@ -1,6 +1,7 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { env } from "../../config/env.js";
+import { wallTimeToInstant } from "../../shared/datetime/iana-wall-time.js";
 import {
   findActiveSlotHolds,
   findBlockingBookings,
@@ -88,18 +89,18 @@ const assertDate = (value: string, field: "dateFrom" | "dateTo") => {
   return value;
 };
 
-const dateStart = (date: string) => new Date(`${date}T00:00:00`);
+const dateStart = (date: string) => new Date(`${date}T00:00:00.000Z`);
 
 const addDays = (date: Date, days: number) => {
   const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
   return nextDate;
 };
 
 export const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
@@ -138,8 +139,12 @@ const normalizeTime = (value: string) => {
   return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
 };
 
-const combineDateAndTime = (date: string, time: string) =>
-  new Date(`${date}T${normalizeTime(time)}:00`);
+const combineDateAndTime = (date: string, time: string, timezone: string) =>
+  wallTimeToInstant({
+    date,
+    time: `${normalizeTime(time)}:00`,
+    timezone,
+  });
 
 const overlaps = (
   leftStart: Date,
@@ -188,15 +193,15 @@ const generateSlotsInWindow = (input: {
 export const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
   dates.flatMap((date) => {
     const dateKey = toDateKey(date);
-    const weekday = date.getDay();
+    const weekday = date.getUTCDay();
 
     return rules
       .filter((rule) => rule.weekday === weekday)
       .flatMap((rule) =>
         generateSlotsInWindow({
           date: dateKey,
-          windowStart: combineDateAndTime(dateKey, rule.startTime),
-          windowEnd: combineDateAndTime(dateKey, rule.endTime),
+          windowStart: combineDateAndTime(dateKey, rule.startTime, rule.timezone),
+          windowEnd: combineDateAndTime(dateKey, rule.endTime, rule.timezone),
           timezone: rule.timezone,
           slotDurationMinutes: rule.slotDurationMinutes,
           bufferBeforeMinutes: rule.bufferBeforeMinutes,
@@ -322,8 +327,8 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
   const dateFrom = assertDate(input.dateFrom, "dateFrom");
   const dateTo = assertDate(input.dateTo, "dateTo");
   const dates = enumerateDates(dateFrom, dateTo);
-  const rangeStart = dateStart(dateFrom);
-  const rangeEnd = addDays(dateStart(dateTo), 1);
+  const rangeStart = addDays(dateStart(dateFrom), -1);
+  const rangeEnd = addDays(dateStart(dateTo), 2);
 
   const offering = await findSlotOfferingById(input.offeringId);
 
@@ -366,7 +371,7 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
 
     return {
       date: dateKey,
-      weekday: date.getDay(),
+      weekday: date.getUTCDay(),
       slots,
       availableCount: slots.filter((slot) => slot.status === "available").length,
       totalCount: slots.length,

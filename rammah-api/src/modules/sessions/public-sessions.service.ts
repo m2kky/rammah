@@ -1,6 +1,7 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { env } from "../../config/env.js";
+import { instantToDateKey } from "../../shared/datetime/iana-wall-time.js";
 import {
   findPublicSessions,
   findSessionActiveHolds,
@@ -53,23 +54,16 @@ const assertDate = (value: string, field: "dateFrom" | "dateTo") => {
   return value;
 };
 
-const dateStart = (date: string) => new Date(`${date}T00:00:00`);
+const dateStart = (date: string) => new Date(`${date}T00:00:00.000Z`);
 
 const addDays = (date: Date, days: number) => {
   const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
   return nextDate;
 };
 
 const daysBetween = (start: Date, end: Date) =>
   Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-
-const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
 
 const assertRange = (input: { dateFrom: string; dateTo: string }) => {
   const dateFrom = assertDate(input.dateFrom, "dateFrom");
@@ -92,8 +86,8 @@ const assertRange = (input: { dateFrom: string; dateTo: string }) => {
   return {
     dateFrom,
     dateTo,
-    rangeStart,
-    rangeEnd: addDays(rangeEndDate, 1),
+    rangeStart: addDays(rangeStart, -1),
+    rangeEnd: addDays(rangeEndDate, 2),
   };
 };
 
@@ -121,7 +115,7 @@ const toPublicSession = async (session: PublicSessionRow, now: Date) => {
       title: session.offeringTitle,
       slug: session.offeringSlug,
     },
-    date: toDateKey(session.startsAt),
+    date: instantToDateKey(session.startsAt, session.timezone),
     startsAt: session.startsAt.toISOString(),
     endsAt: session.endsAt.toISOString(),
     timezone: session.timezone,
@@ -158,15 +152,29 @@ export const listPublicOfferingSessions = async (input: PublicSessionsInput) => 
   const minimumStartAt = new Date(
     now.getTime() + env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000,
   );
-  const futureSessions = sessions.filter((session) => session.startsAt >= minimumStartAt);
+  const futureSessions = sessions.filter((session) => {
+    const localDate = instantToDateKey(session.startsAt, session.timezone);
+
+    return (
+      session.startsAt >= minimumStartAt &&
+      localDate >= range.dateFrom &&
+      localDate <= range.dateTo
+    );
+  });
+  const publicSessions = await Promise.all(
+    futureSessions.map((session) => toPublicSession(session, now)),
+  );
+  publicSessions.sort(
+    (left, right) =>
+      left.date.localeCompare(right.date) ||
+      new Date(left.startsAt).getTime() - new Date(right.startsAt).getTime(),
+  );
 
   return {
     offeringId: input.offeringId,
     dateFrom: range.dateFrom,
     dateTo: range.dateTo,
-    sessions: await Promise.all(
-      futureSessions.map((session) => toPublicSession(session, now)),
-    ),
+    sessions: publicSessions,
     generatedAt: now.toISOString(),
   };
 };

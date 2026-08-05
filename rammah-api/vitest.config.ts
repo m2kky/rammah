@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['src/**/*.unit.test.ts'],
+    include: ['src/**/*.unit.test.ts', 'src/**/*.regression.test.ts'],
     exclude: ['src/**/*.integration.test.ts'],
     passWithNoTests: false,
     setupFiles: ['./src/test/setup.ts'],

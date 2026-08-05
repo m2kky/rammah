@@ -18,11 +18,14 @@ import {
   recurringSlotCapacityLockKey,
 } from "../../shared/db/advisory-lock.js";
 import {
+  instantToDateKey,
+  localDayRangeForInstant,
+} from "../../shared/datetime/iana-wall-time.js";
+import {
   buildAvailableOverrideSlots,
   buildRuleSlots,
   dedupeSlots,
   findBlockingOverride,
-  toDateKey,
 } from "./availability-slots.service.js";
 import { insertSlotHold } from "./slot-holds.repository.js";
 
@@ -136,11 +139,12 @@ const exceedsDailyScheduleLimit = async (
   input: SlotCapacityInput,
   now: Date,
   options: { excludeBookingId?: string; excludeHoldId?: string },
+  timezone: string,
 ) => {
-  const dayStart = new Date(input.startsAt);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
+  const { start: dayStart, end: dayEnd } = localDayRangeForInstant(
+    input.startsAt,
+    timezone,
+  );
   const bookingConditions: SQL[] = [
     inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
     gt(bookings.slotStartAt, new Date(dayStart.getTime() - 1)),
@@ -246,8 +250,7 @@ export const withAvailableSlotCapacity = async <T>(
       const now = new Date();
       if (
         !meetsMinimumNotice(input.startsAt, now) ||
-        (await hasGlobalScheduleConflict(tx, input, now, options)) ||
-        (await exceedsDailyScheduleLimit(tx, input, now, options))
+        (await hasGlobalScheduleConflict(tx, input, now, options))
       ) {
         return null;
       }
@@ -286,6 +289,10 @@ export const withAvailableSlotCapacity = async <T>(
         session.endsAt.getTime() !== input.endsAt.getTime() ||
         session.capacity <= 0
       ) {
+        return null;
+      }
+
+      if (await exceedsDailyScheduleLimit(tx, input, now, options, session.timezone)) {
         return null;
       }
 
@@ -346,8 +353,7 @@ export const withAvailableSlotCapacity = async <T>(
     const now = new Date();
     if (
       !meetsMinimumNotice(input.startsAt, now) ||
-      (await hasGlobalScheduleConflict(tx, input, now, options)) ||
-      (await exceedsDailyScheduleLimit(tx, input, now, options))
+      (await hasGlobalScheduleConflict(tx, input, now, options))
     ) {
       return null;
     }
@@ -378,8 +384,6 @@ export const withAvailableSlotCapacity = async <T>(
       return null;
     }
 
-    const date = toDateKey(input.startsAt);
-    const dateValue = new Date(`${date}T00:00:00`);
     const rules = await tx
       .select({
         id: availabilityRules.id,
@@ -400,6 +404,14 @@ export const withAvailableSlotCapacity = async <T>(
           eq(availabilityRules.status, "published"),
         ),
       );
+    const timezoneCandidates = new Set(rules.map((rule) => rule.timezone));
+    if (timezoneCandidates.size === 0) {
+      timezoneCandidates.add("Africa/Cairo");
+    }
+    const dates = [...timezoneCandidates]
+      .map((timezone) => instantToDateKey(input.startsAt, timezone))
+      .filter((date, index, values) => values.indexOf(date) === index);
+    const dateValues = dates.map((date) => new Date(`${date}T00:00:00.000Z`));
     const overrides = await tx
       .select({
         id: availabilityOverrides.id,
@@ -424,11 +436,11 @@ export const withAvailableSlotCapacity = async <T>(
       .where(
         and(
           eq(availabilityOverrides.offeringId, input.offeringId),
-          eq(availabilityOverrides.date, date),
+          inArray(availabilityOverrides.date, dates),
         ),
       );
     const candidates = dedupeSlots([
-      ...buildRuleSlots([dateValue], rules),
+      ...buildRuleSlots(dateValues, rules),
       ...buildAvailableOverrideSlots(offering, overrides),
     ]);
     const target = candidates.find(
@@ -438,6 +450,10 @@ export const withAvailableSlotCapacity = async <T>(
     );
 
     if (!target || findBlockingOverride(target, overrides)) {
+      return null;
+    }
+
+    if (await exceedsDailyScheduleLimit(tx, input, now, options, target.timezone)) {
       return null;
     }
 
@@ -475,7 +491,7 @@ export const withAvailableSlotCapacity = async <T>(
     }
 
     return mutate({
-      timezone: null,
+      timezone: target.timezone,
       now,
       sessionLocationId: null,
       offering: {

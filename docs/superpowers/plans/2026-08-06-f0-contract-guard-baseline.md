@@ -59,3 +59,9 @@ Observed failures:
 - `BookingFlow.tsx` has no explicit `schedulingMode`, gives fixed sessions precedence when any rows exist, and formats instants without the authoritative DTO timezone.
 
 Slice A1 turns these suites green and then promotes the relevant tests into the normal regression baseline.
+
+## A1 Resolution
+
+Slice A1 makes both regression commands green. The API unit baseline now also includes the timezone regression file, while focused integration coverage verifies fixed-session grouping, recurring hold acquisition and daily-limit boundaries with the API process forced to `UTC`. Frontend unit coverage runs the date and time formatters with a non-Cairo process timezone; the focused regression guard verifies that `BookingFlow.tsx` branches on the booking-config `schedulingMode` and passes each DTO timezone into formatting.
+
+The temporary pre-A2 booking-config projection is deterministic: published availability selects `appointment`; a legacy Offering with only future published sessions selects `scheduled_program`; an empty legacy Offering defaults to `appointment`. The selected source also provides the temporary scheduling timezone used to build the initial public query range. A2 replaces this projection with the persisted canonical mode.

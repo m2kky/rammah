@@ -45,6 +45,13 @@ export type PublicOffering = {
   prices: PublicOfferingPrice[];
 };
 
+export type PublicSchedulingMode = "appointment" | "scheduled_program";
+
+export type PublicBookingOffering = PublicOffering & {
+  schedulingMode: PublicSchedulingMode;
+  schedulingTimezone: string;
+};
+
 export type PublicBookingFormField = {
   id: string;
   fieldKey: string;
@@ -74,7 +81,7 @@ type OfferingResponse = {
 
 type BookingConfigResponse = {
   data: {
-    offering: PublicOffering;
+    offering: PublicBookingOffering;
     fields: PublicBookingFormField[];
     locations: PublicOfferingLocation[];
   };

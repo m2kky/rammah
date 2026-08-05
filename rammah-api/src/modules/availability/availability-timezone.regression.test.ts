@@ -55,4 +55,47 @@ describe("reported split-window booking regression", () => {
     expect(slots[0]?.startsAt.toISOString()).toBe("2026-08-13T06:00:00.000Z");
     expect(slots.at(-1)?.startsAt.toISOString()).toBe("2026-08-13T18:00:00.000Z");
   });
+
+  it("keeps a Cairo after-midnight slot on its configured local date", () => {
+    const slots = buildRuleSlots(
+      [new Date("2026-08-13T00:00:00.000Z")],
+      [
+        {
+          ...splitThursdayRules[0]!,
+          id: "rule-midnight",
+          startTime: "00:30:00",
+          endTime: "01:30:00",
+        },
+      ],
+    );
+
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ date: "2026-08-13" });
+    expect(slots[0]?.startsAt.toISOString()).toBe("2026-08-12T21:30:00.000Z");
+  });
+
+  it("uses the Cairo DST offset that applies to each local date", () => {
+    const winterThursday = {
+      ...splitThursdayRules[0]!,
+      id: "rule-winter",
+      startTime: "09:00:00",
+      endTime: "10:00:00",
+    };
+    const summerThursday = {
+      ...winterThursday,
+      id: "rule-summer",
+    };
+
+    const winterSlots = buildRuleSlots(
+      [new Date("2026-01-15T00:00:00.000Z")],
+      [winterThursday],
+    );
+    const summerSlots = buildRuleSlots(
+      [new Date("2026-08-13T00:00:00.000Z")],
+      [summerThursday],
+    );
+
+    expect(winterSlots[0]?.startsAt.toISOString()).toBe("2026-01-15T07:00:00.000Z");
+    expect(summerSlots[0]?.startsAt.toISOString()).toBe("2026-08-13T06:00:00.000Z");
+  });
 });
