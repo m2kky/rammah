@@ -151,9 +151,9 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
 
             gsap.fromTo(
               "[data-cinematic-line='left']",
-              { xPercent: -18 },
+              { xPercent: -2 },
               {
-                xPercent: 8,
+                xPercent: 2,
                 ease: "none",
                 scrollTrigger: {
                   trigger: "[data-cinematic]",
@@ -166,9 +166,9 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
 
             gsap.fromTo(
               "[data-cinematic-line='right']",
-              { xPercent: 14 },
+              { xPercent: 2 },
               {
-                xPercent: -10,
+                xPercent: -2,
                 ease: "none",
                 scrollTrigger: {
                   trigger: "[data-cinematic]",
@@ -377,7 +377,9 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
             >
               pattern
             </p>
-            <p className={styles.cinematicLine} data-cinematic-line="left">Rewrite the response</p>
+            <p className={styles.cinematicLine} data-cinematic-line="left">
+              Rewrite the<span className={styles.mobileBreak}><br /></span>{" "}response
+            </p>
           </div>
 
           <p className={styles.cinematicCaption}>

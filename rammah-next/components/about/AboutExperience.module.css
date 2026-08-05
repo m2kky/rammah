@@ -173,6 +173,7 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
+  padding-inline: clamp(1.25rem, 3vw, 3rem);
   pointer-events: none;
 }
 
@@ -190,7 +191,7 @@
 
 .cinematicLine {
   width: max-content;
-  max-width: none;
+  max-width: 100%;
   font-size: clamp(5rem, 13.5vw, 13rem);
   font-weight: 800;
   line-height: 0.73;
@@ -211,8 +212,12 @@
 }
 
 .cinematicLine:nth-of-type(4) {
-  margin-left: -7vw;
-  font-size: clamp(3.5rem, 9vw, 9rem);
+  margin-left: 0;
+  font-size: clamp(3.5rem, 7vw, 7rem);
+}
+
+.mobileBreak {
+  display: none;
 }
 
 .cinematicOutline {
@@ -629,6 +634,10 @@
     object-position: center;
   }
 
+  .cinematicCopy {
+    padding-inline: 1.25rem;
+  }
+
   .cinematicEyebrow {
     top: 5.5rem;
     left: 1.25rem;
@@ -636,22 +645,27 @@
   }
 
   .cinematicLine {
-    font-size: clamp(4rem, 23vw, 7.6rem);
+    width: auto;
+    font-size: clamp(3.4rem, 19vw, 6.4rem);
     line-height: 0.78;
   }
 
   .cinematicLine:nth-of-type(2) {
-    margin-left: -8vw;
+    margin-left: 0;
   }
 
   .cinematicLine:nth-of-type(3) {
-    margin-right: -18vw;
+    margin-right: 0;
   }
 
   .cinematicLine:nth-of-type(4) {
     margin-top: 0.2rem;
-    margin-left: -34vw;
+    margin-left: 0;
     font-size: clamp(2.7rem, 14vw, 4.8rem);
+  }
+
+  .mobileBreak {
+    display: inline;
   }
 
   .cinematicCaption {
