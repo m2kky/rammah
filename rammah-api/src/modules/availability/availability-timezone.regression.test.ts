@@ -98,4 +98,36 @@ describe("reported split-window booking regression", () => {
     expect(winterSlots[0]?.startsAt.toISOString()).toBe("2026-01-15T07:00:00.000Z");
     expect(summerSlots[0]?.startsAt.toISOString()).toBe("2026-08-13T06:00:00.000Z");
   });
+
+  it.each([
+    {
+      date: "2026-04-24",
+      weekday: 5,
+      startTime: "00:30:00",
+      endTime: "01:30:00",
+      transition: "nonexistent",
+    },
+    {
+      date: "2026-10-29",
+      weekday: 4,
+      startTime: "23:30:00",
+      endTime: "23:59:00",
+      transition: "ambiguous",
+    },
+  ])("rejects a $transition Cairo wall time", ({ date, weekday, startTime, endTime }) => {
+    expect(() =>
+      buildRuleSlots(
+        [new Date(`${date}T00:00:00.000Z`)],
+        [
+          {
+            ...splitThursdayRules[0]!,
+            id: `rule-${date}`,
+            weekday,
+            startTime,
+            endTime,
+          },
+        ],
+      ),
+    ).toThrow(RangeError);
+  });
 });
