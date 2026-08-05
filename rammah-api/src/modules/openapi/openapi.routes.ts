@@ -52,8 +52,8 @@ const publicPaths: Record<string, PathSpec> = {
   "/openapi.json": { get: operation({ summary: "OpenAPI document", tags: ["OpenAPI"] }) },
   "/public/country": { get: operation({ summary: "Detect public booking country", tags: ["Public Booking"] }) },
   "/public/offerings": { get: operation({ summary: "List public offerings", tags: ["Public Offerings"] }) },
-  "/public/offerings/{id}": { get: operation({ summary: "Get public offering by id", tags: ["Public Offerings"] }) },
-  "/public/offerings/slug/{slug}": { get: operation({ summary: "Get public offering by slug", tags: ["Public Offerings"] }) },
+  "/public/offerings/{id}/booking-config": { get: operation({ summary: "Get public offering booking configuration", tags: ["Public Offerings"] }) },
+  "/public/offerings/{slug}": { get: operation({ summary: "Get public offering by slug", tags: ["Public Offerings"] }) },
   "/public/availability-slots": { get: operation({ summary: "Preview public availability slots", tags: ["Public Booking"] }) },
   "/public/sessions": { get: operation({ summary: "List public fixed-date sessions", tags: ["Public Booking"] }) },
   "/public/slot-holds": { post: operation({ summary: "Create public slot hold", tags: ["Public Booking"], status: httpStatus.created }) },
@@ -86,6 +86,11 @@ const adminResource = (tag: string, noun: string): PathSpec => ({
 
 const adminResourceItem = (tag: string, noun: string): PathSpec => ({
   get: operation({ summary: `Get ${noun}`, tags: [tag], secured: true }),
+  patch: operation({ summary: `Update ${noun}`, tags: [tag], secured: true }),
+  delete: operation({ summary: `Archive ${noun}`, tags: [tag], secured: true, noContent: true }),
+});
+
+const adminMutableResourceItem = (tag: string, noun: string): PathSpec => ({
   patch: operation({ summary: `Update ${noun}`, tags: [tag], secured: true }),
   delete: operation({ summary: `Archive ${noun}`, tags: [tag], secured: true, noContent: true }),
 });
@@ -130,23 +135,23 @@ const adminPaths: Record<string, PathSpec> = {
   "/admin/availability-slots": { get: operation({ summary: "Preview admin availability slots", tags: ["Admin Availability"], secured: true }) },
   "/admin/cms/settings": { get: operation({ summary: "Get CMS settings", tags: ["Admin CMS"], secured: true }), patch: operation({ summary: "Update CMS settings", tags: ["Admin CMS"], secured: true }) },
   "/admin/cms/navigation": adminResource("Admin CMS", "navigation items"),
-  "/admin/cms/navigation/{id}": adminResourceItem("Admin CMS", "navigation item"),
+  "/admin/cms/navigation/{id}": adminMutableResourceItem("Admin CMS", "navigation item"),
   "/admin/cms/legal-pages": adminResource("Admin CMS", "legal pages"),
-  "/admin/cms/legal-pages/{id}": adminResourceItem("Admin CMS", "legal page"),
+  "/admin/cms/legal-pages/{id}": adminMutableResourceItem("Admin CMS", "legal page"),
   "/admin/cms/pages": adminResource("Admin CMS", "pages"),
-  "/admin/cms/pages/{id}": adminResourceItem("Admin CMS", "page"),
+  "/admin/cms/pages/{id}": adminMutableResourceItem("Admin CMS", "page"),
   "/admin/cms/pages/{id}/sections": adminResource("Admin CMS", "page sections"),
-  "/admin/cms/pages/{id}/sections/{sectionId}": adminResourceItem("Admin CMS", "page section"),
+  "/admin/cms/pages/{id}/sections/{sectionId}": adminMutableResourceItem("Admin CMS", "page section"),
   "/admin/cms/blog/categories": adminResource("Admin CMS", "blog categories"),
-  "/admin/cms/blog/categories/{id}": adminResourceItem("Admin CMS", "blog category"),
+  "/admin/cms/blog/categories/{id}": adminMutableResourceItem("Admin CMS", "blog category"),
   "/admin/cms/blog/posts": adminResource("Admin CMS", "blog posts"),
-  "/admin/cms/blog/posts/{id}": adminResourceItem("Admin CMS", "blog post"),
+  "/admin/cms/blog/posts/{id}": adminMutableResourceItem("Admin CMS", "blog post"),
   "/admin/cms/media-assets": adminResource("Admin CMS", "media assets"),
-  "/admin/cms/media-assets/{id}": adminResourceItem("Admin CMS", "media asset"),
+  "/admin/cms/media-assets/{id}": adminMutableResourceItem("Admin CMS", "media asset"),
   "/admin/cms/seo-metadata": { put: operation({ summary: "Upsert SEO metadata", tags: ["Admin CMS"], secured: true }) },
 };
 
-const openApiDocument = {
+export const openApiDocument = {
   openapi: "3.1.0",
   info: {
     title: "Rammah API",

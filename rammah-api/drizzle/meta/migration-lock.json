@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "lockedMigrations": [
+    {
+      "tag": "0000_sleepy_killraven",
+      "sqlSha256": "c88bcab96fa44074b7c0064d27384349dcf4e9f1c66915aaf6b112e7f9eb06c4",
+      "snapshotSha256": "e56d817823c4aa30092c59ec5e9458612acb9439bfa73abdcf89c5d6c4078ae3"
+    },
+    {
+      "tag": "0001_mean_caretaker",
+      "sqlSha256": "f561d340f78c63bdddd4c3886d4d8f36c037b97014e38ec5ba53e6fa17249e96",
+      "snapshotSha256": "83f4fb47dd28486bbe306f913e2ae4254580657813a8b0f5a924d53e460a8576"
+    },
+    {
+      "tag": "0002_sticky_richard_fisk",
+      "sqlSha256": "f803f66a21894a7e3b7fa04337c2dce4b93f81da16e0eade72b03dad5c94b3a0",
+      "snapshotSha256": "94933808cdd1203ea0edde35e2961742228d12d6fb9583436b9a2fbce31926f9"
+    },
+    {
+      "tag": "0003_nasty_newton_destine",
+      "sqlSha256": "314a37ed078de4ad45d2b0dae0d824a38377a42f5c92fa25ca6844ea2f1992a5",
+      "snapshotSha256": "b2d7535e2511b15ca64d841867a936479df6b156843196d9bd115986c95ad8ee"
+    },
+    {
+      "tag": "0004_faulty_peter_quill",
+      "sqlSha256": "f69c02bae3a5c4145db0fbf32521c3fa44c72dee056eebbc0bbd987c0bdce355",
+      "snapshotSha256": "209cedef24cb4606070c3dd7d589eabb42849ce380d151ca7ec241fab983a7e0"
+    },
+    {
+      "tag": "0005_brown_shadowcat",
+      "sqlSha256": "75c5671cab0c930248fa6dfab8145e87a7ff4273467a6960067089ce1a17bb48",
+      "snapshotSha256": "105ee7b3a96ec65b32e057102914c7aafc2f986dd319b3078b168f7f33f1b2f5"
+    },
+    {
+      "tag": "0006_useful_revanche",
+      "sqlSha256": "f77304e59f382d20297757cb663840160d12beab017017e9f537036d9181527c",
+      "snapshotSha256": "08641fb6f63e38e1ef9f84aa8145adba86045e4f94f7abf8059772298d07b172"
+    },
+    {
+      "tag": "0007_flippant_molecule_man",
+      "sqlSha256": "58ee726eddda5ab6f4da90308c96841b35966ce4c0d5c66f786d5efcdae5fe9c",
+      "snapshotSha256": "cd8d295f6e4771618bc495d28cff6d3a4f7474582ae379422b453af9611b0a57"
+    }
+  ]
+}

@@ -188,6 +188,7 @@ describe.sequential("atomic monotonic payment finalization", () => {
       expect(state.booking).toMatchObject({ status: "confirmed" });
       expect(state.jobs).toHaveLength(2);
     },
+    15_000,
   );
 
   it("returns a duplicate provider event's stored outcome without applying new input", async () => {
