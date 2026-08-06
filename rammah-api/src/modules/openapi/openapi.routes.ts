@@ -165,6 +165,8 @@ const adminPaths: Record<string, PathSpec> = {
   "/admin/availability-overrides/{id}": adminResourceItem("Admin Availability", "availability override"),
   "/admin/availability-slots": { get: operation({ summary: "Preview admin availability slots", tags: ["Admin Availability"], secured: true }) },
   "/admin/cms/settings": { get: operation({ summary: "Get CMS settings", tags: ["Admin CMS"], secured: true }), patch: operation({ summary: "Update CMS settings", tags: ["Admin CMS"], secured: true }) },
+  "/admin/cms/definitions/sections": { get: operation({ summary: "List CMS section definitions", tags: ["Admin CMS"], secured: true }) },
+  "/admin/cms/definitions/global-media": { get: operation({ summary: "List global media definitions", tags: ["Admin CMS"], secured: true }) },
   "/admin/cms/navigation": adminResource("Admin CMS", "navigation items"),
   "/admin/cms/navigation/{id}": adminMutableResourceItem("Admin CMS", "navigation item"),
   "/admin/cms/legal-pages": adminResource("Admin CMS", "legal pages"),

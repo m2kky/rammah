@@ -45,6 +45,11 @@
       "tag": "0008_cultured_unus",
       "sqlSha256": "cd5cf5cf3cf6d8bcd6d8bd9b8d7591d5bbbf1a4cb8b1a2ba97ffc179ef4d5a59",
       "snapshotSha256": "b231762cf6b8b715092e77166fbff64e2cfc11b9e63fee5cb183be414fad18cb"
+    },
+    {
+      "tag": "0009_naive_thunderbird",
+      "sqlSha256": "ac18e825721455d0bbf82e304f488cd700629033aaf72e84d069a1c0faa102b5",
+      "snapshotSha256": "3ff8e2ba34cd16048b1f83bfd4be68f0deb961259148955bead7e184c9115f03"
     }
   ]
 }

@@ -22,6 +22,13 @@ const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull(
 export const adminRoleEnum = pgEnum("admin_role", ["owner", "admin", "editor", "viewer"]);
 export const adminStatusEnum = pgEnum("admin_status", ["active", "invited", "suspended", "disabled"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published", "scheduled", "archived"]);
+export const mediaSourceEnum = pgEnum("media_source", ["r2", "external"]);
+export const mediaKindEnum = pgEnum("media_kind", ["image", "video", "animation_bundle"]);
+export const mediaProcessingStateEnum = pgEnum("media_processing_state", [
+  "pending",
+  "ready",
+  "failed",
+]);
 export const offeringTypeEnum = pgEnum("offering_type", [
   "coaching",
   "therapy_session",
@@ -170,19 +177,67 @@ export const mediaAssets = pgTable(
   "media_assets",
   {
     id: id(),
+    displayName: text("display_name").notNull(),
     fileName: text("file_name").notNull(),
     mimeType: varchar("mime_type", { length: 120 }).notNull(),
-    storageKey: text("storage_key").notNull(),
+    sourceType: mediaSourceEnum("source_type").notNull().default("r2"),
+    mediaKind: mediaKindEnum("media_kind").notNull().default("image"),
+    storageKey: text("storage_key"),
     publicUrl: text("public_url"),
     altText: text("alt_text"),
     sizeBytes: integer("size_bytes").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    durationMs: integer("duration_ms"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    processingState: mediaProcessingStateEnum("processing_state").notNull().default("ready"),
+    processingError: text("processing_error"),
     status: contentStatusEnum("status").notNull().default("draft"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => ({
     storageKeyUnique: uniqueIndex("media_assets_storage_key_unique").on(table.storageKey),
-    statusIdx: index("media_assets_status_idx").on(table.status),
+    statusIdx: index("media_assets_status_idx").on(table.status, table.processingState),
+    sourceKindIdx: index("media_assets_source_kind_idx").on(table.sourceType, table.mediaKind),
+    sizeCheck: check("media_assets_size_nonnegative", sql`${table.sizeBytes} >= 0`),
+    widthCheck: check("media_assets_width_positive", sql`${table.width} IS NULL OR ${table.width} > 0`),
+    heightCheck: check("media_assets_height_positive", sql`${table.height} IS NULL OR ${table.height} > 0`),
+    durationCheck: check(
+      "media_assets_duration_nonnegative",
+      sql`${table.durationMs} IS NULL OR ${table.durationMs} >= 0`,
+    ),
+    sourceCheck: check(
+      "media_assets_source_fields",
+      sql`(${table.sourceType} = 'r2' AND ${table.storageKey} IS NOT NULL) OR (${table.sourceType} = 'external' AND ${table.publicUrl} ~ '^https://')`,
+    ),
+  }),
+);
+
+export const globalMediaAssignmentSets = pgTable(
+  "global_media_assignment_sets",
+  {
+    id: id(),
+    definitionKey: varchar("definition_key", { length: 120 }).notNull(),
+    version: integer("version").notNull(),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    definitionVersionUnique: uniqueIndex("global_media_assignment_sets_definition_version_unique").on(
+      table.definitionKey,
+      table.version,
+    ),
+    onePublishedVersion: uniqueIndex("global_media_assignment_sets_one_published_version")
+      .on(table.definitionKey)
+      .where(sql`${table.status} = 'published'`),
+    definitionStatusIdx: index("global_media_assignment_sets_definition_status_idx").on(
+      table.definitionKey,
+      table.status,
+    ),
+    versionCheck: check("global_media_assignment_sets_version_positive", sql`${table.version} > 0`),
   }),
 );
 
@@ -316,6 +371,62 @@ export const offerings = pgTable(
       "offerings_valid_scheduling_configuration",
       sql`((${table.schedulingMode} = 'appointment' AND ${table.durationMinutes} IS NOT NULL AND ${table.durationMinutes} > 0) OR (${table.schedulingMode} = 'scheduled_program' AND ${table.durationMinutes} IS NULL)) AND ${table.bufferBeforeMinutes} >= 0 AND ${table.bufferAfterMinutes} >= 0`,
     ),
+  }),
+);
+
+export const sectionMediaAssignments = pgTable(
+  "section_media_assignments",
+  {
+    id: id(),
+    pageSectionId: uuid("page_section_id")
+      .notNull()
+      .references(() => pageSections.id, { onDelete: "cascade" }),
+    slotKey: varchar("slot_key", { length: 120 }).notNull(),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    altTextOverride: text("alt_text_override"),
+    decorative: boolean("decorative").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    slotOrderUnique: uniqueIndex("section_media_assignments_slot_order_unique").on(
+      table.pageSectionId,
+      table.slotKey,
+      table.sortOrder,
+    ),
+    assetIdx: index("section_media_assignments_asset_idx").on(table.mediaAssetId),
+    orderCheck: check("section_media_assignments_order_nonnegative", sql`${table.sortOrder} >= 0`),
+  }),
+);
+
+export const globalMediaAssignments = pgTable(
+  "global_media_assignments",
+  {
+    id: id(),
+    assignmentSetId: uuid("assignment_set_id")
+      .notNull()
+      .references(() => globalMediaAssignmentSets.id, { onDelete: "cascade" }),
+    slotKey: varchar("slot_key", { length: 120 }).notNull(),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    altTextOverride: text("alt_text_override"),
+    decorative: boolean("decorative").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    slotOrderUnique: uniqueIndex("global_media_assignments_slot_order_unique").on(
+      table.assignmentSetId,
+      table.slotKey,
+      table.sortOrder,
+    ),
+    assetIdx: index("global_media_assignments_asset_idx").on(table.mediaAssetId),
+    orderCheck: check("global_media_assignments_order_nonnegative", sql`${table.sortOrder} >= 0`),
   }),
 );
 
