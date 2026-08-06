@@ -183,6 +183,19 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
     setError("");
 
     try {
+      const hasEarlyBookingAmount = form.earlyBirdAmount.trim().length > 0;
+      const hasEarlyBookingExpiry = form.earlyBirdEndsAt.trim().length > 0;
+      if (hasEarlyBookingAmount !== hasEarlyBookingExpiry) {
+        setError("Enter both the Early-booking price and its end date and time.");
+        return;
+      }
+      if (
+        hasEarlyBookingAmount &&
+        amountToMinor(form.earlyBirdAmount) >= amountToMinor(form.baseAmount)
+      ) {
+        setError("Early-booking price must be lower than the Standard price.");
+        return;
+      }
       const payload = toPayload(form);
 
       if (editingPriceId) {
@@ -287,7 +300,7 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
 
             <label className="block">
               <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                Base amount
+                Standard price
               </span>
               <input
                 type="number"
@@ -298,11 +311,14 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
                 className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
                 required
               />
+              <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                Normal price in the selected currency.
+              </span>
             </label>
 
             <label className="block">
               <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                Early bird
+                Early-booking price
               </span>
               <input
                 type="number"
@@ -312,6 +328,9 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
                 onChange={(event) => updateForm("earlyBirdAmount", event.target.value)}
                 className="mt-2 h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
               />
+              <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                Optional discount; add its end date and time below.
+              </span>
             </label>
 
             <label className="block">
@@ -352,7 +371,7 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
 
             <label className="block xl:col-span-2">
               <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                Early bird ends
+                Early-booking ends
               </span>
               <input
                 type="datetime-local"
@@ -382,10 +401,10 @@ export default function AdminOfferingPricing({ offeringId }: { offeringId?: stri
                     Market
                   </th>
                   <th className="py-3 pr-5 font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
-                    Base
+                    Standard
                   </th>
                   <th className="py-3 pr-5 font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
-                    Early bird
+                    Early-booking
                   </th>
                   <th className="py-3 pr-5 font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
                     Status

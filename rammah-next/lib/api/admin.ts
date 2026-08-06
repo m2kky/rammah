@@ -103,51 +103,38 @@ export type AdminOfferingPrice = {
   updatedAt: string;
 };
 
-export type AdminAvailabilityRule = {
+export type AdminAvailabilityWindowStatus = "draft" | "published" | "archived";
+
+export type AdminAvailabilityWindow = {
   id: string;
-  offering: {
-    id: string;
-    title: string;
-    slug: string;
-  };
   weekday: number;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  status: AdminOfferingStatus;
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AdminAvailabilityWindowStatus;
+  allowedActions: {
+    edit: boolean;
+    archive: boolean;
+    delete: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 };
 
-export type AdminAvailabilityOverrideType = "available" | "blocked";
+export type AdminAvailabilityOverrideType = "available" | "unavailable";
 
 export type AdminAvailabilityOverride = {
   id: string;
-  offering: {
-    id: string;
-    title: string;
-    slug: string;
-  };
-  availabilityRule: {
-    id: string;
-    weekday: number | null;
-    startTime: string | null;
-    endTime: string | null;
-  } | null;
   date: string;
-  overrideType: AdminAvailabilityOverrideType;
-  startsAt: string | null;
-  endsAt: string | null;
+  type: AdminAvailabilityOverrideType;
+  startLocalTime: string | null;
+  endLocalTime: string | null;
   reason: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 export type AdminAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
-export type AdminAvailabilitySlotSource = "rule" | "available_override";
+export type AdminAvailabilitySlotSource = "window" | "available_override";
 
 export type AdminAvailabilitySlot = {
   date: string;
@@ -156,7 +143,7 @@ export type AdminAvailabilitySlot = {
   timezone: string;
   status: AdminAvailabilitySlotStatus;
   source: AdminAvailabilitySlotSource;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   remainingCapacity: number;
   bookedCount: number;
@@ -169,10 +156,14 @@ export type AdminAvailabilitySlotPreview = {
     id: string;
     title: string;
     slug: string;
+    schedulingMode: "appointment";
     capacity: number;
     durationMinutes: number | null;
+    bufferBeforeMinutes: number;
+    bufferAfterMinutes: number;
     status: AdminOfferingStatus;
   };
+  timezone: string;
   dateFrom: string;
   dateTo: string;
   days: Array<{
@@ -181,6 +172,15 @@ export type AdminAvailabilitySlotPreview = {
     slots: AdminAvailabilitySlot[];
     availableCount: number;
     totalCount: number;
+  }>;
+  programBlockers: Array<{
+    occurrenceId: string;
+    programId: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    readOnly: true;
   }>;
   availableCount: number;
   totalCount: number;
@@ -596,25 +596,18 @@ export type AdminOfferingPricePayload = {
   status: AdminOfferingStatus;
 };
 
-export type AdminAvailabilityRulePayload = {
-  offeringId: string;
+export type AdminAvailabilityWindowPayload = {
   weekday: number;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  status: AdminOfferingStatus;
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AdminAvailabilityWindowStatus;
 };
 
 export type AdminAvailabilityOverridePayload = {
-  offeringId: string;
-  availabilityRuleId?: string | null;
   date: string;
-  overrideType: AdminAvailabilityOverrideType;
-  startsAt?: string | null;
-  endsAt?: string | null;
+  type: AdminAvailabilityOverrideType;
+  startLocalTime?: string | null;
+  endLocalTime?: string | null;
   reason?: string | null;
 };
 
@@ -888,16 +881,16 @@ export const archiveAdminOffering = async (id: string) => {
   });
 };
 
-export const fetchAdminAvailabilityRules = async (
+export const fetchAdminAvailabilityWindows = async (
   filters: {
-    offeringId?: string | "all";
-    status?: AdminOfferingStatus | "all";
+    status?: AdminAvailabilityWindowStatus | "all";
+    weekday?: number | "all";
   } = {},
 ) => {
   const params = new URLSearchParams();
 
-  if (filters.offeringId && filters.offeringId !== "all") {
-    params.set("offeringId", filters.offeringId);
+  if (filters.weekday !== undefined && filters.weekday !== "all") {
+    params.set("weekday", String(filters.weekday));
   }
 
   if (filters.status && filters.status !== "all") {
@@ -905,18 +898,18 @@ export const fetchAdminAvailabilityRules = async (
   }
 
   const queryString = params.toString();
-  const payload = await adminRequest<{ data: AdminAvailabilityRule[] }>(
-    `/admin/availability-rules${queryString ? `?${queryString}` : ""}`,
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow[] }>(
+    `/admin/availability-windows${queryString ? `?${queryString}` : ""}`,
   );
 
   return payload.data;
 };
 
-export const createAdminAvailabilityRule = async (
-  input: AdminAvailabilityRulePayload,
+export const createAdminAvailabilityWindow = async (
+  input: AdminAvailabilityWindowPayload,
 ) => {
-  const payload = await adminRequest<{ data: AdminAvailabilityRule }>(
-    "/admin/availability-rules",
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow }>(
+    "/admin/availability-windows",
     {
       method: "POST",
       body: JSON.stringify(input),
@@ -926,12 +919,12 @@ export const createAdminAvailabilityRule = async (
   return payload.data;
 };
 
-export const updateAdminAvailabilityRule = async (
+export const updateAdminAvailabilityWindow = async (
   id: string,
-  input: Partial<AdminAvailabilityRulePayload>,
+  input: Partial<AdminAvailabilityWindowPayload>,
 ) => {
-  const payload = await adminRequest<{ data: AdminAvailabilityRule }>(
-    `/admin/availability-rules/${id}`,
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow }>(
+    `/admin/availability-windows/${id}`,
     {
       method: "PATCH",
       body: JSON.stringify(input),
@@ -941,33 +934,23 @@ export const updateAdminAvailabilityRule = async (
   return payload.data;
 };
 
-export const archiveAdminAvailabilityRule = async (id: string) => {
-  await adminRequest<void>(`/admin/availability-rules/${id}`, {
+export const deleteOrArchiveAdminAvailabilityWindow = async (id: string) => {
+  await adminRequest<void>(`/admin/availability-windows/${id}`, {
     method: "DELETE",
   });
 };
 
 export const fetchAdminAvailabilityOverrides = async (
   filters: {
-    offeringId?: string | "all";
-    availabilityRuleId?: string | "all";
-    overrideType?: AdminAvailabilityOverrideType | "all";
+    type?: AdminAvailabilityOverrideType | "all";
     dateFrom?: string;
     dateTo?: string;
   } = {},
 ) => {
   const params = new URLSearchParams();
 
-  if (filters.offeringId && filters.offeringId !== "all") {
-    params.set("offeringId", filters.offeringId);
-  }
-
-  if (filters.availabilityRuleId && filters.availabilityRuleId !== "all") {
-    params.set("availabilityRuleId", filters.availabilityRuleId);
-  }
-
-  if (filters.overrideType && filters.overrideType !== "all") {
-    params.set("overrideType", filters.overrideType);
+  if (filters.type && filters.type !== "all") {
+    params.set("type", filters.type);
   }
 
   if (filters.dateFrom?.trim()) {

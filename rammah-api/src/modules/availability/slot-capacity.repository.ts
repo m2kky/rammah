@@ -1,16 +1,17 @@
-import { and, eq, gt, inArray, lt, ne, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne, type SQL } from "drizzle-orm";
 import { env } from "../../config/env.js";
 import { db } from "../../db/client.js";
 import {
-  availabilityOverrides,
-  availabilityRules,
+  availabilityWindows,
   bookingSlotHolds,
   bookings,
   externalCalendarBusyBlocks,
+  globalAvailabilityOverrides,
   offeringSessions,
   offerings,
   scheduledProgramOccurrences,
   scheduledPrograms,
+  siteSettings,
 } from "../../db/schema/index.js";
 import {
   acquireCapacityLock,
@@ -26,7 +27,7 @@ import {
 } from "../../shared/datetime/iana-wall-time.js";
 import {
   buildAvailableOverrideSlots,
-  buildRuleSlots,
+  buildWindowSlots,
   dedupeSlots,
   findBlockingOverride,
 } from "./availability-slots.service.js";
@@ -185,9 +186,26 @@ const hasGlobalScheduleConflict = async (
     )
     .where(and(...programHoldConditions))
     .limit(1);
+  const publishedProgramRows = await tx
+    .select({ id: scheduledProgramOccurrences.id })
+    .from(scheduledProgramOccurrences)
+    .innerJoin(
+      scheduledPrograms,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .where(
+      and(
+        eq(scheduledPrograms.status, "published"),
+        eq(scheduledProgramOccurrences.status, "scheduled"),
+        lt(scheduledProgramOccurrences.startsAt, input.endsAt),
+        gt(scheduledProgramOccurrences.endsAt, input.startsAt),
+      ),
+    )
+    .limit(1);
   const targetKey = scheduleGroupKey(input);
 
   return (
+    publishedProgramRows.length > 0 ||
     programBookingRows.length > 0 ||
     programHoldRows.length > 0 ||
     [...bookingRows, ...holdRows].some(
@@ -733,6 +751,8 @@ export const withAvailableSlotCapacity = async <T>(
         title: offerings.title,
         slug: offerings.slug,
         durationMinutes: offerings.durationMinutes,
+        bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+        bufferAfterMinutes: offerings.bufferAfterMinutes,
         capacity: offerings.capacity,
         status: offerings.status,
         attendanceMode: offerings.attendanceMode,
@@ -756,64 +776,38 @@ export const withAvailableSlotCapacity = async <T>(
       return null;
     }
 
-    const rules = await tx
+    const windows = await tx
       .select({
-        id: availabilityRules.id,
-        offeringId: availabilityRules.offeringId,
-        weekday: availabilityRules.weekday,
-        startTime: availabilityRules.startTime,
-        endTime: availabilityRules.endTime,
-        timezone: availabilityRules.timezone,
-        slotDurationMinutes: availabilityRules.slotDurationMinutes,
-        bufferBeforeMinutes: availabilityRules.bufferBeforeMinutes,
-        bufferAfterMinutes: availabilityRules.bufferAfterMinutes,
-        status: availabilityRules.status,
+        id: availabilityWindows.id,
+        weekday: availabilityWindows.weekday,
+        startLocalTime: availabilityWindows.startLocalTime,
+        endLocalTime: availabilityWindows.endLocalTime,
+        status: availabilityWindows.status,
       })
-      .from(availabilityRules)
-      .where(
-        and(
-          eq(availabilityRules.offeringId, input.offeringId),
-          eq(availabilityRules.status, "published"),
-        ),
-      );
-    const timezoneCandidates = new Set(rules.map((rule) => rule.timezone));
-    if (timezoneCandidates.size === 0) {
-      timezoneCandidates.add("Africa/Cairo");
-    }
-    const dates = [...timezoneCandidates]
-      .map((timezone) => instantToDateKey(input.startsAt, timezone))
-      .filter((date, index, values) => values.indexOf(date) === index);
+      .from(availabilityWindows)
+      .where(eq(availabilityWindows.status, "published"));
+    const timezoneRows = await tx
+      .select({ timezone: siteSettings.bookingDefaultTimezone })
+      .from(siteSettings)
+      .orderBy(asc(siteSettings.createdAt), asc(siteSettings.id))
+      .limit(1);
+    const timezone = timezoneRows[0]?.timezone ?? "Africa/Cairo";
+    const dates = [instantToDateKey(input.startsAt, timezone)];
     const dateValues = dates.map((date) => new Date(`${date}T00:00:00.000Z`));
     const overrides = await tx
       .select({
-        id: availabilityOverrides.id,
-        availabilityRuleId: availabilityOverrides.availabilityRuleId,
-        offeringId: availabilityOverrides.offeringId,
-        date: availabilityOverrides.date,
-        overrideType: availabilityOverrides.overrideType,
-        startsAt: availabilityOverrides.startsAt,
-        endsAt: availabilityOverrides.endsAt,
-        reason: availabilityOverrides.reason,
-        ruleWeekday: availabilityRules.weekday,
-        ruleTimezone: availabilityRules.timezone,
-        ruleSlotDurationMinutes: availabilityRules.slotDurationMinutes,
-        ruleBufferBeforeMinutes: availabilityRules.bufferBeforeMinutes,
-        ruleBufferAfterMinutes: availabilityRules.bufferAfterMinutes,
+        id: globalAvailabilityOverrides.id,
+        date: globalAvailabilityOverrides.date,
+        overrideMode: globalAvailabilityOverrides.overrideMode,
+        startLocalTime: globalAvailabilityOverrides.startLocalTime,
+        endLocalTime: globalAvailabilityOverrides.endLocalTime,
+        reason: globalAvailabilityOverrides.reason,
       })
-      .from(availabilityOverrides)
-      .leftJoin(
-        availabilityRules,
-        eq(availabilityOverrides.availabilityRuleId, availabilityRules.id),
-      )
-      .where(
-        and(
-          eq(availabilityOverrides.offeringId, input.offeringId),
-          inArray(availabilityOverrides.date, dates),
-        ),
-      );
+      .from(globalAvailabilityOverrides)
+      .where(inArray(globalAvailabilityOverrides.date, dates));
     const candidates = dedupeSlots([
-      ...buildRuleSlots(dateValues, rules),
-      ...buildAvailableOverrideSlots(offering, overrides),
+      ...buildWindowSlots(dateValues, windows, offering, timezone),
+      ...buildAvailableOverrideSlots(offering, overrides, timezone),
     ]);
     const target = candidates.find(
       (candidate) =>

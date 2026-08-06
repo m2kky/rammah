@@ -13,7 +13,7 @@ type PublicBookingLocation = {
 } | null;
 
 export type PublicAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
-export type PublicAvailabilitySlotSource = "rule" | "available_override";
+export type PublicAvailabilitySlotSource = "window" | "available_override";
 
 export type PublicAvailabilitySlot = {
   date: string;
@@ -22,7 +22,7 @@ export type PublicAvailabilitySlot = {
   timezone: string;
   status: PublicAvailabilitySlotStatus;
   source: PublicAvailabilitySlotSource;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   remainingCapacity: number;
   bookedCount: number;
@@ -35,10 +35,14 @@ export type PublicAvailabilitySlotPreview = {
     id: string;
     title: string;
     slug: string;
+    schedulingMode: "appointment";
     capacity: number;
     durationMinutes: number | null;
+    bufferBeforeMinutes: number;
+    bufferAfterMinutes: number;
     status: string;
   };
+  timezone: string;
   dateFrom: string;
   dateTo: string;
   days: Array<{
@@ -47,6 +51,15 @@ export type PublicAvailabilitySlotPreview = {
     slots: PublicAvailabilitySlot[];
     availableCount: number;
     totalCount: number;
+  }>;
+  programBlockers: Array<{
+    occurrenceId: string;
+    programId: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    readOnly: true;
   }>;
   availableCount: number;
   totalCount: number;

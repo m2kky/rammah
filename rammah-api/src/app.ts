@@ -8,7 +8,7 @@ import { notFoundMiddleware } from "./middleware/not-found.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
 import { adminAvailabilityOverridesRouter } from "./modules/availability/admin-availability-overrides.routes.js";
 import { adminAvailabilitySlotsRouter } from "./modules/availability/admin-availability-slots.routes.js";
-import { adminAvailabilityRouter } from "./modules/availability/admin-availability.routes.js";
+import { adminAvailabilityWindowsRouter } from "./modules/availability/admin-availability.routes.js";
 import { publicAvailabilitySlotsRouter } from "./modules/availability/public-availability-slots.routes.js";
 import { slotHoldsRouter } from "./modules/availability/slot-holds.routes.js";
 import { adminAuthRouter } from "./modules/auth/auth.routes.js";
@@ -73,7 +73,7 @@ export const createApp = () => {
   app.use(`${env.API_BASE_PATH}/admin/quote-requests`, adminQuoteRequestsRouter);
   app.use(`${env.API_BASE_PATH}/admin/cms`, adminCmsRouter);
   app.use(`${env.API_BASE_PATH}/admin/integrations/google-calendar`, adminGoogleCalendarRouter);
-  app.use(`${env.API_BASE_PATH}/admin/availability-rules`, adminAvailabilityRouter);
+  app.use(`${env.API_BASE_PATH}/admin/availability-windows`, adminAvailabilityWindowsRouter);
   app.use(`${env.API_BASE_PATH}/admin/availability-overrides`, adminAvailabilityOverridesRouter);
   app.use(`${env.API_BASE_PATH}/admin/availability-slots`, adminAvailabilitySlotsRouter);
 

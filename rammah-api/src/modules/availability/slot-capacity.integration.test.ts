@@ -2,11 +2,11 @@ import { and, eq, gt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { env } from "../../config/env.js";
 import {
-  availabilityOverrides,
-  availabilityRules,
+  availabilityWindows,
   bookingSlotHolds,
   bookings,
   externalCalendarBusyBlocks,
+  globalAvailabilityOverrides,
   offeringSessions,
   offerings,
   scheduledProgramOccurrences,
@@ -51,24 +51,19 @@ const seedOffering = async (capacity: number) => {
 const seedRecurringTarget = async (capacity: number) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(capacity);
-  const [rule] = await db
-    .insert(availabilityRules)
+  const [window] = await db
+    .insert(availabilityWindows)
     .values({
-      offeringId: offering.id,
       weekday: recurringWindowStart.getDay(),
-      startTime: "10:00",
-      endTime: "14:00",
-      timezone: "Africa/Cairo",
-      slotDurationMinutes: 60,
-      bufferBeforeMinutes: 0,
-      bufferAfterMinutes: 0,
+      startLocalTime: "10:00",
+      endLocalTime: "14:00",
       status: "published",
     })
     .returning();
 
   return {
     offering,
-    rule: rule!,
+    window: window!,
     input: {
       offeringId: offering.id,
       startsAt: firstRecurringSlot.startsAt.toISOString(),
@@ -359,15 +354,18 @@ describe.sequential("atomic public slot-hold capacity", () => {
   it("matches generated buffer spacing without counting the buffer as occupied time", async () => {
     const { db } = getTestDatabase();
     const offering = await seedOffering(1);
-    await db.insert(availabilityRules).values({
-      offeringId: offering.id,
+    await db
+      .update(offerings)
+      .set({
+        durationMinutes: 30,
+        bufferBeforeMinutes: 10,
+        bufferAfterMinutes: 5,
+      })
+      .where(eq(offerings.id, offering.id));
+    await db.insert(availabilityWindows).values({
       weekday: recurringWindowStart.getDay(),
-      startTime: "10:00",
-      endTime: "12:00",
-      timezone: "Africa/Cairo",
-      slotDurationMinutes: 30,
-      bufferBeforeMinutes: 10,
-      bufferAfterMinutes: 5,
+      startLocalTime: "10:00",
+      endLocalTime: "12:00",
       status: "published",
     });
     const startsAt = new Date(`${recurringDate}T10:10:00`);
@@ -395,14 +393,10 @@ describe.sequential("atomic public slot-hold capacity", () => {
 
   it("rejects a recurring candidate overlapped by a blocked override", async () => {
     const { db } = getTestDatabase();
-    const { offering, rule, input } = await seedRecurringTarget(1);
-    await db.insert(availabilityOverrides).values({
-      offeringId: offering.id,
-      availabilityRuleId: rule.id,
+    const { input } = await seedRecurringTarget(1);
+    await db.insert(globalAvailabilityOverrides).values({
       date: recurringDate,
-      overrideType: "blocked",
-      startsAt: firstRecurringSlot.startsAt,
-      endsAt: firstRecurringSlot.endsAt,
+      overrideMode: "unavailable",
     });
 
     await expectUnavailable(createSlotHold(input));

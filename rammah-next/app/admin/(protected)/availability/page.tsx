@@ -6,8 +6,8 @@ export default function AdminAvailabilityPage() {
   return (
     <div className="space-y-10">
       <AdminAvailabilityRules />
-      <AdminAvailabilityCalendarOverview />
       <AdminAvailabilityOverrides />
+      <AdminAvailabilityCalendarOverview />
     </div>
   );
 }

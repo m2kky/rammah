@@ -4,7 +4,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../app.js";
 import {
-  availabilityRules,
+  availabilityWindows,
   bookingAnswers,
   bookingFormFields,
   bookingSlotHolds,
@@ -87,13 +87,10 @@ const seedRecurringTarget = async (input: {
 }) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(input);
-  await db.insert(availabilityRules).values({
-    offeringId: offering.id,
+  await db.insert(availabilityWindows).values({
     weekday: recurringSlot.startsAt.getDay(),
-    startTime: "10:00",
-    endTime: "12:00",
-    timezone: "Africa/Cairo",
-    slotDurationMinutes: 60,
+    startLocalTime: "10:00",
+    endLocalTime: "12:00",
     status: "published",
   });
 

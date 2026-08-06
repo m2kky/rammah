@@ -36,11 +36,16 @@ const formatMonth = (date: Date) =>
     month: "short",
   }).format(date);
 
-const formatTime = (value: string) => {
+const formatTime = (value: string, timezone: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
 
-  return `${padNumber(date.getHours())}:${padNumber(date.getMinutes())}`;
+  return new Intl.DateTimeFormat("en", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  }).format(date);
 };
 
 const slotStatusStyles: Record<CalendarSlot["status"], string> = {
@@ -59,7 +64,7 @@ const slotStatusLabels: Record<CalendarSlot["status"], string> = {
 
 const getSlotLabel = (slot: CalendarSlot, showOffering: boolean) => {
   const prefix = showOffering ? `${slot.offering.title}: ` : "";
-  const range = `${formatTime(slot.startsAt)}-${formatTime(slot.endsAt)}`;
+  const range = `${formatTime(slot.startsAt, slot.timezone)}-${formatTime(slot.endsAt, slot.timezone)}`;
 
   return `${prefix}${range}`;
 };
@@ -67,7 +72,7 @@ const getSlotLabel = (slot: CalendarSlot, showOffering: boolean) => {
 export default function AdminAvailabilityCalendarOverview() {
   const [offerings, setOfferings] = useState<AdminOffering[]>([]);
   const [previews, setPreviews] = useState<AdminAvailabilitySlotPreview[]>([]);
-  const [offeringFilter, setOfferingFilter] = useState<string | "all">("all");
+  const [offeringFilter, setOfferingFilter] = useState("");
   const [daysCount, setDaysCount] = useState("14");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,7 +95,8 @@ export default function AdminAvailabilityCalendarOverview() {
       offerings.filter(
         (offering) =>
           offering.status !== "archived" &&
-          (offeringFilter === "all" || offering.id === offeringFilter),
+          offering.schedulingMode === "appointment" &&
+          offering.id === offeringFilter,
       ),
     [offeringFilter, offerings],
   );
@@ -144,10 +150,15 @@ export default function AdminAvailabilityCalendarOverview() {
 
     try {
       const nextOfferings = await fetchAdminOfferings({ status: "all" });
-      const previewOfferings = nextOfferings.filter(
+      const appointmentOfferings = nextOfferings.filter(
         (offering) =>
-          offering.status !== "archived" &&
-          (offeringFilter === "all" || offering.id === offeringFilter),
+          offering.status !== "archived" && offering.schedulingMode === "appointment",
+      );
+      const selectedOfferingId = appointmentOfferings.some(({ id }) => id === offeringFilter)
+        ? offeringFilter
+        : appointmentOfferings[0]?.id ?? "";
+      const previewOfferings = appointmentOfferings.filter(
+        ({ id }) => id === selectedOfferingId,
       );
       const nextPreviews = await Promise.all(
         previewOfferings.map((offering) =>
@@ -160,6 +171,9 @@ export default function AdminAvailabilityCalendarOverview() {
       );
 
       setOfferings(nextOfferings);
+      if (selectedOfferingId !== offeringFilter) {
+        setOfferingFilter(selectedOfferingId);
+      }
       setPreviews(nextPreviews);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load overview.");
@@ -172,7 +186,8 @@ export default function AdminAvailabilityCalendarOverview() {
     void loadOverview();
   }, [loadOverview]);
 
-  const showOffering = offeringFilter === "all";
+  const showOffering = false;
+  const programBlockers = previews.flatMap((preview) => preview.programBlockers);
 
   return (
     <section className="space-y-7 border-t border-[#102329]/12 pt-8">
@@ -185,7 +200,8 @@ export default function AdminAvailabilityCalendarOverview() {
             Availability overview
           </h2>
           <p className="mt-3 max-w-2xl font-inter text-sm leading-6 text-[#102329]/62">
-            Calculated slot preview from weekly rules, date overrides, bookings, and active holds.
+            Select one regular appointment Offering. Its duration, capacity, and buffers are
+            applied to the global working hours and date overrides.
           </p>
         </div>
 
@@ -228,8 +244,8 @@ export default function AdminAvailabilityCalendarOverview() {
             onChange={(event) => setOfferingFilter(event.target.value)}
             className="h-11 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
           >
-            <option value="all">All offerings</option>
-            {offerings.map((offering) => (
+            <option value="" disabled>Select an appointment Offering</option>
+            {offerings.filter((offering) => offering.schedulingMode === "appointment" && offering.status !== "archived").map((offering) => (
               <option key={offering.id} value={offering.id}>
                 {offering.title}
               </option>
@@ -256,6 +272,24 @@ export default function AdminAvailabilityCalendarOverview() {
           {error}
         </p>
       )}
+
+      {programBlockers.length > 0 ? (
+        <div className="border border-[#8A6F2A]/35 bg-[#8A6F2A]/5 p-4">
+          <p className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#8A6F2A]">
+            Read-only Program blockers
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {programBlockers.map((blocker) => (
+              <p key={blocker.occurrenceId} className="font-inter text-sm text-[#102329]/70">
+                {blocker.title}: {formatTime(blocker.startsAt, blocker.timezone)}-{formatTime(blocker.endsAt, blocker.timezone)} ({blocker.timezone})
+              </p>
+            ))}
+          </div>
+          <p className="mt-3 font-inter text-xs text-[#102329]/52">
+            Manage these dates from Events &amp; Programs; they cannot be edited from Availability.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid overflow-hidden border border-[#102329]/12 bg-white/35 sm:grid-cols-2 lg:grid-cols-7">
         {isLoading

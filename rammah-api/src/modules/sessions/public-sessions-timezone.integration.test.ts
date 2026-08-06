@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../../config/env.js";
 import {
-  availabilityRules,
+  availabilityWindows,
   bookings,
   offerings,
   scheduledProgramOccurrences,
@@ -44,15 +44,10 @@ const seedRecurringBoundaryTarget = async () => {
     })
     .returning();
 
-  await db.insert(availabilityRules).values({
-    offeringId: offering!.id,
+  await db.insert(availabilityWindows).values({
     weekday: 2,
-    startTime: "00:30:00",
-    endTime: "01:30:00",
-    timezone: "Africa/Cairo",
-    slotDurationMinutes: 60,
-    bufferBeforeMinutes: 0,
-    bufferAfterMinutes: 0,
+    startLocalTime: "00:30:00",
+    endLocalTime: "01:30:00",
     status: "published",
   });
 

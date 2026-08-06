@@ -2,40 +2,30 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
 import {
-  findAdminAvailabilityRuleById,
-  findOfferingForAvailability,
-} from "./admin-availability.repository.js";
-import {
   deleteAdminAvailabilityOverride,
   findAdminAvailabilityOverrideById,
   findAdminAvailabilityOverrides,
-  findOverlappingAvailableOverride,
+  findAdminAvailabilityOverridesForDate,
   insertAdminAvailabilityOverride,
   updateAdminAvailabilityOverride,
   type AdminAvailabilityOverrideFilters,
-  type AdminAvailabilityOverrideInsert,
   type AdminAvailabilityOverrideRow,
   type AdminAvailabilityOverrideUpdate,
-  type OverrideType,
+  type AvailabilityOverrideMode,
 } from "./admin-availability-overrides.repository.js";
 
 export type AdminAvailabilityOverrideInput = {
-  offeringId: string;
-  availabilityRuleId?: string | null;
   date: string;
-  overrideType: OverrideType;
-  startsAt?: string | null;
-  endsAt?: string | null;
+  type: AvailabilityOverrideMode;
+  startLocalTime?: string | null;
+  endLocalTime?: string | null;
   reason?: string | null;
 };
-
 export type AdminAvailabilityOverridePatchInput =
   Partial<AdminAvailabilityOverrideInput>;
 
 const removeUndefined = <T extends Record<string, unknown>>(input: T) =>
-  Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined),
-  ) as Partial<T>;
+  Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<T>;
 
 const notFoundError = () =>
   new AppError({
@@ -55,55 +45,26 @@ const validationError = (
     details,
   });
 
-const toIsoStringOrNull = (value: Date | null) =>
-  value ? value.toISOString() : null;
-
-const toAdminAvailabilityOverride = (override: AdminAvailabilityOverrideRow) => {
-  if (!override.offeringId) {
-    throw new AppError({
-      code: "INTERNAL_ERROR",
-      message: "Availability override is missing an offering.",
-      statusCode: httpStatus.internalServerError,
-    });
-  }
-
-  return {
-    id: override.id,
-    offering: {
-      id: override.offeringId,
-      title: override.offeringTitle,
-      slug: override.offeringSlug,
-    },
-    availabilityRule: override.availabilityRuleId
-      ? {
-          id: override.availabilityRuleId,
-          weekday: override.ruleWeekday,
-          startTime: override.ruleStartTime,
-          endTime: override.ruleEndTime,
-        }
-      : null,
-    date: override.date,
-    overrideType: override.overrideType,
-    startsAt: toIsoStringOrNull(override.startsAt),
-    endsAt: toIsoStringOrNull(override.endsAt),
-    reason: override.reason,
-    createdAt: override.createdAt.toISOString(),
-    updatedAt: override.updatedAt.toISOString(),
-  };
-};
+const toAdminAvailabilityOverride = (override: AdminAvailabilityOverrideRow) => ({
+  id: override.id,
+  date: override.date,
+  type: override.overrideMode,
+  startLocalTime: override.startLocalTime?.slice(0, 5) ?? null,
+  endLocalTime: override.endLocalTime?.slice(0, 5) ?? null,
+  reason: override.reason,
+  createdAt: override.createdAt.toISOString(),
+  updatedAt: override.updatedAt.toISOString(),
+});
 
 const assertDate = (value: string) => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-
   if (!match) {
     throw validationError("Date must use YYYY-MM-DD format.", [
       { field: "date", message: "Use YYYY-MM-DD format." },
     ]);
   }
-
   const [, year, month, day] = match;
   const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-
   if (
     Number.isNaN(parsed.getTime()) ||
     parsed.getUTCFullYear() !== Number(year) ||
@@ -114,159 +75,107 @@ const assertDate = (value: string) => {
       { field: "date", message: "Use a valid calendar date." },
     ]);
   }
-
   return value;
 };
 
-const parseTimestamp = (
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
+const normalizeOptionalTime = (
   value: string | null | undefined,
-  field: "startsAt" | "endsAt",
+  field: "startLocalTime" | "endLocalTime",
 ) => {
-  if (value === undefined) return undefined;
-  if (value === null || value.trim() === "") return null;
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    throw validationError("Timestamp is invalid.", [
-      { field, message: "Use an ISO timestamp." },
+  if (value === undefined || value === null || value.trim() === "") return value ?? null;
+  const trimmed = value.trim();
+  if (!timePattern.test(trimmed)) {
+    throw validationError("Availability override time is invalid.", [
+      { field, message: "Use HH:MM or HH:MM:SS time." },
     ]);
   }
-
-  return date;
+  const [hour, minute] = trimmed.split(":");
+  return `${hour}:${minute}`;
 };
 
-const assertTarget = async (input: {
-  offeringId: string;
-  availabilityRuleId?: string | null;
-}) => {
-  const offering = await findOfferingForAvailability(input.offeringId);
-
-  if (!offering) {
-    throw new AppError({
-      code: "NOT_FOUND",
-      message: "Offering was not found.",
-      statusCode: httpStatus.notFound,
-    });
-  }
-
-  if (!input.availabilityRuleId) {
-    return;
-  }
-
-  const rule = await findAdminAvailabilityRuleById(input.availabilityRuleId);
-
-  if (!rule) {
-    throw new AppError({
-      code: "NOT_FOUND",
-      message: "Availability rule was not found.",
-      statusCode: httpStatus.notFound,
-    });
-  }
-
-  if (rule.offeringId !== input.offeringId) {
-    throw validationError("Availability rule does not belong to the selected offering.", [
-      {
-        field: "availabilityRuleId",
-        message: "Select a rule for the same offering.",
-      },
-    ]);
-  }
-};
-
-const assertOverrideWindow = (input: {
-  overrideType: OverrideType;
-  startsAt: Date | null;
-  endsAt: Date | null;
-}) => {
-  if (input.overrideType === "available" && (!input.startsAt || !input.endsAt)) {
-    throw validationError("Available overrides require a start and end time.", [
-      {
-        field: "startsAt",
-        message: "Start and end timestamps are required for available overrides.",
-      },
-    ]);
-  }
-
-  if ((input.startsAt && !input.endsAt) || (!input.startsAt && input.endsAt)) {
-    throw validationError("Override window must include both start and end.", [
-      {
-        field: "startsAt",
-        message: "Provide both start and end timestamps, or leave both empty.",
-      },
-    ]);
-  }
-
-  if (input.startsAt && input.endsAt && input.startsAt >= input.endsAt) {
-    throw validationError("Override start must be before end.", [
-      {
-        field: "startsAt",
-        message: "Start timestamp must be before end timestamp.",
-      },
-    ]);
-  }
+const timeToMinutes = (value: string) => {
+  const [hour = "0", minute = "0"] = value.split(":");
+  return Number(hour) * 60 + Number(minute);
 };
 
 const normalizeReason = (value: string | null | undefined) => {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-
-  const reason = value.trim();
-  return reason ? reason : null;
+  if (value === undefined || value === null) return value;
+  return value.trim() || null;
 };
 
-const assertAvailableOverrideInvariant = async (input: {
-  offeringId: string;
+const assertOverrideInvariant = async (input: {
   date: string;
-  overrideType: OverrideType;
-  startsAt: Date | null;
-  endsAt: Date | null;
+  type: AvailabilityOverrideMode;
+  startLocalTime: string | null;
+  endLocalTime: string | null;
   excludeId?: string;
 }) => {
-  if (input.overrideType !== "available" || !input.startsAt || !input.endsAt) {
-    return;
+  if (input.type === "available") {
+    if (!input.startLocalTime || !input.endLocalTime) {
+      throw validationError("Available overrides require a start and end time.", [
+        { field: "startLocalTime", message: "Provide both local start and end times." },
+      ]);
+    }
+    if (timeToMinutes(input.startLocalTime) >= timeToMinutes(input.endLocalTime)) {
+      throw validationError("Override start time must be before end time.", [
+        { field: "startLocalTime", message: "Start time must be before end time." },
+      ]);
+    }
+  } else if (input.startLocalTime || input.endLocalTime) {
+    throw validationError("A closed date cannot include an available time window.", [
+      { field: "type", message: "Remove the times or choose Available window." },
+    ]);
   }
 
-  const overlap = await findOverlappingAvailableOverride({
-    offeringId: input.offeringId,
-    date: input.date,
-    startsAt: input.startsAt,
-    endsAt: input.endsAt,
-    excludeId: input.excludeId,
-  });
-
-  if (overlap) {
-    throw validationError("Available overrides cannot overlap.", [
-      {
-        field: "startsAt",
-        message: "Choose a window that does not overlap another available override.",
-      },
+  const existing = await findAdminAvailabilityOverridesForDate(input.date, input.excludeId);
+  if (input.type === "unavailable" && existing.length > 0) {
+    throw validationError("A closed date cannot be combined with other overrides.", [
+      { field: "date", message: "Remove the other overrides for this date first." },
     ]);
+  }
+  const closed = existing.find(({ overrideMode }) => overrideMode === "unavailable");
+  if (closed) {
+    throw validationError("This date is already closed.", [
+      { field: "date", message: `Remove closed-date override ${closed.id} first.` },
+    ]);
+  }
+  if (input.type === "available" && input.startLocalTime && input.endLocalTime) {
+    const conflicts = existing.filter(
+      (override) =>
+        override.overrideMode === "available" &&
+        override.startLocalTime &&
+        override.endLocalTime &&
+        timeToMinutes(input.startLocalTime!) < timeToMinutes(override.endLocalTime) &&
+        timeToMinutes(input.endLocalTime!) > timeToMinutes(override.startLocalTime),
+    );
+    if (conflicts.length > 0) {
+      throw validationError("Available override windows cannot overlap.", [
+        {
+          field: "startLocalTime",
+          message: `Conflicts with override IDs: ${conflicts.map(({ id }) => id).sort().join(", ")}.`,
+        },
+      ]);
+    }
   }
 };
 
 export const listAdminAvailabilityOverrides = async (
   filters: AdminAvailabilityOverrideFilters,
 ) => {
-  if (filters.dateFrom) {
-    assertDate(filters.dateFrom);
+  if (filters.dateFrom) assertDate(filters.dateFrom);
+  if (filters.dateTo) assertDate(filters.dateTo);
+  if (filters.dateFrom && filters.dateTo && filters.dateFrom > filters.dateTo) {
+    throw validationError("Date range is invalid.", [
+      { field: "dateFrom", message: "dateFrom must be before or equal to dateTo." },
+    ]);
   }
-
-  if (filters.dateTo) {
-    assertDate(filters.dateTo);
-  }
-
-  const overrides = await findAdminAvailabilityOverrides(filters);
-  return overrides.map(toAdminAvailabilityOverride);
+  return (await findAdminAvailabilityOverrides(filters)).map(toAdminAvailabilityOverride);
 };
 
 export const getAdminAvailabilityOverride = async (id: string) => {
   const override = await findAdminAvailabilityOverrideById(id);
-
-  if (!override) {
-    throw notFoundError();
-  }
-
+  if (!override) throw notFoundError();
   return toAdminAvailabilityOverride(override);
 };
 
@@ -275,36 +184,21 @@ export const createAdminAvailabilityOverride = async (
   auditContext?: AuditContext,
 ) => {
   const date = assertDate(input.date);
-  const startsAt = parseTimestamp(input.startsAt, "startsAt") ?? null;
-  const endsAt = parseTimestamp(input.endsAt, "endsAt") ?? null;
-
-  await assertTarget({
-    offeringId: input.offeringId,
-    availabilityRuleId: input.availabilityRuleId,
-  });
-  assertOverrideWindow({
-    overrideType: input.overrideType,
-    startsAt,
-    endsAt,
-  });
-  await assertAvailableOverrideInvariant({
-    offeringId: input.offeringId,
+  const startLocalTime = normalizeOptionalTime(input.startLocalTime, "startLocalTime") ?? null;
+  const endLocalTime = normalizeOptionalTime(input.endLocalTime, "endLocalTime") ?? null;
+  await assertOverrideInvariant({
     date,
-    overrideType: input.overrideType,
-    startsAt,
-    endsAt,
+    type: input.type,
+    startLocalTime,
+    endLocalTime,
   });
-
   const override = await insertAdminAvailabilityOverride({
-    offeringId: input.offeringId,
-    availabilityRuleId: input.availabilityRuleId ?? null,
     date,
-    overrideType: input.overrideType,
-    startsAt,
-    endsAt,
+    overrideMode: input.type,
+    startLocalTime,
+    endLocalTime,
     reason: normalizeReason(input.reason) ?? null,
   });
-
   if (!override) {
     throw new AppError({
       code: "INTERNAL_ERROR",
@@ -312,18 +206,15 @@ export const createAdminAvailabilityOverride = async (
       statusCode: httpStatus.internalServerError,
     });
   }
-
-  const createdOverride = toAdminAvailabilityOverride(override);
-
+  const created = toAdminAvailabilityOverride(override);
   await writeAuditLog(auditContext, {
-    action: "admin.availability_overrides.create",
-    resourceType: "availability_override",
-    resourceId: createdOverride.id,
+    action: "admin.global_availability_overrides.create",
+    resourceType: "global_availability_override",
+    resourceId: created.id,
     beforeSnapshot: null,
-    afterSnapshot: createdOverride,
+    afterSnapshot: created,
   });
-
-  return createdOverride;
+  return created;
 };
 
 export const updateAdminAvailabilityOverrideById = async (
@@ -331,106 +222,59 @@ export const updateAdminAvailabilityOverrideById = async (
   input: AdminAvailabilityOverridePatchInput,
   auditContext?: AuditContext,
 ) => {
-  const existingOverride = await findAdminAvailabilityOverrideById(id);
+  const existing = await findAdminAvailabilityOverrideById(id);
+  if (!existing) throw notFoundError();
 
-  if (!existingOverride) {
-    throw notFoundError();
+  const date = input.date === undefined ? existing.date : assertDate(input.date);
+  const type = input.type ?? existing.overrideMode;
+  let startLocalTime = input.startLocalTime === undefined
+    ? existing.startLocalTime?.slice(0, 5) ?? null
+    : normalizeOptionalTime(input.startLocalTime, "startLocalTime") ?? null;
+  let endLocalTime = input.endLocalTime === undefined
+    ? existing.endLocalTime?.slice(0, 5) ?? null
+    : normalizeOptionalTime(input.endLocalTime, "endLocalTime") ?? null;
+  if (type === "unavailable") {
+    startLocalTime = null;
+    endLocalTime = null;
   }
+  await assertOverrideInvariant({ date, type, startLocalTime, endLocalTime, excludeId: id });
 
-  if (!existingOverride.offeringId) {
-    throw new AppError({
-      code: "INTERNAL_ERROR",
-      message: "Availability override is missing an offering.",
-      statusCode: httpStatus.internalServerError,
-    });
-  }
-
-  const offeringId = input.offeringId ?? existingOverride.offeringId;
-  const availabilityRuleId =
-    input.availabilityRuleId !== undefined
-      ? input.availabilityRuleId
-      : existingOverride.availabilityRuleId;
-  const date = input.date !== undefined ? assertDate(input.date) : existingOverride.date;
-  const overrideType = input.overrideType ?? existingOverride.overrideType;
-  const startsAt =
-    input.startsAt !== undefined
-      ? parseTimestamp(input.startsAt, "startsAt")
-      : existingOverride.startsAt;
-  const endsAt =
-    input.endsAt !== undefined
-      ? parseTimestamp(input.endsAt, "endsAt")
-      : existingOverride.endsAt;
-
-  await assertTarget({
-    offeringId,
-    availabilityRuleId,
-  });
-  assertOverrideWindow({
-    overrideType,
-    startsAt: startsAt ?? null,
-    endsAt: endsAt ?? null,
-  });
-  await assertAvailableOverrideInvariant({
-    offeringId,
-    date,
-    overrideType,
-    startsAt: startsAt ?? null,
-    endsAt: endsAt ?? null,
-    excludeId: id,
-  });
-
-  const beforeOverride = toAdminAvailabilityOverride(existingOverride);
+  const before = toAdminAvailabilityOverride(existing);
   const updatePayload = removeUndefined<AdminAvailabilityOverrideUpdate>({
-    offeringId: input.offeringId,
-    availabilityRuleId: input.availabilityRuleId,
-    date: input.date !== undefined ? date : undefined,
-    overrideType: input.overrideType,
-    startsAt,
-    endsAt,
+    date: input.date === undefined ? undefined : date,
+    overrideMode: input.type,
+    startLocalTime:
+      input.startLocalTime === undefined && input.type === undefined ? undefined : startLocalTime,
+    endLocalTime:
+      input.endLocalTime === undefined && input.type === undefined ? undefined : endLocalTime,
     reason: normalizeReason(input.reason),
   });
-
-  const updatedOverride = await updateAdminAvailabilityOverride(id, updatePayload);
-
-  if (!updatedOverride) {
-    throw notFoundError();
-  }
-
-  const afterOverride = toAdminAvailabilityOverride(updatedOverride);
-
+  const updated = await updateAdminAvailabilityOverride(id, updatePayload);
+  if (!updated) throw notFoundError();
+  const after = toAdminAvailabilityOverride(updated);
   await writeAuditLog(auditContext, {
-    action: "admin.availability_overrides.update",
-    resourceType: "availability_override",
-    resourceId: afterOverride.id,
-    beforeSnapshot: beforeOverride,
-    afterSnapshot: afterOverride,
+    action: "admin.global_availability_overrides.update",
+    resourceType: "global_availability_override",
+    resourceId: id,
+    beforeSnapshot: before,
+    afterSnapshot: after,
   });
-
-  return afterOverride;
+  return after;
 };
 
 export const deleteAdminAvailabilityOverrideById = async (
   id: string,
   auditContext?: AuditContext,
 ) => {
-  const existingOverride = await findAdminAvailabilityOverrideById(id);
-
-  if (!existingOverride) {
-    throw notFoundError();
-  }
-
-  const beforeOverride = toAdminAvailabilityOverride(existingOverride);
-  const deletedOverride = await deleteAdminAvailabilityOverride(id);
-
-  if (!deletedOverride) {
-    throw notFoundError();
-  }
-
+  const existing = await findAdminAvailabilityOverrideById(id);
+  if (!existing) throw notFoundError();
+  const before = toAdminAvailabilityOverride(existing);
+  if (!(await deleteAdminAvailabilityOverride(id))) throw notFoundError();
   await writeAuditLog(auditContext, {
-    action: "admin.availability_overrides.delete",
-    resourceType: "availability_override",
+    action: "admin.global_availability_overrides.delete",
+    resourceType: "global_availability_override",
     resourceId: id,
-    beforeSnapshot: beforeOverride,
+    beforeSnapshot: before,
     afterSnapshot: null,
   });
 };

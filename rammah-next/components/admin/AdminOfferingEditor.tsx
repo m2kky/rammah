@@ -522,7 +522,7 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                   <>
                     <label className="block">
                       <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                        Duration (minutes)
+                        Appointment duration (minutes)
                       </span>
                       <input
                         type="number"
@@ -533,6 +533,9 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                         className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
                         required
                       />
+                      <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                        Length of each generated customer appointment.
+                      </span>
                     </label>
 
                     <label className="block">
@@ -569,7 +572,9 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
 
                 <label className="block">
                   <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                    {state.schedulingMode === "appointment" ? "Capacity per slot" : "Default seats"}
+                    {state.schedulingMode === "appointment"
+                      ? "Capacity per time for appointments"
+                      : "Default seats for scheduled programs"}
                   </span>
                   <input
                     type="number"
@@ -580,6 +585,11 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                     className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
                     required
                   />
+                  <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                    {state.schedulingMode === "appointment"
+                      ? "Maximum customers who may book the exact same time."
+                      : "Copied when a new Event or Program is created; that Program can then be edited."}
+                  </span>
                 </label>
 
                 <label className="block">

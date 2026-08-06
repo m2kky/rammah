@@ -1,29 +1,37 @@
+import { env } from "../../config/env.js";
+import {
+  instantToDateKey,
+  wallTimeToInstant,
+} from "../../shared/datetime/iana-wall-time.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
-import { env } from "../../config/env.js";
-import { wallTimeToInstant } from "../../shared/datetime/iana-wall-time.js";
 import {
   findActiveSlotHolds,
+  findAvailabilityTimezone,
   findBlockingBookings,
-  findPublishedSlotRules,
+  findExternalBusyBlocks,
+  findGlobalAvailabilityOverrides,
+  findPublishedAvailabilityWindows,
+  findPublishedProgramBlockers,
   findSlotOfferingById,
-  findSlotOverrides,
   type ActiveSlotHoldRow,
   type BlockingBookingRow,
+  type ExternalBusyBlockRow,
+  type ProgramBlockerRow,
   type SlotOfferingRow,
   type SlotOverrideRow,
-  type SlotRuleRow,
+  type SlotWindowRow,
 } from "./availability-slots.repository.js";
 
 type SlotStatus = "available" | "blocked" | "booked" | "held";
-export type SlotSource = "rule" | "available_override";
+export type SlotSource = "window" | "available_override";
 
 export type SlotCandidate = {
   date: string;
   startsAt: Date;
   endsAt: Date;
   timezone: string;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   source: SlotSource;
 };
@@ -35,7 +43,7 @@ type CalculatedSlot = {
   timezone: string;
   status: SlotStatus;
   source: SlotSource;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   remainingCapacity: number;
   bookedCount: number;
@@ -65,16 +73,13 @@ const validationError = (
 
 const assertDate = (value: string, field: "dateFrom" | "dateTo") => {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-
   if (!match) {
     throw validationError("Date range must use YYYY-MM-DD format.", [
       { field, message: "Use YYYY-MM-DD format." },
     ]);
   }
-
   const [, year, month, day] = match;
   const parsed = new Date(`${year}-${month}-${day}T00:00:00.000Z`);
-
   if (
     Number.isNaN(parsed.getTime()) ||
     parsed.getUTCFullYear() !== Number(year) ||
@@ -85,12 +90,10 @@ const assertDate = (value: string, field: "dateFrom" | "dateTo") => {
       { field, message: "Use a valid calendar date." },
     ]);
   }
-
   return value;
 };
 
 const dateStart = (date: string) => new Date(`${date}T00:00:00.000Z`);
-
 const addDays = (date: Date, days: number) => {
   const nextDate = new Date(date);
   nextDate.setUTCDate(nextDate.getUTCDate() + days);
@@ -107,30 +110,22 @@ export const toDateKey = (date: Date) => {
 const enumerateDates = (dateFrom: string, dateTo: string) => {
   const start = dateStart(dateFrom);
   const end = dateStart(dateTo);
-
   if (start > end) {
     throw validationError("Date range is invalid.", [
       { field: "dateFrom", message: "dateFrom must be before or equal to dateTo." },
     ]);
   }
-
   const dates: Date[] = [];
   let cursor = start;
-
   while (cursor <= end) {
     dates.push(cursor);
     cursor = addDays(cursor, 1);
   }
-
   if (dates.length > maxPreviewDays) {
     throw validationError("Date range is too large.", [
-      {
-        field: "dateTo",
-        message: `Slot preview supports up to ${maxPreviewDays} days.`,
-      },
+      { field: "dateTo", message: `Slot preview supports up to ${maxPreviewDays} days.` },
     ]);
   }
-
   return dates;
 };
 
@@ -138,13 +133,8 @@ const normalizeTime = (value: string) => {
   const [hour = "0", minute = "0"] = value.split(":");
   return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
 };
-
 const combineDateAndTime = (date: string, time: string, timezone: string) =>
-  wallTimeToInstant({
-    date,
-    time: `${normalizeTime(time)}:00`,
-    timezone,
-  });
+  wallTimeToInstant({ date, time: `${normalizeTime(time)}:00`, timezone });
 
 const overlaps = (
   leftStart: Date,
@@ -153,62 +143,67 @@ const overlaps = (
   rightEnd: Date,
 ) => leftStart < rightEnd && leftEnd > rightStart;
 
+const exactTarget = (
+  slot: SlotCandidate,
+  row: { slotStartAt: Date | null; slotEndAt: Date | null },
+) =>
+  row.slotStartAt?.getTime() === slot.startsAt.getTime() &&
+  row.slotEndAt?.getTime() === slot.endsAt.getTime();
+
 const generateSlotsInWindow = (input: {
   date: string;
   windowStart: Date;
   windowEnd: Date;
   timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  availabilityRuleId: string | null;
+  offering: SlotOfferingRow;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   source: SlotSource;
 }) => {
+  if (input.offering.durationMinutes === null) return [];
   const slots: SlotCandidate[] = [];
-  const slotDurationMs = input.slotDurationMinutes * millisecondsPerMinute;
-  const bufferBeforeMs = input.bufferBeforeMinutes * millisecondsPerMinute;
-  const bufferAfterMs = input.bufferAfterMinutes * millisecondsPerMinute;
+  const slotDurationMs = input.offering.durationMinutes * millisecondsPerMinute;
+  const bufferBeforeMs = input.offering.bufferBeforeMinutes * millisecondsPerMinute;
+  const bufferAfterMs = input.offering.bufferAfterMinutes * millisecondsPerMinute;
   let startsAt = new Date(input.windowStart.getTime() + bufferBeforeMs);
 
   while (startsAt.getTime() + slotDurationMs + bufferAfterMs <= input.windowEnd.getTime()) {
     const endsAt = new Date(startsAt.getTime() + slotDurationMs);
-
     slots.push({
       date: input.date,
       startsAt,
       endsAt,
       timezone: input.timezone,
-      availabilityRuleId: input.availabilityRuleId,
+      availabilityWindowId: input.availabilityWindowId,
       availabilityOverrideId: input.availabilityOverrideId,
       source: input.source,
     });
-
     startsAt = new Date(endsAt.getTime() + bufferAfterMs + bufferBeforeMs);
   }
-
   return slots;
 };
 
-export const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
+export const buildWindowSlots = (
+  dates: Date[],
+  windows: SlotWindowRow[],
+  offering: SlotOfferingRow,
+  timezone: string,
+) =>
   dates.flatMap((date) => {
     const dateKey = toDateKey(date);
     const weekday = date.getUTCDay();
-
-    return rules
-      .filter((rule) => rule.weekday === weekday)
-      .flatMap((rule) =>
+    return windows
+      .filter((window) => window.weekday === weekday)
+      .flatMap((window) =>
         generateSlotsInWindow({
           date: dateKey,
-          windowStart: combineDateAndTime(dateKey, rule.startTime, rule.timezone),
-          windowEnd: combineDateAndTime(dateKey, rule.endTime, rule.timezone),
-          timezone: rule.timezone,
-          slotDurationMinutes: rule.slotDurationMinutes,
-          bufferBeforeMinutes: rule.bufferBeforeMinutes,
-          bufferAfterMinutes: rule.bufferAfterMinutes,
-          availabilityRuleId: rule.id,
+          windowStart: combineDateAndTime(dateKey, window.startLocalTime, timezone),
+          windowEnd: combineDateAndTime(dateKey, window.endLocalTime, timezone),
+          timezone,
+          offering,
+          availabilityWindowId: window.id,
           availabilityOverrideId: null,
-          source: "rule",
+          source: "window",
         }),
       );
   });
@@ -216,100 +211,105 @@ export const buildRuleSlots = (dates: Date[], rules: SlotRuleRow[]) =>
 export const buildAvailableOverrideSlots = (
   offering: SlotOfferingRow,
   overrides: SlotOverrideRow[],
+  timezone: string,
 ) =>
   overrides
-    .filter((override) => override.overrideType === "available" && override.startsAt && override.endsAt)
-    .flatMap((override) => {
-      const slotDurationMinutes =
-        override.ruleSlotDurationMinutes ?? offering.durationMinutes;
-
-      if (slotDurationMinutes === null) {
-        return [];
-      }
-
-      return generateSlotsInWindow({
+    .filter(
+      (override) =>
+        override.overrideMode === "available" &&
+        override.startLocalTime &&
+        override.endLocalTime,
+    )
+    .flatMap((override) =>
+      generateSlotsInWindow({
         date: override.date,
-        windowStart: override.startsAt as Date,
-        windowEnd: override.endsAt as Date,
-        timezone: override.ruleTimezone ?? "Africa/Cairo",
-        slotDurationMinutes,
-        bufferBeforeMinutes: override.ruleBufferBeforeMinutes ?? 0,
-        bufferAfterMinutes: override.ruleBufferAfterMinutes ?? 0,
-        availabilityRuleId: override.availabilityRuleId,
+        windowStart: combineDateAndTime(override.date, override.startLocalTime!, timezone),
+        windowEnd: combineDateAndTime(override.date, override.endLocalTime!, timezone),
+        timezone,
+        offering,
+        availabilityWindowId: null,
         availabilityOverrideId: override.id,
         source: "available_override",
-      });
-    });
+      }),
+    );
 
 export const dedupeSlots = (slots: SlotCandidate[]) => {
   const slotMap = new Map<string, SlotCandidate>();
-
   for (const slot of slots) {
-    const key = `${slot.startsAt.getTime()}-${slot.endsAt.getTime()}`;
+    const key = `${slot.startsAt.getTime()}-${slot.endsAt.getTime()}-${slot.timezone}`;
     const existing = slotMap.get(key);
-
-    if (!existing || slot.source === "available_override") {
-      slotMap.set(key, slot);
-    }
+    if (!existing || slot.source === "available_override") slotMap.set(key, slot);
   }
-
   return [...slotMap.values()].sort(
-    (left, right) => left.startsAt.getTime() - right.startsAt.getTime(),
+    (left, right) =>
+      left.startsAt.getTime() - right.startsAt.getTime() ||
+      left.endsAt.getTime() - right.endsAt.getTime() ||
+      (left.availabilityWindowId ?? left.availabilityOverrideId ?? "").localeCompare(
+        right.availabilityWindowId ?? right.availabilityOverrideId ?? "",
+      ),
   );
 };
 
-export const findBlockingOverride = (slot: SlotCandidate, overrides: SlotOverrideRow[]) =>
-  overrides.find((override) => {
-    if (override.overrideType !== "blocked" || override.date !== slot.date) {
-      return false;
-    }
-
-    if (override.availabilityRuleId && override.availabilityRuleId !== slot.availabilityRuleId) {
-      return false;
-    }
-
-    if (!override.startsAt && !override.endsAt) {
-      return true;
-    }
-
-    if (!override.startsAt || !override.endsAt) {
-      return false;
-    }
-
-    return overlaps(slot.startsAt, slot.endsAt, override.startsAt, override.endsAt);
-  });
-
-const countOverlaps = (
+export const findBlockingOverride = (
   slot: SlotCandidate,
-  rows: Array<BlockingBookingRow | ActiveSlotHoldRow>,
+  overrides: SlotOverrideRow[],
 ) =>
-  rows.filter((row) => {
-    if (!row.slotStartAt || !row.slotEndAt) {
-      return false;
-    }
+  overrides.find(
+    (override) =>
+      override.overrideMode === "unavailable" && override.date === slot.date,
+  );
 
-    return overlaps(slot.startsAt, slot.endsAt, row.slotStartAt, row.slotEndAt);
-  }).length;
+const intervalOverlapsSlot = (
+  slot: SlotCandidate,
+  row: { slotStartAt: Date | null; slotEndAt: Date | null },
+) =>
+  Boolean(
+    row.slotStartAt &&
+      row.slotEndAt &&
+      overlaps(slot.startsAt, slot.endsAt, row.slotStartAt, row.slotEndAt),
+  );
 
 const calculateSlotStatus = (input: {
   slot: SlotCandidate;
   offering: SlotOfferingRow;
-  overrides: SlotOverrideRow[];
   bookings: BlockingBookingRow[];
   holds: ActiveSlotHoldRow[];
+  programs: ProgramBlockerRow[];
+  busyBlocks: ExternalBusyBlockRow[];
 }): CalculatedSlot => {
-  const blockingOverride = findBlockingOverride(input.slot, input.overrides);
-  const bookedCount = countOverlaps(input.slot, input.bookings);
-  const heldCount = countOverlaps(input.slot, input.holds);
-  const capacity = input.offering.capacity;
-  const blockedReason = blockingOverride?.reason ?? null;
+  const sameTargetBookings = input.bookings.filter(
+    (row) => row.offeringId === input.offering.id && exactTarget(input.slot, row),
+  );
+  const sameTargetHolds = input.holds.filter(
+    (row) => row.offeringId === input.offering.id && exactTarget(input.slot, row),
+  );
+  const conflictingAppointment = [...input.bookings, ...input.holds].find(
+    (row) => intervalOverlapsSlot(input.slot, row) &&
+      !(row.offeringId === input.offering.id && exactTarget(input.slot, row)),
+  );
+  const program = input.programs.find((row) =>
+    overlaps(input.slot.startsAt, input.slot.endsAt, row.startsAt, row.endsAt),
+  );
+  const busyBlock = input.busyBlocks.find((row) =>
+    overlaps(input.slot.startsAt, input.slot.endsAt, row.startsAt, row.endsAt),
+  );
+  const bookedCount = sameTargetBookings.length;
+  const heldCount = sameTargetHolds.length;
   let status: SlotStatus = "available";
+  let blockedReason: string | null = null;
 
-  if (blockingOverride) {
+  if (program) {
     status = "blocked";
-  } else if (bookedCount >= capacity) {
+    blockedReason = `Program: ${program.title}`;
+  } else if (busyBlock) {
+    status = "blocked";
+    blockedReason = "External calendar is busy at this time.";
+  } else if (conflictingAppointment) {
+    status = "blocked";
+    blockedReason = "Another appointment is scheduled at this time.";
+  } else if (bookedCount >= input.offering.capacity) {
     status = "booked";
-  } else if (bookedCount + heldCount >= capacity) {
+  } else if (bookedCount + heldCount >= input.offering.capacity) {
     status = "held";
   }
 
@@ -320,10 +320,10 @@ const calculateSlotStatus = (input: {
     timezone: input.slot.timezone,
     status,
     source: input.slot.source,
-    availabilityRuleId: input.slot.availabilityRuleId,
+    availabilityWindowId: input.slot.availabilityWindowId,
     availabilityOverrideId: input.slot.availabilityOverrideId,
     remainingCapacity:
-      status === "blocked" ? 0 : Math.max(capacity - bookedCount - heldCount, 0),
+      status === "blocked" ? 0 : Math.max(input.offering.capacity - bookedCount - heldCount, 0),
     bookedCount,
     heldCount,
     blockedReason,
@@ -336,9 +336,7 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
   const dates = enumerateDates(dateFrom, dateTo);
   const rangeStart = addDays(dateStart(dateFrom), -1);
   const rangeEnd = addDays(dateStart(dateTo), 2);
-
   const offering = await findSlotOfferingById(input.offeringId);
-
   if (!offering) {
     throw new AppError({
       code: "NOT_FOUND",
@@ -346,36 +344,49 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
       statusCode: httpStatus.notFound,
     });
   }
+  if (offering.schedulingMode !== "appointment" || offering.durationMinutes === null) {
+    throw validationError("Availability preview requires a regular appointment Offering.", [
+      { field: "offeringId", message: "Choose an Offering with appointment scheduling." },
+    ]);
+  }
 
-  const [rules, overrides, bookings, holds] = await Promise.all([
-    findPublishedSlotRules(offering.id),
-    findSlotOverrides(offering.id, dateFrom, dateTo),
-    findBlockingBookings(offering.id, rangeStart, rangeEnd),
-    findActiveSlotHolds(offering.id, rangeStart, rangeEnd, new Date()),
-  ]);
-
+  const [timezone, windows, overrides, bookings, holds, programs, busyBlocks] =
+    await Promise.all([
+      findAvailabilityTimezone(),
+      findPublishedAvailabilityWindows(),
+      findGlobalAvailabilityOverrides(dateFrom, dateTo),
+      findBlockingBookings(rangeStart, rangeEnd),
+      findActiveSlotHolds(rangeStart, rangeEnd, new Date()),
+      findPublishedProgramBlockers(rangeStart, rangeEnd),
+      findExternalBusyBlocks(rangeStart, rangeEnd),
+    ]);
+  const closedDates = new Set(
+    overrides
+      .filter(({ overrideMode }) => overrideMode === "unavailable")
+      .map(({ date }) => date),
+  );
   const candidates = dedupeSlots([
-    ...buildRuleSlots(dates, rules),
-    ...buildAvailableOverrideSlots(offering, overrides),
-  ]).filter(
-    (slot) =>
-      slot.startsAt.getTime() - Date.now() >=
-      env.BOOKING_MINIMUM_NOTICE_MINUTES * millisecondsPerMinute,
-  );
+    ...buildWindowSlots(dates, windows, offering, timezone),
+    ...buildAvailableOverrideSlots(offering, overrides, timezone),
+  ])
+    .filter((slot) => !closedDates.has(slot.date))
+    .filter(
+      (slot) =>
+        slot.startsAt.getTime() - Date.now() >=
+        env.BOOKING_MINIMUM_NOTICE_MINUTES * millisecondsPerMinute,
+    );
   const calculatedSlots = candidates.map((slot) =>
-    calculateSlotStatus({
-      slot,
-      offering,
-      overrides,
-      bookings,
-      holds,
-    }),
+    calculateSlotStatus({ slot, offering, bookings, holds, programs, busyBlocks }),
   );
-
+  const visiblePrograms = programs.filter((program) => {
+    const startDate = instantToDateKey(program.startsAt, timezone);
+    const inclusiveEnd = new Date(program.endsAt.getTime() - 1);
+    const endDate = instantToDateKey(inclusiveEnd, timezone);
+    return startDate <= dateTo && endDate >= dateFrom;
+  });
   const days = dates.map((date) => {
     const dateKey = toDateKey(date);
     const slots = calculatedSlots.filter((slot) => slot.date === dateKey);
-
     return {
       date: dateKey,
       weekday: date.getUTCDay(),
@@ -390,13 +401,26 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
       id: offering.id,
       title: offering.title,
       slug: offering.slug,
+      schedulingMode: offering.schedulingMode,
       capacity: offering.capacity,
       durationMinutes: offering.durationMinutes,
+      bufferBeforeMinutes: offering.bufferBeforeMinutes,
+      bufferAfterMinutes: offering.bufferAfterMinutes,
       status: offering.status,
     },
+    timezone,
     dateFrom,
     dateTo,
     days,
+    programBlockers: visiblePrograms.map((program) => ({
+      occurrenceId: program.occurrenceId,
+      programId: program.programId,
+      title: program.title,
+      startsAt: program.startsAt.toISOString(),
+      endsAt: program.endsAt.toISOString(),
+      timezone: program.timezone,
+      readOnly: true as const,
+    })),
     availableCount: days.reduce((total, day) => total + day.availableCount, 0),
     totalCount: days.reduce((total, day) => total + day.totalCount, 0),
     generatedAt: new Date().toISOString(),
@@ -405,7 +429,6 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
 
 export const previewPublicAvailabilitySlots = async (input: SlotPreviewInput) => {
   const preview = await previewAvailabilitySlots(input);
-
   if (preview.offering.status !== "published") {
     throw new AppError({
       code: "NOT_FOUND",
@@ -413,6 +436,5 @@ export const previewPublicAvailabilitySlots = async (input: SlotPreviewInput) =>
       statusCode: httpStatus.notFound,
     });
   }
-
   return preview;
 };
