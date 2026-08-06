@@ -9,6 +9,8 @@ import {
   externalCalendarBusyBlocks,
   offeringSessions,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import { recurringSlotCapacityLockKey } from "../../shared/db/advisory-lock.js";
 import { getTestDatabase } from "../../test/db.js";
@@ -293,15 +295,33 @@ describe.sequential("atomic public slot-hold capacity", () => {
   it("shows a fixed session as booked when a rescheduled booking consumes capacity", async () => {
     const { db } = getTestDatabase();
     const { offering, session } = await seedFixedTarget(1);
+    await db.insert(scheduledPrograms).values({
+      id: session.id,
+      offeringId: offering.id,
+      title: offering.title,
+      timezone: session.timezone,
+      attendanceMode: session.attendanceMode,
+      locationId: session.locationId,
+      capacity: session.capacity,
+      status: "published",
+    });
+    await db.insert(scheduledProgramOccurrences).values({
+      id: session.id,
+      scheduledProgramId: session.id,
+      startsAt: session.startsAt,
+      endsAt: session.endsAt,
+      timezone: session.timezone,
+      attendanceMode: session.attendanceMode,
+      locationId: session.locationId,
+      status: "scheduled",
+    });
     await db.insert(bookings).values({
       offeringId: offering.id,
-      offeringSessionId: session.id,
+      scheduledProgramId: session.id,
       attendanceMode: "online",
       status: "rescheduled",
       customerFullName: "Rescheduled Capacity",
       customerEmail: "rescheduled-fixed@example.test",
-      slotStartAt: session.startsAt,
-      slotEndAt: session.endsAt,
       timezone: "Africa/Cairo",
     });
 

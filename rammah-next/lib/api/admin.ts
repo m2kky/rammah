@@ -512,6 +512,7 @@ export type AdminLocation = {
 
 export type AdminSession = {
   id: string;
+  scheduledProgramId: string;
   offering: {
     id: string;
     title: string;

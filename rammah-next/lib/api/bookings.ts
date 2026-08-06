@@ -67,6 +67,7 @@ export type PublicSlotHold = {
 
 export type PublicOfferingSession = {
   id: string;
+  scheduledProgramId: string;
   offering: {
     id: string;
     title: string;

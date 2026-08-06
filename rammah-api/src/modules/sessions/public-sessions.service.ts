@@ -110,6 +110,7 @@ const toPublicSession = async (session: PublicSessionRow, now: Date) => {
 
   return {
     id: session.id,
+    scheduledProgramId: session.scheduledProgramId,
     offering: {
       id: session.offeringId,
       title: session.offeringTitle,

@@ -4,25 +4,27 @@ import {
   bookingSlotHolds,
   bookings,
   offlineLocations,
-  offeringSessions,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 
 const publicSessionSelect = {
-  id: offeringSessions.id,
-  offeringId: offeringSessions.offeringId,
+  id: scheduledProgramOccurrences.id,
+  scheduledProgramId: scheduledPrograms.id,
+  offeringId: scheduledPrograms.offeringId,
   offeringTitle: offerings.title,
   offeringSlug: offerings.slug,
   offeringStatus: offerings.status,
   offeringBookingMode: offerings.bookingMode,
   offeringRequiresPayment: offerings.requiresPayment,
   offeringQuoteOnly: offerings.quoteOnly,
-  startsAt: offeringSessions.startsAt,
-  endsAt: offeringSessions.endsAt,
-  timezone: offeringSessions.timezone,
-  capacity: offeringSessions.capacity,
-  attendanceMode: offeringSessions.attendanceMode,
-  locationId: offeringSessions.locationId,
+  startsAt: scheduledProgramOccurrences.startsAt,
+  endsAt: scheduledProgramOccurrences.endsAt,
+  timezone: scheduledProgramOccurrences.timezone,
+  capacity: scheduledPrograms.capacity,
+  attendanceMode: scheduledProgramOccurrences.attendanceMode,
+  locationId: scheduledProgramOccurrences.locationId,
   locationName: offlineLocations.name,
   locationAddressLine1: offlineLocations.addressLine1,
   locationAddressLine2: offlineLocations.addressLine2,
@@ -30,7 +32,7 @@ const publicSessionSelect = {
   locationCountryCode: offlineLocations.countryCode,
   locationMapUrl: offlineLocations.mapUrl,
   locationInstructions: offlineLocations.instructions,
-  status: offeringSessions.status,
+  status: scheduledPrograms.status,
 };
 
 export const findPublicSessions = async (input: {
@@ -40,19 +42,28 @@ export const findPublicSessions = async (input: {
 }) =>
   db
     .select(publicSessionSelect)
-    .from(offeringSessions)
-    .innerJoin(offerings, eq(offeringSessions.offeringId, offerings.id))
-    .leftJoin(offlineLocations, eq(offeringSessions.locationId, offlineLocations.id))
+    .from(scheduledPrograms)
+    .innerJoin(
+      scheduledProgramOccurrences,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .innerJoin(offerings, eq(scheduledPrograms.offeringId, offerings.id))
+    .leftJoin(
+      offlineLocations,
+      eq(scheduledProgramOccurrences.locationId, offlineLocations.id),
+    )
     .where(
       and(
-        eq(offeringSessions.offeringId, input.offeringId),
-        eq(offeringSessions.status, "published"),
+        eq(scheduledPrograms.offeringId, input.offeringId),
+        eq(scheduledPrograms.status, "published"),
+        eq(scheduledProgramOccurrences.status, "scheduled"),
+        eq(scheduledProgramOccurrences.id, scheduledPrograms.id),
         eq(offerings.status, "published"),
-        gte(offeringSessions.startsAt, input.rangeStart),
-        lt(offeringSessions.startsAt, input.rangeEnd),
+        gte(scheduledProgramOccurrences.startsAt, input.rangeStart),
+        lt(scheduledProgramOccurrences.startsAt, input.rangeEnd),
       ),
     )
-    .orderBy(offeringSessions.startsAt);
+    .orderBy(scheduledProgramOccurrences.startsAt);
 
 export type PublicSessionRow = Awaited<
   ReturnType<typeof findPublicSessions>
@@ -64,14 +75,23 @@ export const findPublicSessionById = async (input: {
 }) => {
   const rows = await db
     .select(publicSessionSelect)
-    .from(offeringSessions)
-    .innerJoin(offerings, eq(offeringSessions.offeringId, offerings.id))
-    .leftJoin(offlineLocations, eq(offeringSessions.locationId, offlineLocations.id))
+    .from(scheduledPrograms)
+    .innerJoin(
+      scheduledProgramOccurrences,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .innerJoin(offerings, eq(scheduledPrograms.offeringId, offerings.id))
+    .leftJoin(
+      offlineLocations,
+      eq(scheduledProgramOccurrences.locationId, offlineLocations.id),
+    )
     .where(
       and(
-        eq(offeringSessions.id, input.id),
-        eq(offeringSessions.offeringId, input.offeringId),
-        eq(offeringSessions.status, "published"),
+        eq(scheduledPrograms.id, input.id),
+        eq(scheduledProgramOccurrences.id, input.id),
+        eq(scheduledPrograms.offeringId, input.offeringId),
+        eq(scheduledPrograms.status, "published"),
+        eq(scheduledProgramOccurrences.status, "scheduled"),
         eq(offerings.status, "published"),
       ),
     )
@@ -86,7 +106,7 @@ export const findSessionBlockingBookings = async (sessionId: string) =>
     .from(bookings)
     .where(
       and(
-        eq(bookings.offeringSessionId, sessionId),
+        eq(bookings.scheduledProgramId, sessionId),
         inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
       ),
     );
@@ -97,7 +117,7 @@ export const findSessionActiveHolds = async (sessionId: string, now: Date) =>
     .from(bookingSlotHolds)
     .where(
       and(
-        eq(bookingSlotHolds.offeringSessionId, sessionId),
+        eq(bookingSlotHolds.scheduledProgramId, sessionId),
         eq(bookingSlotHolds.status, "active"),
         gt(bookingSlotHolds.expiresAt, now),
       ),

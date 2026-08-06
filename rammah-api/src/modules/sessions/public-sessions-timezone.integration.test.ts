@@ -1,13 +1,16 @@
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { env } from "../../config/env.js";
 import {
   availabilityRules,
   bookings,
-  offeringSessions,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import { getTestDatabase } from "../../test/db.js";
 import { createSlotHold } from "../availability/slot-holds.service.js";
+import { listAdminSessions } from "./admin-sessions.service.js";
 import { listPublicOfferingSessions } from "./public-sessions.service.js";
 
 const originalProcessTimezone = process.env.TZ;
@@ -73,14 +76,39 @@ describe("public fixed-session timezone grouping", () => {
       })
       .returning();
 
-    await db.insert(offeringSessions).values({
+    const legacySessionId = crypto.randomUUID();
+    await db
+      .update(offerings)
+      .set({ schedulingMode: "scheduled_program", durationMinutes: null })
+      .where(eq(offerings.id, offering!.id));
+    await db.insert(scheduledPrograms).values({
+      id: legacySessionId,
       offeringId: offering!.id,
-      startsAt: new Date("2030-08-12T21:30:00.000Z"),
-      endsAt: new Date("2030-08-12T22:30:00.000Z"),
+      title: "Timezone boundary",
       timezone: "Africa/Cairo",
       capacity: 1,
       attendanceMode: "online",
       status: "published",
+    });
+    await db.insert(scheduledProgramOccurrences).values({
+      id: legacySessionId,
+      scheduledProgramId: legacySessionId,
+      startsAt: new Date("2030-08-12T21:30:00.000Z"),
+      endsAt: new Date("2030-08-12T22:30:00.000Z"),
+      timezone: "Africa/Cairo",
+      attendanceMode: "online",
+      status: "scheduled",
+    });
+    await db.insert(bookings).values({
+      offeringId: offering!.id,
+      scheduledProgramId: legacySessionId,
+      attendanceMode: "online",
+      status: "confirmed",
+      customerFullName: "Program attendee",
+      customerEmail: "program-attendee@example.test",
+      slotStartAt: null,
+      slotEndAt: null,
+      timezone: "Africa/Cairo",
     });
 
     const result = await listPublicOfferingSessions({
@@ -94,6 +122,18 @@ describe("public fixed-session timezone grouping", () => {
       date: "2030-08-13",
       startsAt: "2030-08-12T21:30:00.000Z",
       timezone: "Africa/Cairo",
+      scheduledProgramId: legacySessionId,
+      status: "booked",
+      bookedCount: 1,
+      remainingCapacity: 0,
+    });
+
+    const adminSessions = await listAdminSessions({ offeringId: offering!.id });
+    expect(adminSessions).toHaveLength(1);
+    expect(adminSessions[0]).toMatchObject({
+      id: legacySessionId,
+      scheduledProgramId: legacySessionId,
+      startsAt: "2030-08-12T21:30:00.000Z",
     });
   });
 
