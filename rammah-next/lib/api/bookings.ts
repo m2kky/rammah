@@ -58,8 +58,17 @@ export type PublicSlotHold = {
   holdToken: string;
   offeringId: string;
   offeringSessionId: string | null;
+  scheduledProgramId: string | null;
   startsAt: string;
   endsAt: string;
+  timezone: string;
+  target: {
+    kind: "appointment" | "scheduled_program";
+    scheduledProgramId: string | null;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+  };
   status: "active" | "expired" | "released" | "converted";
   expiresAt: string;
   createdAt: string;
@@ -353,9 +362,16 @@ export const fetchPublicAvailabilitySlots = async (input: {
 
 export const createPublicSlotHold = async (input: {
   offeringId: string;
-  offeringSessionId?: string | null;
-  startsAt: string;
-  endsAt: string;
+  target:
+    | {
+        kind: "appointment";
+        startsAt: string;
+        endsAt: string;
+      }
+    | {
+        kind: "scheduled_program";
+        scheduledProgramId: string;
+      };
 }) => {
   const payload = await publicRequest<{ data: PublicSlotHold }>("/public/slot-holds", {
     method: "POST",

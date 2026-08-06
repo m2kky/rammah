@@ -13,10 +13,12 @@ import {
   offeringSessions,
   offerings,
   payments,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import {
-  fixedSessionCapacityLockKey,
   recurringSlotCapacityLockKey,
+  scheduledProgramCapacityLockKey,
 } from "../../shared/db/advisory-lock.js";
 import { getTestDatabase } from "../../test/db.js";
 import { createSlotHold, releaseSlotHoldById } from "../availability/slot-holds.service.js";
@@ -111,6 +113,10 @@ const seedFixedTarget = async (input: {
 }) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(input);
+  await db
+    .update(offerings)
+    .set({ schedulingMode: "scheduled_program", durationMinutes: null })
+    .where(eq(offerings.id, offering.id));
   const [session] = await db
     .insert(offeringSessions)
     .values({
@@ -123,6 +129,26 @@ const seedFixedTarget = async (input: {
       status: "published",
     })
     .returning();
+  await db.insert(scheduledPrograms).values({
+    id: session!.id,
+    offeringId: offering.id,
+    title: offering.title,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    capacity: input.capacity ?? 1,
+    status: "published",
+  });
+  await db.insert(scheduledProgramOccurrences).values({
+    id: session!.id,
+    scheduledProgramId: session!.id,
+    startsAt: session!.startsAt,
+    endsAt: session!.endsAt,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    status: "scheduled",
+  });
 
   return {
     offering,
@@ -642,9 +668,9 @@ describe.sequential("owned slot holds and atomic conversion", () => {
       ]);
       if (kind === "fixed") {
         await db
-          .update(offeringSessions)
+          .update(scheduledPrograms)
           .set({ capacity: 1 })
-          .where(eq(offeringSessions.id, (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id));
+          .where(eq(scheduledPrograms.id, (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id));
       } else {
         await db
           .update(offerings)
@@ -657,7 +683,7 @@ describe.sequential("owned slot holds and atomic conversion", () => {
         .where(eq(bookingSlotHolds.id, expiringHold.id));
       const key =
         kind === "fixed"
-          ? fixedSessionCapacityLockKey(
+          ? scheduledProgramCapacityLockKey(
               (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id,
             )
           : recurringSlotCapacityLockKey({

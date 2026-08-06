@@ -500,9 +500,17 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     try {
       const hold = await createPublicSlotHold({
         offeringId: offering.id,
-        offeringSessionId: usesScheduledProgram ? selectedSession?.id ?? null : null,
-        startsAt: selectedBookableTime.startsAt,
-        endsAt: selectedBookableTime.endsAt,
+        target:
+          usesScheduledProgram && selectedSession
+            ? {
+                kind: "scheduled_program",
+                scheduledProgramId: selectedSession.scheduledProgramId,
+              }
+            : {
+                kind: "appointment",
+                startsAt: selectedBookableTime.startsAt,
+                endsAt: selectedBookableTime.endsAt,
+              },
       });
 
       const bookingPayload = {

@@ -3,6 +3,7 @@ import {
   bookingScheduleLockKeys,
   fixedSessionCapacityLockKey,
   recurringSlotCapacityLockKey,
+  scheduledProgramCapacityLockKey,
 } from "./advisory-lock.js";
 
 describe("capacity advisory lock keys", () => {
@@ -41,8 +42,11 @@ describe("capacity advisory lock keys", () => {
       startsAt: new Date("2030-08-05T07:00:00.000Z"),
       endsAt: new Date("2030-08-05T08:00:00.000Z"),
     });
+    const program = scheduledProgramCapacityLockKey(
+      "27e466d8-26f4-46fd-b825-69ed814b79c3",
+    );
 
-    expect(new Set([fixed, anotherFixed, recurring])).toHaveLength(3);
+    expect(new Set([fixed, anotherFixed, recurring, program])).toHaveLength(4);
   });
 
   it("shares schedule locks only when two time ranges overlap", () => {

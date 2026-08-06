@@ -191,6 +191,7 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
       {
         offeringId: booking.offeringId,
         offeringSessionId: input.offeringSessionId,
+        scheduledProgramId: null,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
       },
@@ -201,6 +202,7 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
           .update(bookings)
           .set({
             offeringSessionId: input.offeringSessionId,
+            scheduledProgramId: null,
             slotStartAt: input.startsAt,
             slotEndAt: input.endsAt,
             timezone,

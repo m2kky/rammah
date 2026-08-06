@@ -86,10 +86,15 @@ const validationError = (
 const resolveLocationId = async (input: {
   offeringId: string;
   offeringSessionId?: string | null;
+  scheduledProgramId?: string | null;
   attendanceMode: "online" | "offline" | "hybrid";
   locationId?: string | null;
 }) => {
-  if (input.offeringSessionId || input.attendanceMode === "online") {
+  if (
+    input.offeringSessionId ||
+    input.scheduledProgramId ||
+    input.attendanceMode === "online"
+  ) {
     return null;
   }
 
@@ -319,6 +324,7 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
   const locationId = await resolveLocationId({
     offeringId: activeHold.offeringId,
     offeringSessionId: activeHold.offeringSessionId,
+    scheduledProgramId: activeHold.scheduledProgramId,
     attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
     locationId: input.locationId,
   });

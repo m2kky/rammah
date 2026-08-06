@@ -80,6 +80,10 @@ const seedRecurringTarget = async (capacity: number) => {
 const seedFixedTarget = async (capacity: number) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(capacity);
+  await db
+    .update(offerings)
+    .set({ schedulingMode: "scheduled_program", durationMinutes: null })
+    .where(eq(offerings.id, offering.id));
   const [session] = await db
     .insert(offeringSessions)
     .values({
@@ -92,6 +96,26 @@ const seedFixedTarget = async (capacity: number) => {
       status: "published",
     })
     .returning();
+  await db.insert(scheduledPrograms).values({
+    id: session!.id,
+    offeringId: offering.id,
+    title: offering.title,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    capacity,
+    status: "published",
+  });
+  await db.insert(scheduledProgramOccurrences).values({
+    id: session!.id,
+    scheduledProgramId: session!.id,
+    startsAt: session!.startsAt,
+    endsAt: session!.endsAt,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    status: "scheduled",
+  });
 
   return {
     offering,
@@ -168,6 +192,13 @@ describe.sequential("atomic public slot-hold capacity", () => {
         endsAt: first.session.endsAt,
       })
       .where(eq(offeringSessions.id, second.session.id));
+    await db
+      .update(scheduledProgramOccurrences)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(scheduledProgramOccurrences.id, second.session.id));
     second.input.startsAt = first.session.startsAt.toISOString();
     second.input.endsAt = first.session.endsAt.toISOString();
 
@@ -188,6 +219,13 @@ describe.sequential("atomic public slot-hold capacity", () => {
         endsAt: first.session.endsAt,
       })
       .where(eq(offeringSessions.id, second.session.id));
+    await db
+      .update(scheduledProgramOccurrences)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(scheduledProgramOccurrences.id, second.session.id));
     second.input.startsAt = first.session.startsAt.toISOString();
     second.input.endsAt = first.session.endsAt.toISOString();
 
@@ -295,26 +333,6 @@ describe.sequential("atomic public slot-hold capacity", () => {
   it("shows a fixed session as booked when a rescheduled booking consumes capacity", async () => {
     const { db } = getTestDatabase();
     const { offering, session } = await seedFixedTarget(1);
-    await db.insert(scheduledPrograms).values({
-      id: session.id,
-      offeringId: offering.id,
-      title: offering.title,
-      timezone: session.timezone,
-      attendanceMode: session.attendanceMode,
-      locationId: session.locationId,
-      capacity: session.capacity,
-      status: "published",
-    });
-    await db.insert(scheduledProgramOccurrences).values({
-      id: session.id,
-      scheduledProgramId: session.id,
-      startsAt: session.startsAt,
-      endsAt: session.endsAt,
-      timezone: session.timezone,
-      attendanceMode: session.attendanceMode,
-      locationId: session.locationId,
-      status: "scheduled",
-    });
     await db.insert(bookings).values({
       offeringId: offering.id,
       scheduledProgramId: session.id,

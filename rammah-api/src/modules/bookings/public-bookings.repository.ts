@@ -8,7 +8,10 @@ import {
   offeringLocations,
   offerings,
 } from "../../db/schema/index.js";
-import { withAvailableSlotCapacity } from "../availability/slot-capacity.repository.js";
+import {
+  withAvailableSlotCapacity,
+  type SlotCapacityInput,
+} from "../availability/slot-capacity.repository.js";
 import { verifySlotHoldToken } from "../availability/slot-hold-token.js";
 import { lockOwnedSlotHold } from "../availability/slot-holds.repository.js";
 
@@ -41,6 +44,7 @@ export const findPublicBookingHoldContextById = async (
       id: bookingSlotHolds.id,
       offeringId: bookingSlotHolds.offeringId,
       offeringSessionId: bookingSlotHolds.offeringSessionId,
+      scheduledProgramId: bookingSlotHolds.scheduledProgramId,
       offeringAttendanceMode: offerings.attendanceMode,
       holdStatus: bookingSlotHolds.status,
       expiresAt: bookingSlotHolds.expiresAt,
@@ -65,6 +69,7 @@ const bookingSelect = {
   publicToken: bookings.publicToken,
   bookingReference: bookings.bookingReference,
   offeringId: bookings.offeringId,
+  scheduledProgramId: bookings.scheduledProgramId,
   locationId: bookings.locationId,
   attendanceMode: bookings.attendanceMode,
   status: bookings.status,
@@ -107,22 +112,31 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
     if (
       hold.holdStatus !== "active" ||
       hold.expiresAt <= new Date() ||
-      !hold.slotStartAt ||
-      !hold.slotEndAt
+      (!hold.scheduledProgramId && (!hold.slotStartAt || !hold.slotEndAt))
     ) {
       return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
     }
 
+    const capacityTarget: SlotCapacityInput = hold.scheduledProgramId
+      ? {
+          offeringId: hold.offeringId,
+          offeringSessionId: null,
+          scheduledProgramId: hold.scheduledProgramId,
+          startsAt: null,
+          endsAt: null,
+        }
+      : {
+          offeringId: hold.offeringId,
+          offeringSessionId: hold.offeringSessionId,
+          scheduledProgramId: null,
+          startsAt: hold.slotStartAt!,
+          endsAt: hold.slotEndAt!,
+        };
     const result = await withAvailableSlotCapacity(
       tx,
-      {
-        offeringId: hold.offeringId,
-        offeringSessionId: hold.offeringSessionId,
-        startsAt: hold.slotStartAt,
-        endsAt: hold.slotEndAt,
-      },
+      capacityTarget,
       { excludeHoldId: hold.id },
-      async ({ now, offering, sessionLocationId }) => {
+      async ({ now, offering, sessionLocationId, target }) => {
         const currentHold = {
           ...hold,
           offeringTitle: offering.title,
@@ -162,6 +176,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
           .values({
             offeringId: hold.offeringId,
             offeringSessionId: hold.offeringSessionId,
+            scheduledProgramId: hold.scheduledProgramId,
             locationId: sessionLocationId ?? input.locationId ?? null,
             attendanceMode,
             status: "confirmed",
@@ -171,7 +186,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
             countryCode: input.countryCode ?? null,
             slotStartAt: hold.slotStartAt,
             slotEndAt: hold.slotEndAt,
-            timezone: input.timezone,
+            timezone: target.timezone,
             paymentRequired: false,
             confirmedAt: now,
           })
