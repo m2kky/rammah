@@ -12,6 +12,7 @@ export type CanonicalBookingOccurrence = {
   endsAt: Date;
   timezone: string;
   attendanceMode: "online" | "offline" | "hybrid";
+  meetUrl: string | null;
   location: {
     id: string;
     name: string;
@@ -32,6 +33,7 @@ export type CanonicalBookingTarget =
   | {
       kind: "scheduled_program";
       scheduledProgramId: string;
+      title: string;
       timezone: string;
       occurrences: CanonicalBookingOccurrence[];
     };
@@ -57,12 +59,14 @@ export const attachCanonicalBookingTargets = async <T extends BookingTargetSourc
     ? await db
         .select({
           scheduledProgramId: scheduledPrograms.id,
+          programTitle: scheduledPrograms.title,
           programTimezone: scheduledPrograms.timezone,
           id: scheduledProgramOccurrences.id,
           startsAt: scheduledProgramOccurrences.startsAt,
           endsAt: scheduledProgramOccurrences.endsAt,
           timezone: scheduledProgramOccurrences.timezone,
           attendanceMode: scheduledProgramOccurrences.attendanceMode,
+          meetUrl: scheduledProgramOccurrences.meetUrl,
           locationId: offlineLocations.id,
           locationName: offlineLocations.name,
           locationCity: offlineLocations.city,
@@ -91,9 +95,11 @@ export const attachCanonicalBookingTargets = async <T extends BookingTargetSourc
     : [];
   const occurrencesByProgram = new Map<string, CanonicalBookingOccurrence[]>();
   const timezoneByProgram = new Map<string, string>();
+  const titleByProgram = new Map<string, string>();
 
   for (const occurrence of occurrenceRows) {
     timezoneByProgram.set(occurrence.scheduledProgramId, occurrence.programTimezone);
+    titleByProgram.set(occurrence.scheduledProgramId, occurrence.programTitle);
     const programOccurrences = occurrencesByProgram.get(occurrence.scheduledProgramId) ?? [];
     programOccurrences.push({
       id: occurrence.id,
@@ -101,6 +107,7 @@ export const attachCanonicalBookingTargets = async <T extends BookingTargetSourc
       endsAt: occurrence.endsAt,
       timezone: occurrence.timezone,
       attendanceMode: occurrence.attendanceMode,
+      meetUrl: occurrence.meetUrl,
       location: occurrence.locationId
         ? {
             id: occurrence.locationId,
@@ -120,6 +127,7 @@ export const attachCanonicalBookingTargets = async <T extends BookingTargetSourc
         target: {
           kind: "scheduled_program",
           scheduledProgramId: row.scheduledProgramId,
+          title: titleByProgram.get(row.scheduledProgramId) ?? "Program",
           timezone: timezoneByProgram.get(row.scheduledProgramId) ?? row.timezone,
           occurrences: occurrencesByProgram.get(row.scheduledProgramId) ?? [],
         },
@@ -172,6 +180,7 @@ export const serializeCanonicalBookingTarget = (target: CanonicalBookingTarget) 
     : {
         kind: target.kind,
         scheduledProgramId: target.scheduledProgramId,
+        title: target.title,
         timezone: target.timezone,
         occurrences: target.occurrences.map((occurrence) => ({
           ...occurrence,

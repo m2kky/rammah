@@ -1,7 +1,7 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { env } from "../../config/env.js";
-import { createAtomicSlotHold } from "./slot-capacity.repository.js";
+import { createAtomicSlotHold, isScheduledProgramFull } from "./slot-capacity.repository.js";
 import { releaseSlotHold } from "./slot-holds.repository.js";
 import { createSlotHoldToken } from "./slot-hold-token.js";
 import { resolveLegacySessionTarget } from "../programs/program-compatibility.service.js";
@@ -132,6 +132,17 @@ export const createSlotHold = async (input: SlotHoldInput) => {
   });
 
   if (!hold) {
+    if (
+      input.target?.kind === "scheduled_program" &&
+      target.scheduledProgramId &&
+      (await isScheduledProgramFull(target.scheduledProgramId))
+    ) {
+      throw new AppError({
+        code: "PROGRAM_FULL",
+        message: "This Program is fully booked.",
+        statusCode: httpStatus.conflict,
+      });
+    }
     throw slotUnavailableError();
   }
 

@@ -10,12 +10,14 @@ import {
   findCalendarEventByBookingId,
   findConfirmedBookingForCalendarSync,
   findGoogleCalendarConnection,
+  findProgramForCalendarSync,
   markCalendarEventCreated,
   markCalendarEventCancelled,
   markCalendarEventFailed,
   markCalendarEventPending,
   markCalendarEventUpdated,
   markGoogleCalendarConnectionError,
+  saveProgramOccurrenceCalendarEvent,
   updateGoogleCalendarConnectionSettings,
   updateGoogleCalendarConnectionTokens,
   upsertGoogleCalendarConnection,
@@ -382,6 +384,10 @@ export const ensureGoogleCalendarEventForBooking = async (
     return toCalendarEventPayload(existingEvent);
   }
 
+  if (booking.target.kind === "scheduled_program") {
+    return toCalendarEventPayload(existingEvent);
+  }
+
   const pendingEvent = options.forceRetry
     ? await markCalendarEventPending(bookingId)
     : await ensurePendingCalendarEvent(bookingId);
@@ -449,6 +455,10 @@ export const updateGoogleCalendarEventForBooking = async (bookingId: string) => 
   const booking = await findConfirmedBookingForCalendarSync(bookingId);
 
   if (!booking || booking.status !== "confirmed") {
+    return toCalendarEventPayload(existingEvent);
+  }
+
+  if (booking.target.kind === "scheduled_program") {
     return toCalendarEventPayload(existingEvent);
   }
 
@@ -546,6 +556,186 @@ export const cancelGoogleCalendarEventForBooking = async (bookingId: string) => 
 
     return toCalendarEventPayload(failedEvent);
   }
+};
+
+const deterministicProgramOccurrenceEventId = (occurrenceId: string) =>
+  `p${crypto.createHash("sha256").update(occurrenceId).digest("hex").slice(0, 32)}`;
+
+const buildProgramOccurrenceEventBody = (
+  occurrence: Awaited<ReturnType<typeof findProgramForCalendarSync>>[number],
+  eventId: string,
+  includeConference: boolean,
+): calendar_v3.Schema$Event => {
+  const location = [
+    occurrence.locationName,
+    occurrence.locationAddressLine1,
+    occurrence.locationAddressLine2,
+    occurrence.locationCity,
+    occurrence.locationCountryCode,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const includeMeet = includeConference && occurrence.attendanceMode !== "offline";
+  return {
+    id: eventId,
+    summary: occurrence.programTitle,
+    description: [
+      `Offering: ${occurrence.offeringTitle}`,
+      `Program occurrence: ${occurrence.occurrenceId}`,
+      "Source: Rammah Program schedule",
+    ].join("\n"),
+    start: { dateTime: occurrence.startsAt.toISOString(), timeZone: occurrence.timezone },
+    end: { dateTime: occurrence.endsAt.toISOString(), timeZone: occurrence.timezone },
+    ...(location ? { location } : {}),
+    ...(includeMeet
+      ? {
+          conferenceData: {
+            createRequest: {
+              requestId: `program-${eventId}`,
+              conferenceSolutionKey: { type: "hangoutsMeet" },
+            },
+          },
+        }
+      : {}),
+    extendedProperties: {
+      private: {
+        source: "rammah",
+        targetKind: "scheduled_program_occurrence",
+        scheduledProgramId: occurrence.programId,
+        occurrenceId: occurrence.occurrenceId,
+      },
+    },
+  };
+};
+
+export type ProgramCalendarSyncResult = {
+  occurrenceId: string;
+  status: "created" | "updated" | "cancelled" | "failed" | "skipped";
+  googleCalendarEventId: string | null;
+  meetUrl: string | null;
+  error: string | null;
+};
+
+export const syncGoogleCalendarEventsForProgram = async (
+  programId: string,
+): Promise<ProgramCalendarSyncResult[]> => {
+  const occurrences = await findProgramForCalendarSync(programId);
+  if (occurrences.length === 0) return [];
+
+  let client: Awaited<ReturnType<typeof getAuthorizedCalendarClient>>;
+  try {
+    client = await getAuthorizedCalendarClient();
+  } catch (error) {
+    const message = serializeError(error);
+    return occurrences.map((occurrence) => ({
+      occurrenceId: occurrence.occurrenceId,
+      status: "failed" as const,
+      googleCalendarEventId: occurrence.googleCalendarEventId,
+      meetUrl: occurrence.meetUrl,
+      error: message,
+    }));
+  }
+
+  const results: ProgramCalendarSyncResult[] = [];
+  for (const occurrence of occurrences) {
+    const existingEventId = occurrence.googleCalendarEventId;
+    if (occurrence.occurrenceStatus === "cancelled" || occurrence.programStatus === "archived") {
+      if (!existingEventId) {
+        results.push({
+          occurrenceId: occurrence.occurrenceId,
+          status: "skipped",
+          googleCalendarEventId: null,
+          meetUrl: occurrence.meetUrl,
+          error: null,
+        });
+        continue;
+      }
+      try {
+        await client.calendar.events.delete({ calendarId: client.calendarId, eventId: existingEventId });
+        results.push({
+          occurrenceId: occurrence.occurrenceId,
+          status: "cancelled",
+          googleCalendarEventId: existingEventId,
+          meetUrl: occurrence.meetUrl,
+          error: null,
+        });
+      } catch (error) {
+        if (isGoogleNotFound(error)) {
+          results.push({
+            occurrenceId: occurrence.occurrenceId,
+            status: "cancelled",
+            googleCalendarEventId: existingEventId,
+            meetUrl: occurrence.meetUrl,
+            error: null,
+          });
+        } else {
+          results.push({
+            occurrenceId: occurrence.occurrenceId,
+            status: "failed",
+            googleCalendarEventId: existingEventId,
+            meetUrl: occurrence.meetUrl,
+            error: serializeError(error),
+          });
+        }
+      }
+      continue;
+    }
+
+    const eventId = existingEventId ?? deterministicProgramOccurrenceEventId(occurrence.occurrenceId);
+    try {
+      const response = existingEventId
+        ? await client.calendar.events.patch({
+            calendarId: client.calendarId,
+            conferenceDataVersion: 1,
+            eventId,
+            requestBody: buildProgramOccurrenceEventBody(occurrence, eventId, false),
+          })
+        : await client.calendar.events
+            .insert({
+              calendarId: client.calendarId,
+              conferenceDataVersion: 1,
+              requestBody: buildProgramOccurrenceEventBody(occurrence, eventId, true),
+            })
+            .catch(async (error: unknown) => {
+              if (!isGoogleConflict(error)) throw error;
+              return client.calendar.events.patch({
+                calendarId: client.calendarId,
+                conferenceDataVersion: 1,
+                eventId,
+                requestBody: buildProgramOccurrenceEventBody(occurrence, eventId, false),
+              });
+            });
+      const savedEventId = response.data.id ?? eventId;
+      const meetUrl = extractMeetUrl(response.data) ?? occurrence.meetUrl;
+      await saveProgramOccurrenceCalendarEvent({
+        occurrenceId: occurrence.occurrenceId,
+        googleCalendarEventId: savedEventId,
+        meetUrl,
+      });
+      results.push({
+        occurrenceId: occurrence.occurrenceId,
+        status: existingEventId ? "updated" : "created",
+        googleCalendarEventId: savedEventId,
+        meetUrl,
+        error: null,
+      });
+    } catch (error) {
+      const message = serializeError(error);
+      results.push({
+        occurrenceId: occurrence.occurrenceId,
+        status: "failed",
+        googleCalendarEventId: existingEventId,
+        meetUrl: occurrence.meetUrl,
+        error: message,
+      });
+      logger.warn("Google Calendar Program occurrence sync failed.", {
+        programId,
+        occurrenceId: occurrence.occurrenceId,
+        error: message,
+      });
+    }
+  }
+  return results;
 };
 
 export const buildGoogleCalendarCallbackRedirectUrl = (status: "connected" | "failed") => {

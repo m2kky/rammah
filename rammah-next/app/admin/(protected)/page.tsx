@@ -20,10 +20,10 @@ const nextSteps = [
     description: "Manage offline venues used by hybrid and in-person bookings.",
   },
   {
-    title: "Sessions",
+    title: "Events & Programs",
     status: "Available",
-    href: "/admin/sessions",
-    description: "Schedule fixed-date workshops, webinars, and course events.",
+    href: "/admin/programs",
+    description: "Publish one-off events or multi-date course cohorts with one enrollment.",
   },
   {
     title: "Form Fields",

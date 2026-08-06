@@ -28,6 +28,8 @@ import { publicOfferingsRouter } from "./modules/offerings/offerings.routes.js";
 import { adminPaymentsRouter } from "./modules/payments/admin-payments.routes.js";
 import { paymentWebhooksRouter, publicPaymentsRouter } from "./modules/payments/public-payments.routes.js";
 import { publicPricePreviewRouter } from "./modules/pricing/public-price-preview.routes.js";
+import { adminProgramsRouter } from "./modules/programs/admin-programs.routes.js";
+import { publicProgramsRouter } from "./modules/programs/public-programs.routes.js";
 import { adminQuoteRequestsRouter } from "./modules/quote-requests/admin-quote-requests.routes.js";
 import { publicQuoteRequestsRouter } from "./modules/quote-requests/public-quote-requests.routes.js";
 import { adminSessionsRouter } from "./modules/sessions/admin-sessions.routes.js";
@@ -55,6 +57,7 @@ export const createApp = () => {
   app.use(`${env.API_BASE_PATH}/public/offerings`, publicOfferingsRouter);
   app.use(`${env.API_BASE_PATH}/public/availability-slots`, publicAvailabilitySlotsRouter);
   app.use(`${env.API_BASE_PATH}/public/sessions`, publicSessionsRouter);
+  app.use(`${env.API_BASE_PATH}/public/programs`, publicProgramsRouter);
   app.use(`${env.API_BASE_PATH}/public/slot-holds`, slotHoldsRouter);
   app.use(`${env.API_BASE_PATH}/public/booking/price-preview`, publicPricePreviewRouter);
   app.use(`${env.API_BASE_PATH}/public/payments`, publicPaymentsRouter);
@@ -68,6 +71,7 @@ export const createApp = () => {
   app.use(`${env.API_BASE_PATH}/admin/booking-form-fields`, adminBookingFormFieldsRouter);
   app.use(`${env.API_BASE_PATH}/admin/locations`, adminLocationsRouter);
   app.use(`${env.API_BASE_PATH}/admin/sessions`, adminSessionsRouter);
+  app.use(`${env.API_BASE_PATH}/admin/programs`, adminProgramsRouter);
   app.use(`${env.API_BASE_PATH}/admin/payments`, adminPaymentsRouter);
   app.use(`${env.API_BASE_PATH}/admin/emails`, adminEmailsRouter);
   app.use(`${env.API_BASE_PATH}/admin/quote-requests`, adminQuoteRequestsRouter);

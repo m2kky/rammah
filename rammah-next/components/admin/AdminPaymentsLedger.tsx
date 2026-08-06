@@ -230,7 +230,7 @@ export default function AdminPaymentsLedger() {
             Payment ledger
           </h1>
           <p className="mt-3 max-w-2xl font-inter text-sm leading-6 text-[#102329]/62">
-            Review paid booking payments, provider references, callback events, and run Kashier reconciliation when callbacks are delayed.
+            Review payment attempts, provider references, reconciliation, and failures. Configure Standard and Early-booking prices inside each Offering.
           </p>
         </div>
 
@@ -351,6 +351,31 @@ export default function AdminPaymentsLedger() {
                     {selectedPayment.booking.customer.fullName}
                     <br />
                     <span className="text-[#102329]/55">{selectedPayment.booking.customer.email}</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.14em] text-[#102329]/40">
+                    Booking target
+                  </dt>
+                  <dd className="mt-1">
+                    <span className="font-semibold">{selectedPayment.booking.offering.title}</span>
+                    {selectedPayment.booking.target.kind === "scheduled_program" ? (
+                      <>
+                        <span className="mt-1 block text-xs leading-5 text-[#102329]/55">
+                          {selectedPayment.booking.target.title} · {selectedPayment.booking.target.occurrences.length} occurrence{selectedPayment.booking.target.occurrences.length === 1 ? "" : "s"}
+                        </span>
+                        {selectedPayment.booking.target.occurrences.map((occurrence, index) => (
+                          <span key={occurrence.id} className="block text-xs leading-5 text-[#102329]/55">
+                            {index + 1}. {formatDateTime(occurrence.startsAt)}
+                            {occurrence.meetUrl ? " · Meet ready" : ""}
+                          </span>
+                        ))}
+                      </>
+                    ) : (
+                      <span className="mt-1 block text-xs text-[#102329]/55">
+                        Appointment · {formatDateTime(selectedPayment.booking.target.startsAt)}
+                      </span>
+                    )}
                   </dd>
                 </div>
                 <div>

@@ -7,13 +7,11 @@ import {
   cancelPublicBooking,
   fetchPublicAvailabilitySlots,
   fetchPublicBookingStatus,
-  fetchPublicOfferingSessions,
   publicBookingCalendarUrl,
   PublicApiError,
   reschedulePublicBooking,
   type PublicAvailabilitySlot,
   type PublicBooking,
-  type PublicOfferingSession,
 } from "@/lib/api/bookings";
 
 const uuidPattern =
@@ -102,9 +100,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   const [error, setError] = useState("");
   const [changeError, setChangeError] = useState("");
   const [isChanging, setIsChanging] = useState(false);
-  const [rescheduleOptions, setRescheduleOptions] = useState<
-    Array<PublicAvailabilitySlot | PublicOfferingSession>
-  >([]);
+  const [rescheduleOptions, setRescheduleOptions] = useState<PublicAvailabilitySlot[]>([]);
 
   const normalizedRouteToken = useMemo(
     () => (publicToken ? normalizeTokenInput(publicToken) : ""),
@@ -174,28 +170,18 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
     const toDate = (date: Date) => date.toISOString().slice(0, 10);
     const twoWeeks = new Date(from);
     twoWeeks.setDate(twoWeeks.getDate() + 13);
-    const threeMonths = new Date(from);
-    threeMonths.setDate(threeMonths.getDate() + 89);
 
     try {
-      const [sessionPreview, availabilityPreview] = await Promise.all([
-        fetchPublicOfferingSessions({
-          offeringId: booking.offering.id,
-          dateFrom: toDate(from),
-          dateTo: toDate(threeMonths),
-        }),
-        fetchPublicAvailabilitySlots({
-          offeringId: booking.offering.id,
-          dateFrom: toDate(from),
-          dateTo: toDate(twoWeeks),
-        }),
-      ]);
-      setRescheduleOptions([
-        ...sessionPreview.sessions.filter((session) => session.status === "available"),
-        ...availabilityPreview.days.flatMap((day) =>
+      const availabilityPreview = await fetchPublicAvailabilitySlots({
+        offeringId: booking.offering.id,
+        dateFrom: toDate(from),
+        dateTo: toDate(twoWeeks),
+      });
+      setRescheduleOptions(
+        availabilityPreview.days.flatMap((day) =>
           day.slots.filter((slot) => slot.status === "available"),
-        ),
-      ].slice(0, 30));
+        ).slice(0, 30),
+      );
     } catch (loadError) {
       setChangeError(loadError instanceof Error ? loadError.message : "Could not load times.");
     } finally {
@@ -218,7 +204,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   };
 
   const handleReschedule = async (
-    option: PublicAvailabilitySlot | PublicOfferingSession,
+    option: PublicAvailabilitySlot,
   ) => {
     if (!booking) return;
     setIsChanging(true);
@@ -226,7 +212,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
     try {
       setBooking(
         await reschedulePublicBooking(booking.publicToken, {
-          offeringSessionId: "offering" in option ? option.id : null,
+          offeringSessionId: null,
           startsAt: option.startsAt,
           endsAt: option.endsAt,
           timezone: option.timezone,
@@ -341,7 +327,9 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                       Current status
                     </p>
                     <h2 className="mt-3 text-3xl font-semibold tracking-normal">
-                      {booking.offering.title}
+                      {booking.target.kind === "scheduled_program"
+                        ? booking.target.title
+                        : booking.offering.title}
                     </h2>
                   </div>
                   <span
@@ -360,8 +348,22 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                       {booking.target.kind === "scheduled_program" &&
                       booking.target.occurrences.length > 0
                         ? booking.target.occurrences.map((occurrence) => (
-                            <span key={occurrence.id} className="block">
-                              {formatDateTime(occurrence.startsAt, occurrence.timezone)}
+                            <span key={occurrence.id} className="block border-l border-[#102329]/12 pl-3">
+                              <span className="block">
+                                {formatDateTime(occurrence.startsAt, occurrence.timezone)}
+                              </span>
+                              {occurrence.location && (
+                                <span className="block text-xs text-[#102329]/48">
+                                  {[occurrence.location.name, occurrence.location.city, occurrence.location.countryCode]
+                                    .filter(Boolean)
+                                    .join(", ")}
+                                </span>
+                              )}
+                              {occurrence.meetUrl && booking.status === "confirmed" && (
+                                <a href={occurrence.meetUrl} target="_blank" rel="noreferrer" className="block text-xs font-semibold text-[#0F3B46] underline">
+                                  Open Meet for this date
+                                </a>
+                              )}
                             </span>
                           ))
                         : formatDateTime(booking.slot.startsAt, booking.slot.timezone)}
@@ -421,7 +423,11 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                         Meeting
                       </dt>
                       <dd className="mt-2 font-inter text-sm text-[#102329]/72">
-                        {booking.calendar?.meetUrl ? (
+                        {booking.target.kind === "scheduled_program" ? (
+                          booking.target.occurrences.some(({ meetUrl }) => Boolean(meetUrl))
+                            ? `${booking.target.occurrences.filter(({ meetUrl }) => Boolean(meetUrl)).length} occurrence Meet link${booking.target.occurrences.filter(({ meetUrl }) => Boolean(meetUrl)).length === 1 ? " is" : "s are"} listed with the schedule above.`
+                            : "Program meeting links are being prepared."
+                        ) : booking.calendar?.meetUrl ? (
                           <a
                             href={booking.calendar.meetUrl}
                             target="_blank"
@@ -470,7 +476,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                   <div className="grid max-h-64 gap-2 overflow-y-auto border-y border-[#102329]/10 py-4 sm:grid-cols-2">
                     {rescheduleOptions.map((option) => (
                       <button
-                        key={`${option.startsAt}-${"offering" in option ? option.id : "slot"}`}
+                        key={`${option.startsAt}-${option.endsAt}`}
                         type="button"
                         disabled={isChanging}
                         onClick={() => void handleReschedule(option)}

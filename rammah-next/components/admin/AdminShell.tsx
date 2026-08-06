@@ -11,7 +11,7 @@ const navItems = [
   { label: "Offerings", href: "/admin/offerings" },
   { label: "Availability", href: "/admin/availability" },
   { label: "Locations", href: "/admin/locations" },
-  { label: "Sessions", href: "/admin/sessions" },
+  { label: "Events & Programs", href: "/admin/programs" },
   { label: "Form Fields", href: "/admin/form-fields" },
   { label: "Bookings", href: "/admin/bookings" },
   { label: "Payments", href: "/admin/payments" },

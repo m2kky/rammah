@@ -125,6 +125,50 @@ export type PublicOfferingSessionPreview = {
   generatedAt: string;
 };
 
+export type PublicProgram = {
+  id: string;
+  scheduledProgramId: string;
+  title: string;
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    bookingMode: PublicOffering["bookingMode"];
+  };
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  attendanceMode: PublicOffering["attendanceMode"];
+  location: PublicBookingLocation;
+  registrationOpensAt: string | null;
+  registrationClosesAt: string | null;
+  capacity: number;
+  remainingCapacity: number;
+  bookedCount: number;
+  heldCount: number;
+  status: "available" | "full";
+  occurrences: Array<{
+    id: string;
+    date: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    attendanceMode: PublicOffering["attendanceMode"];
+    location: PublicBookingLocation;
+    sortOrder: number;
+  }>;
+};
+
+export type PublicProgramPreview = {
+  offeringId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  locale: "en" | "ar";
+  programs: PublicProgram[];
+  generatedAt: string;
+};
+
 export type PublicBooking = {
   id: string;
   publicToken: string;
@@ -160,6 +204,7 @@ export type PublicBooking = {
     | {
         kind: "scheduled_program";
         scheduledProgramId: string;
+        title: string;
         timezone: string;
         occurrences: Array<{
           id: string;
@@ -167,6 +212,7 @@ export type PublicBooking = {
           endsAt: string;
           timezone: string;
           attendanceMode: PublicOffering["attendanceMode"];
+          meetUrl: string | null;
           location: {
             id: string;
             name: string;
@@ -436,6 +482,24 @@ export const fetchPublicOfferingSessions = async (input: {
     `/public/sessions?${params.toString()}`,
   );
 
+  return payload.data;
+};
+
+export const fetchPublicPrograms = async (input: {
+  offeringId?: string;
+  dateFrom: string;
+  dateTo: string;
+  locale?: "en" | "ar";
+}) => {
+  const params = new URLSearchParams({
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+    locale: input.locale ?? "en",
+  });
+  if (input.offeringId) params.set("offeringId", input.offeringId);
+  const payload = await publicRequest<{ data: PublicProgramPreview }>(
+    `/public/programs?${params.toString()}`,
+  );
   return payload.data;
 };
 

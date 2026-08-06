@@ -11,7 +11,7 @@ const bookingDateTimeSource = readFileSync(
   "utf8",
 );
 
-describe("reported fixed-session and availability regression", () => {
+describe("reported Program and availability regression", () => {
   it("selects the schedule source from explicit Offering scheduling mode", () => {
     expect(
       bookingFlowSource.includes("schedulingMode"),
@@ -19,7 +19,7 @@ describe("reported fixed-session and availability regression", () => {
     ).toBe(true);
     expect(
       bookingFlowSource.includes("const hasSessionOptions = sessions.length > 0"),
-      "Fixed sessions must not gain precedence merely because rows exist",
+      "Legacy sessions must not gain precedence merely because rows exist",
     ).toBe(false);
     expect(bookingFlowSource).toContain(
       "dateKeyForInstantInTimeZone(new Date(), configuredOffering.schedulingTimezone)",
@@ -31,7 +31,9 @@ describe("reported fixed-session and availability regression", () => {
       /Intl\.DateTimeFormat\([\s\S]*timeZone:/.test(bookingDateTimeSource),
       "Booking time formatting must pass the DTO timezone to Intl.DateTimeFormat",
     ).toBe(true);
-    expect(bookingFlowSource).toContain("formatTime(session.startsAt, session.timezone)");
+    expect(bookingFlowSource).toContain(
+      "formatTime(occurrence.startsAt, occurrence.timezone)",
+    );
     expect(bookingFlowSource).toContain("formatTime(slot.startsAt, slot.timezone)");
     expect(bookingFlowSource).toContain(
       "formatTime(selectedBookableTime.startsAt, selectedBookableTime.timezone)",

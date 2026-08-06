@@ -199,6 +199,7 @@ export type AdminBookingTarget =
   | {
       kind: "scheduled_program";
       scheduledProgramId: string;
+      title: string;
       timezone: string;
       occurrences: Array<{
         id: string;
@@ -206,6 +207,7 @@ export type AdminBookingTarget =
         endsAt: string;
         timezone: string;
         attendanceMode: AdminOffering["attendanceMode"];
+        meetUrl: string | null;
         location: {
           id: string;
           name: string;
@@ -603,6 +605,52 @@ export type AdminAvailabilityWindowPayload = {
   status: AdminAvailabilityWindowStatus;
 };
 
+export type AdminProgramStatus = "draft" | "published" | "archived";
+
+export type AdminProgramOccurrence = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  attendanceMode: AdminOffering["attendanceMode"];
+  location: { id: string; name: string | null } | null;
+  locationId: string | null;
+  sortOrder: number;
+  googleCalendarEventId: string | null;
+  meetUrl: string | null;
+  status: "scheduled" | "cancelled";
+};
+
+export type AdminProgram = {
+  id: string;
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    status: AdminOfferingStatus;
+    schedulingMode: "scheduled_program";
+    bookingMode: AdminOffering["bookingMode"];
+  };
+  title: string;
+  timezone: string;
+  attendanceMode: AdminOffering["attendanceMode"];
+  location: { id: string; name: string | null } | null;
+  capacity: { total: number; booked: number; held: number; remaining: number };
+  registrationOpensAt: string | null;
+  registrationClosesAt: string | null;
+  status: AdminProgramStatus;
+  occurrences: AdminProgramOccurrence[];
+  conflicts: Array<{
+    kind: "program" | "appointment_booking" | "appointment_hold" | "external_busy";
+    resourceId: string;
+    startsAt: string;
+    endsAt: string;
+  }>;
+  allowedActions: { edit: boolean; publish: boolean; archive: boolean; delete: boolean };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type AdminAvailabilityOverridePayload = {
   date: string;
   type: AdminAvailabilityOverrideType;
@@ -657,6 +705,26 @@ export type AdminSessionPayload = {
   locationId?: string | null;
   googleCalendarEventId?: string | null;
   status: AdminOfferingStatus;
+};
+
+export type AdminProgramPayload = {
+  offeringId: string;
+  title: string;
+  timezone: string;
+  attendanceMode: AdminOffering["attendanceMode"];
+  locationId?: string | null;
+  capacity: number;
+  registrationOpensAt?: string | null;
+  registrationClosesAt?: string | null;
+  occurrences: Array<{
+    id?: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    attendanceMode: AdminOffering["attendanceMode"];
+    locationId?: string | null;
+    status: "scheduled" | "cancelled";
+  }>;
 };
 
 type ApiErrorPayload = {
@@ -1631,4 +1699,64 @@ export const archiveAdminSession = async (id: string) => {
   await adminRequest<void>(`/admin/sessions/${id}`, {
     method: "DELETE",
   });
+};
+
+export const fetchAdminPrograms = async (
+  filters: { offeringId?: string | "all"; status?: AdminProgramStatus | "all"; search?: string } = {},
+) => {
+  const params = new URLSearchParams();
+  if (filters.offeringId && filters.offeringId !== "all") params.set("offeringId", filters.offeringId);
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
+  if (filters.search?.trim()) params.set("search", filters.search.trim());
+  const query = params.toString();
+  const payload = await adminRequest<{ data: AdminProgram[] }>(
+    `/admin/programs${query ? `?${query}` : ""}`,
+  );
+  return payload.data;
+};
+
+export const fetchAdminProgram = async (id: string) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}`);
+  return payload.data;
+};
+
+export const createAdminProgram = async (input: AdminProgramPayload) => {
+  const payload = await adminRequest<{ data: AdminProgram }>("/admin/programs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+};
+
+export const updateAdminProgram = async (id: string, input: Partial<AdminProgramPayload>) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+};
+
+export const publishAdminProgram = async (id: string) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}/publish`, {
+    method: "POST",
+  });
+  return payload.data;
+};
+
+export const retryAdminProgramCalendar = async (id: string) => {
+  const payload = await adminRequest<{
+    data: AdminProgram;
+    calendarSync: Array<{
+      occurrenceId: string;
+      status: "created" | "updated" | "cancelled" | "failed" | "skipped";
+      googleCalendarEventId: string | null;
+      meetUrl: string | null;
+      error: string | null;
+    }>;
+  }>(`/admin/programs/${id}/calendar/retry`, { method: "POST" });
+  return payload;
+};
+
+export const deleteOrArchiveAdminProgram = async (id: string) => {
+  await adminRequest<void>(`/admin/programs/${id}`, { method: "DELETE" });
 };

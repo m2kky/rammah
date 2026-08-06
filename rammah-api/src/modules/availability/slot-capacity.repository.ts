@@ -438,12 +438,30 @@ const hasProgramScheduleConflict = async (
       ),
     )
     .where(and(...programHoldConditions));
+  const publishedPrograms = await tx
+    .select({
+      startsAt: scheduledProgramOccurrences.startsAt,
+      endsAt: scheduledProgramOccurrences.endsAt,
+    })
+    .from(scheduledProgramOccurrences)
+    .innerJoin(
+      scheduledPrograms,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .where(
+      and(
+        eq(scheduledPrograms.status, "published"),
+        ne(scheduledPrograms.id, input.scheduledProgramId),
+        eq(scheduledProgramOccurrences.status, "scheduled"),
+      ),
+    );
 
   const occupied = [
     ...appointmentBookings,
     ...appointmentHolds,
     ...programBookings,
     ...programHolds,
+    ...publishedPrograms,
   ].filter(
     (interval): interval is { startsAt: Date; endsAt: Date } =>
       interval.startsAt !== null && interval.endsAt !== null,
@@ -878,6 +896,40 @@ export const withAvailableSlotCapacity = async <T>(
         status: offering.status,
       },
     });
+};
+
+export const isScheduledProgramFull = async (
+  scheduledProgramId: string,
+  now = new Date(),
+) => {
+  const [programRows, bookingRows, holdRows] = await Promise.all([
+    db
+      .select({ capacity: scheduledPrograms.capacity })
+      .from(scheduledPrograms)
+      .where(eq(scheduledPrograms.id, scheduledProgramId))
+      .limit(1),
+    db
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.scheduledProgramId, scheduledProgramId),
+          inArray(bookings.status, ["pending_payment", "confirmed", "rescheduled"]),
+        ),
+      ),
+    db
+      .select({ id: bookingSlotHolds.id })
+      .from(bookingSlotHolds)
+      .where(
+        and(
+          eq(bookingSlotHolds.scheduledProgramId, scheduledProgramId),
+          eq(bookingSlotHolds.status, "active"),
+          gt(bookingSlotHolds.expiresAt, now),
+        ),
+      ),
+  ]);
+  const capacity = programRows[0]?.capacity;
+  return capacity !== undefined && bookingRows.length + holdRows.length >= capacity;
 };
 
 export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>

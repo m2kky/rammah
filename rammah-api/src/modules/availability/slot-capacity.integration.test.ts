@@ -194,6 +194,10 @@ describe.sequential("atomic public slot-hold capacity", () => {
         endsAt: first.session.endsAt,
       })
       .where(eq(scheduledProgramOccurrences.id, second.session.id));
+    await db
+      .update(scheduledPrograms)
+      .set({ status: "draft" })
+      .where(eq(scheduledPrograms.id, second.session.id));
     second.input.startsAt = first.session.startsAt.toISOString();
     second.input.endsAt = first.session.endsAt.toISOString();
 
@@ -202,7 +206,7 @@ describe.sequential("atomic public slot-hold capacity", () => {
     await expectUnavailable(createSlotHold(second.input));
   });
 
-  it("serializes competing offerings so only one overlapping schedule wins", async () => {
+  it("rejects both targets when invalid legacy data has overlapping published Programs", async () => {
     const first = await seedFixedTarget(1);
     const second = await seedFixedTarget(1);
     const { db } = getTestDatabase();
@@ -229,8 +233,8 @@ describe.sequential("atomic public slot-hold capacity", () => {
       createSlotHold(second.input),
     ]);
 
-    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(0);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(2);
   });
 
   it("blocks a ninth distinct schedule group on the same day", async () => {

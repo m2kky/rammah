@@ -397,33 +397,66 @@ const toIcsTimestamp = (date: Date) =>
 
 export const buildPublicBookingCalendar = async (publicToken: string) => {
   const booking = await findPublicBookingByToken(publicToken);
-  if (!booking || !booking.slotStartAt || !booking.slotEndAt) {
+  if (!booking) {
     throw new AppError({
       code: "NOT_FOUND",
       message: "Booking was not found.",
       statusCode: httpStatus.notFound,
     });
   }
-  const location = booking.locationName
-    ? [booking.locationName, booking.locationAddressLine1, booking.locationCity]
-        .filter(Boolean)
-        .join(", ")
-    : "";
+  const occurrences = booking.target.kind === "scheduled_program"
+    ? booking.target.occurrences.map((occurrence) => ({
+        id: occurrence.id,
+        startsAt: occurrence.startsAt,
+        endsAt: occurrence.endsAt,
+        location: occurrence.location
+          ? [occurrence.location.name, occurrence.location.city, occurrence.location.countryCode]
+              .filter(Boolean)
+              .join(", ")
+          : "",
+        meetUrl: occurrence.meetUrl,
+      }))
+    : [{
+        id: "appointment",
+        startsAt: booking.target.startsAt,
+        endsAt: booking.target.endsAt,
+        location: booking.locationName
+          ? [booking.locationName, booking.locationAddressLine1, booking.locationCity]
+              .filter(Boolean)
+              .join(", ")
+          : "",
+        meetUrl: null,
+      }];
+  if (occurrences.length === 0) {
+    throw new AppError({
+      code: "NOT_FOUND",
+      message: "Booking schedule was not found.",
+      statusCode: httpStatus.notFound,
+    });
+  }
 
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Rammah//Booking//EN",
-    "BEGIN:VEVENT",
-    `UID:${booking.publicToken}@rammah`,
-    `DTSTAMP:${toIcsTimestamp(new Date())}`,
-    `DTSTART:${toIcsTimestamp(booking.slotStartAt)}`,
-    `DTEND:${toIcsTimestamp(booking.slotEndAt)}`,
-    `SUMMARY:${escapeIcs(booking.offeringTitle)}`,
-    `DESCRIPTION:${escapeIcs(`Booking reference: ${booking.bookingReference}`)}`,
-    ...(location ? [`LOCATION:${escapeIcs(location)}`] : []),
-    `STATUS:${booking.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
-    "END:VEVENT",
+    ...occurrences.flatMap((occurrence, index) => [
+      "BEGIN:VEVENT",
+      `UID:${booking.publicToken}-${occurrence.id}@rammah`,
+      `DTSTAMP:${toIcsTimestamp(new Date())}`,
+      `DTSTART:${toIcsTimestamp(occurrence.startsAt)}`,
+      `DTEND:${toIcsTimestamp(occurrence.endsAt)}`,
+      `SUMMARY:${escapeIcs(booking.offeringTitle)}`,
+      `DESCRIPTION:${escapeIcs([
+        `Booking reference: ${booking.bookingReference}`,
+        booking.target.kind === "scheduled_program"
+          ? `Program date ${index + 1} of ${occurrences.length}`
+          : null,
+        occurrence.meetUrl ? `Meet: ${occurrence.meetUrl}` : null,
+      ].filter(Boolean).join("\n"))}`,
+      ...(occurrence.location ? [`LOCATION:${escapeIcs(occurrence.location)}`] : []),
+      `STATUS:${booking.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
+      "END:VEVENT",
+    ]),
     "END:VCALENDAR",
     "",
   ].join("\r\n");

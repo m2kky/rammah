@@ -16,7 +16,7 @@ import {
 import {
   createPublicSlotHold,
   fetchPublicAvailabilitySlots,
-  fetchPublicOfferingSessions,
+  fetchPublicPrograms,
   fetchPublicPricePreview,
   PublicApiError,
   submitPublicFreeBooking,
@@ -24,7 +24,7 @@ import {
   submitPublicQuoteRequest,
   type PublicAvailabilitySlot,
   type PublicBooking,
-  type PublicOfferingSession,
+  type PublicProgram,
   type PublicPricePreview,
   type PublicQuoteRequest,
 } from "@/lib/api/bookings";
@@ -52,7 +52,7 @@ const attendanceLabels = (mode: PublicOffering["attendanceMode"]) =>
 const formatPublicLocation = (
   location:
     | PublicOfferingLocation
-    | NonNullable<PublicOfferingSession["location"]>
+    | NonNullable<PublicProgram["location"]>
     | null
     | undefined,
 ) => {
@@ -136,10 +136,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [offering, setOffering] = useState<PublicBookingOffering | null>(null);
   const [fields, setFields] = useState<PublicBookingFormField[]>([]);
   const [slots, setSlots] = useState<PublicAvailabilitySlot[]>([]);
-  const [sessions, setSessions] = useState<PublicOfferingSession[]>([]);
+  const [sessions, setSessions] = useState<PublicProgram[]>([]);
   const [locations, setLocations] = useState<PublicOfferingLocation[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PublicAvailabilitySlot | null>(null);
-  const [selectedSession, setSelectedSession] = useState<PublicOfferingSession | null>(null);
+  const [selectedSession, setSelectedSession] = useState<PublicProgram | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [attendanceCountryCode, setAttendanceCountryCode] = useState("");
@@ -322,12 +322,12 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         }
 
         if (configuredOffering.schedulingMode === "scheduled_program") {
-          const sessionPreview = await fetchPublicOfferingSessions({
+          const sessionPreview = await fetchPublicPrograms({
             offeringId: configuredOffering.id,
             dateFrom: scheduledProgramRange.from,
             dateTo: scheduledProgramRange.to,
           });
-          const availableSessions = sessionPreview.sessions.filter(
+          const availableSessions = sessionPreview.programs.filter(
             (session) => session.status === "available",
           );
 
@@ -546,8 +546,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
               if (session.id !== selectedSession.id) return session;
 
               const remainingCapacity = Math.max(session.remainingCapacity - 1, 0);
-              const status: PublicOfferingSession["status"] =
-                remainingCapacity > 0 ? "available" : "booked";
+              const status: PublicProgram["status"] =
+                remainingCapacity > 0 ? "available" : "full";
 
               return {
                 ...session,
@@ -574,6 +574,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     } catch (submitError) {
       if (submitError instanceof PublicApiError && submitError.code === "SLOT_UNAVAILABLE") {
         setError("That slot was just taken. Choose another time.");
+      } else if (submitError instanceof PublicApiError && submitError.code === "PROGRAM_FULL") {
+        setError("That Program has just filled up. Choose another cohort.");
       } else if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
@@ -1050,11 +1052,22 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                   </div>
                   <div>
                     <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/42">
-                      Slot
+                      {usesScheduledProgram ? "Program schedule" : "Slot"}
                     </p>
-                    <p className="mt-2 font-inter text-sm text-[#102329]/70">
-                      {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt, selectedBookableTime.timezone)}
-                    </p>
+                    {usesScheduledProgram && selectedSession ? (
+                      <div className="mt-2 space-y-1">
+                        <p className="font-inter text-sm font-semibold">{selectedSession.title}</p>
+                        {selectedSession.occurrences.map((occurrence) => (
+                          <p key={occurrence.id} className="font-inter text-sm text-[#102329]/70">
+                            {formatDate(occurrence.date)}, {formatTime(occurrence.startsAt, occurrence.timezone)}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 font-inter text-sm text-[#102329]/70">
+                        {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt, selectedBookableTime.timezone)}
+                      </p>
+                    )}
                     {selectedLocation && (
                       <div className="mt-1 font-inter text-xs leading-5 text-[#102329]/48">
                         <p>{formatPublicLocation(selectedLocation)}</p>
@@ -1157,7 +1170,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                   <div className="flex items-end justify-between gap-4">
                     <div>
                       <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/42">
-                        {usesScheduledProgram ? "Available sessions" : "Available times"}
+                        {usesScheduledProgram ? "Available programs" : "Available times"}
                       </p>
                       {activeDate && (
                         <p className="mt-2 font-inter text-sm font-semibold text-[#102329]/72">
@@ -1276,7 +1289,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                           {usesScheduledProgram ? (
                             activeDateSessions.length === 0 ? (
                               <p className="border border-dashed border-[#102329]/14 px-3 py-5 text-center font-inter text-sm text-[#102329]/46">
-                                No sessions available on this day.
+                                No programs available on this day.
                               </p>
                             ) : (
                               <div className="grid gap-2 sm:grid-cols-2">
@@ -1302,7 +1315,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                       }`}
                                     >
                                       <span className="font-inter text-sm font-semibold">
-                                        {formatTime(session.startsAt, session.timezone)}
+                                        {session.title}
                                       </span>
                                       <span
                                         className={`mt-1 block font-inter text-[11px] leading-4 ${
@@ -1311,6 +1324,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                       >
                                         {formatPublicLocation(session.location) ||
                                           attendanceLabels(session.attendanceMode)}
+                                        {" · "}
+                                        {session.occurrences.length} date{session.occurrences.length === 1 ? "" : "s"}
                                         {" · "}
                                         {session.remainingCapacity} left
                                       </span>
