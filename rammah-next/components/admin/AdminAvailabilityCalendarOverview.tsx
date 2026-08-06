@@ -326,16 +326,22 @@ export default function AdminAvailabilityCalendarOverview() {
                   ) : null}
 
                   {day.slots.map((slot) => (
-                    <p
-                      key={`${slot.offering.id}-${slot.startsAt}-${slot.endsAt}`}
-                      className={`border-l-2 pl-2 font-inter text-xs leading-5 ${slotStatusStyles[slot.status]}`}
-                    >
-                      {slotStatusLabels[slot.status]}: {getSlotLabel(slot, showOffering)}
-                      {slot.status === "available" && slot.remainingCapacity > 1
-                        ? ` (${slot.remainingCapacity} left)`
-                        : ""}
-                      {slot.blockedReason ? ` - ${slot.blockedReason}` : ""}
-                    </p>
+                    <div key={`${slot.offering.id}-${slot.startsAt}-${slot.endsAt}`}>
+                      <p
+                        className={`border-l-2 pl-2 font-inter text-xs leading-5 ${slotStatusStyles[slot.status]}`}
+                      >
+                        {slotStatusLabels[slot.status]}: {getSlotLabel(slot, showOffering)}
+                        {slot.status === "available" && slot.remainingCapacity > 1
+                          ? ` (${slot.remainingCapacity} left)`
+                          : ""}
+                        {slot.blockedReason ? ` - ${slot.blockedReason}` : ""}
+                      </p>
+                      {!slot.publicBookingPolicy.bookable ? (
+                        <p className="mt-1 pl-2 font-inter text-[11px] leading-4 text-[#8A6F2A]">
+                          Unavailable to customers until {slot.publicBookingPolicy.earliestBookableDate}
+                        </p>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               </div>

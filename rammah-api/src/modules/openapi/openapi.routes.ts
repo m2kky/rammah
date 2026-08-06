@@ -182,6 +182,7 @@ const adminPaths: Record<string, PathSpec> = {
   "/admin/cms/media-assets": adminResource("Admin CMS", "media assets"),
   "/admin/cms/media-assets/{id}": adminMutableResourceItem("Admin CMS", "media asset"),
   "/admin/cms/seo-metadata": { put: operation({ summary: "Upsert SEO metadata", tags: ["Admin CMS"], secured: true }) },
+  "/admin/booking-policy": { get: operation({ summary: "Get global booking policy", tags: ["Admin Availability"], secured: true }), patch: operation({ summary: "Update global booking policy", tags: ["Admin Availability"], secured: true }) },
 };
 
 export const openApiDocument = {

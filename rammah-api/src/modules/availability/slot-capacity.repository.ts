@@ -32,6 +32,13 @@ import {
   findBlockingOverride,
 } from "./availability-slots.service.js";
 import { insertSlotHold } from "./slot-holds.repository.js";
+import {
+  advancePolicyEnforces,
+  isEligibleBookingTarget,
+  type AdvancePolicyContext,
+  type BookingPolicy,
+} from "./booking-policy.js";
+import { getLockedBookingPolicy } from "./booking-policy.service.js";
 
 export type SlotCapacityInput =
   | {
@@ -85,12 +92,6 @@ type AvailableSlotCapacity = {
     status: "draft" | "published" | "scheduled" | "archived";
   };
 };
-
-export const meetsMinimumNotice = (
-  startsAt: Date,
-  now: Date,
-  minimumMinutes = env.BOOKING_MINIMUM_NOTICE_MINUTES,
-) => startsAt.getTime() - now.getTime() >= minimumMinutes * 60_000;
 
 type AppointmentCapacityInput = Extract<
   SlotCapacityInput,
@@ -476,6 +477,7 @@ const withAvailableProgramCapacity = async <T>(
   tx: CapacityTransaction,
   input: Extract<SlotCapacityInput, { scheduledProgramId: string }>,
   options: { excludeBookingId?: string; excludeHoldId?: string },
+  enforceBookingPolicy: boolean,
   mutate: (capacity: AvailableSlotCapacity) => Promise<T>,
 ): Promise<T | null> => {
   await acquireCapacityLock(
@@ -521,7 +523,9 @@ const withAvailableProgramCapacity = async <T>(
     )
     .orderBy(scheduledProgramOccurrences.startsAt);
   const now = new Date();
-
+  const bookingPolicy: BookingPolicy | null = enforceBookingPolicy
+    ? await getLockedBookingPolicy(tx, now)
+    : null;
   if (
     !program ||
     program.offeringId !== input.offeringId ||
@@ -531,7 +535,7 @@ const withAvailableProgramCapacity = async <T>(
     program.capacity <= 0 ||
     occurrences.length === 0 ||
     occurrences[0]!.startsAt <= now ||
-    !meetsMinimumNotice(occurrences[0]!.startsAt, now) ||
+    (bookingPolicy && !isEligibleBookingTarget(occurrences[0]!.startsAt, bookingPolicy)) ||
     (program.registrationOpensAt && program.registrationOpensAt > now) ||
     (program.registrationClosesAt && program.registrationClosesAt <= now)
   ) {
@@ -632,11 +636,19 @@ const withAvailableProgramCapacity = async <T>(
 export const withAvailableSlotCapacity = async <T>(
   tx: CapacityTransaction,
   input: SlotCapacityInput,
-  options: { excludeBookingId?: string; excludeHoldId?: string } = {},
+  options: {
+    policyContext: AdvancePolicyContext;
+    excludeBookingId?: string;
+    excludeHoldId?: string;
+  },
   mutate: (capacity: AvailableSlotCapacity) => Promise<T>,
 ): Promise<T | null> => {
+    const enforceBookingPolicy = advancePolicyEnforces(options.policyContext);
+    if (enforceBookingPolicy) {
+      await getLockedBookingPolicy(tx, new Date());
+    }
     if (input.scheduledProgramId !== null) {
-      return withAvailableProgramCapacity(tx, input, options, mutate);
+      return withAvailableProgramCapacity(tx, input, options, enforceBookingPolicy, mutate);
     }
 
     await acquireCapacityLocks(tx, bookingScheduleLockKeys(input));
@@ -647,8 +659,11 @@ export const withAvailableSlotCapacity = async <T>(
         fixedSessionCapacityLockKey(input.offeringSessionId),
       );
       const now = new Date();
+      const bookingPolicy = enforceBookingPolicy
+        ? await getLockedBookingPolicy(tx, now)
+        : null;
       if (
-        !meetsMinimumNotice(input.startsAt, now) ||
+        (bookingPolicy && !isEligibleBookingTarget(input.startsAt, bookingPolicy)) ||
         (await hasGlobalScheduleConflict(tx, input, now, options))
       ) {
         return null;
@@ -757,8 +772,11 @@ export const withAvailableSlotCapacity = async <T>(
       }),
     );
     const now = new Date();
+    const bookingPolicy = enforceBookingPolicy
+      ? await getLockedBookingPolicy(tx, now)
+      : null;
     if (
-      !meetsMinimumNotice(input.startsAt, now) ||
+      (bookingPolicy && !isEligibleBookingTarget(input.startsAt, bookingPolicy)) ||
       (await hasGlobalScheduleConflict(tx, input, now, options))
     ) {
       return null;
@@ -934,7 +952,7 @@ export const isScheduledProgramFull = async (
 
 export const createAtomicSlotHold = async (input: AtomicSlotHoldInput) =>
   db.transaction((tx) =>
-    withAvailableSlotCapacity(tx, input, {}, async ({ now, target }) => {
+    withAvailableSlotCapacity(tx, input, { policyContext: "public_hold" }, async ({ now, target }) => {
       const hold = await insertHold(tx, input, now);
       return hold ? { ...hold, target } : null;
     }),

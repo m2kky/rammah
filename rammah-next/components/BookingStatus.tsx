@@ -11,8 +11,14 @@ import {
   PublicApiError,
   reschedulePublicBooking,
   type PublicAvailabilitySlot,
-  type PublicBooking,
+  type PublicBookingPolicy,
+  type PublicBookingStatus,
 } from "@/lib/api/bookings";
+import { dateKeyForInstantInTimeZone } from "@/lib/booking-datetime";
+import {
+  buildBoundedBookingRange,
+  isFirstBookableDateBeyondRail,
+} from "@/lib/booking-policy";
 
 const uuidPattern =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
@@ -95,12 +101,14 @@ type BookingStatusProps = {
 export default function BookingStatus({ publicToken }: BookingStatusProps) {
   const router = useRouter();
   const [tokenInput, setTokenInput] = useState(publicToken ?? "");
-  const [booking, setBooking] = useState<PublicBooking | null>(null);
+  const [booking, setBooking] = useState<PublicBookingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(publicToken));
   const [error, setError] = useState("");
   const [changeError, setChangeError] = useState("");
   const [isChanging, setIsChanging] = useState(false);
   const [rescheduleOptions, setRescheduleOptions] = useState<PublicAvailabilitySlot[]>([]);
+  const [reschedulePolicy, setReschedulePolicy] = useState<PublicBookingPolicy | null>(null);
+  const [rescheduleRangeStart, setRescheduleRangeStart] = useState("");
 
   const normalizedRouteToken = useMemo(
     () => (publicToken ? normalizeTokenInput(publicToken) : ""),
@@ -154,29 +162,34 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   }, [normalizedRouteToken, publicToken]);
 
   const statusMeta = booking ? getStatusMeta(booking.status) : null;
-  const canChange = Boolean(
-    booking &&
-      ["confirmed", "rescheduled"].includes(booking.status) &&
-      booking.target.kind === "appointment" &&
-      booking.slot.startsAt &&
-      new Date(booking.slot.startsAt) > new Date(),
+  const canCancel = Boolean(booking?.changePolicy.canCancel);
+  const canReschedule = Boolean(booking?.changePolicy.canReschedule);
+  const firstRescheduleDateBeyondRail = Boolean(
+    reschedulePolicy &&
+      rescheduleRangeStart &&
+      isFirstBookableDateBeyondRail({
+        startDate: rescheduleRangeStart,
+        earliestBookableDate: reschedulePolicy.earliestBookableDate,
+      }),
   );
 
-  const loadRescheduleOptions = async () => {
+  const loadRescheduleOptions = async (requestedStartDate?: string) => {
     if (!booking) return;
     setIsChanging(true);
     setChangeError("");
-    const from = new Date();
-    const toDate = (date: Date) => date.toISOString().slice(0, 10);
-    const twoWeeks = new Date(from);
-    twoWeeks.setDate(twoWeeks.getDate() + 13);
+    const startDate =
+      requestedStartDate ??
+      dateKeyForInstantInTimeZone(new Date(), booking.slot.timezone || "Africa/Cairo");
+    const range = buildBoundedBookingRange(startDate, 14);
 
     try {
       const availabilityPreview = await fetchPublicAvailabilitySlots({
         offeringId: booking.offering.id,
-        dateFrom: toDate(from),
-        dateTo: toDate(twoWeeks),
+        dateFrom: range.from,
+        dateTo: range.to,
       });
+      setReschedulePolicy(availabilityPreview.bookingPolicy);
+      setRescheduleRangeStart(range.from);
       setRescheduleOptions(
         availabilityPreview.days.flatMap((day) =>
           day.slots.filter((slot) => slot.status === "available"),
@@ -196,6 +209,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
     try {
       setBooking(await cancelPublicBooking(booking.publicToken));
       setRescheduleOptions([]);
+      setReschedulePolicy(null);
     } catch (change) {
       setChangeError(change instanceof Error ? change.message : "Could not cancel booking.");
     } finally {
@@ -219,6 +233,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
         }),
       );
       setRescheduleOptions([]);
+      setReschedulePolicy(null);
     } catch (change) {
       setChangeError(change instanceof Error ? change.message : "Could not change the time.");
     } finally {
@@ -487,6 +502,23 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                     ))}
                   </div>
                 )}
+                {firstRescheduleDateBeyondRail && reschedulePolicy ? (
+                  <div className="border-l-2 border-[#8A6F2A] bg-[#8A6F2A]/5 px-4 py-3 font-inter text-sm leading-6 text-[#102329]/72">
+                    <p>
+                      New bookings are available from {reschedulePolicy.earliestBookableDate}.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={isChanging}
+                      onClick={() =>
+                        void loadRescheduleOptions(reschedulePolicy.earliestBookableDate)
+                      }
+                      className="mt-2 font-semibold text-[#0F3B46] underline decoration-[#0F3B46]/35 underline-offset-4 disabled:opacity-50"
+                    >
+                      View first bookable date
+                    </button>
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap gap-3">
                   <a
                     href={publicBookingCalendarUrl(booking.publicToken)}
@@ -494,8 +526,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                   >
                     Add to calendar
                   </a>
-                  {canChange && (
-                    <>
+                  {canReschedule ? (
                       <button
                         type="button"
                         disabled={isChanging}
@@ -504,6 +535,8 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                       >
                         Change time
                       </button>
+                  ) : null}
+                  {canCancel ? (
                       <button
                         type="button"
                         disabled={isChanging}
@@ -512,8 +545,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                       >
                         Cancel booking
                       </button>
-                    </>
-                  )}
+                  ) : null}
                   <Link
                     href="/booking"
                     className="inline-flex h-11 items-center justify-center border border-[#102329]/18 px-5 font-inter text-sm font-semibold text-[#102329]/70 transition-colors hover:border-[#0F3B46] hover:text-[#0F3B46]"

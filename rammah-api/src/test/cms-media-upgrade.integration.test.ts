@@ -17,7 +17,7 @@ const applyMigration = async (client: PoolClient, migration: MigrationMeta) => {
 
 const prepareCmsUpgrade = async (client: PoolClient) => {
   const migrations = readMigrationFiles({ migrationsFolder });
-  expect(migrations).toHaveLength(10);
+  expect(migrations).toHaveLength(11);
   await client.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public");
   for (const migration of migrations.slice(0, 9)) await applyMigration(client, migration);
   return migrations[9]!;

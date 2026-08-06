@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../app.js";
 import {
   availabilityWindows,
@@ -272,6 +272,13 @@ it("gives customers a human reference and lets them reschedule then cancel", asy
   await expect(buildPublicBookingCalendar(created.publicToken)).resolves.toContain(
     `DESCRIPTION:Booking reference: ${created.bookingReference}`,
   );
+  await expect(getPublicBookingStatus(created.publicToken)).resolves.toMatchObject({
+    changePolicy: {
+      canCancel: true,
+      canReschedule: true,
+      changeCutoffAt: expect.any(String),
+    },
+  });
   const rescheduled = await reschedulePublicBooking(created.publicToken, {
     startsAt: new Date(`${recurringDate}T11:00:00`).toISOString(),
     endsAt: new Date(`${recurringDate}T12:00:00`).toISOString(),
@@ -287,6 +294,31 @@ it("gives customers a human reference and lets them reschedule then cancel", asy
     bookingReference: created.bookingReference,
     status: "cancelled",
     offering: { id: offering.id },
+    changePolicy: {
+      canCancel: false,
+      canReschedule: false,
+    },
+  });
+});
+
+it("closes customer change actions at the exact configured cutoff", async () => {
+  const { holdInput } = await seedRecurringTarget({ bookingMode: "free" });
+  const hold = await createSlotHold(holdInput);
+  const created = await submitFreeBooking(
+    freeServiceInput(hold.id, hold.holdToken, []),
+  );
+  const cutoff = new Date(recurringSlot.startsAt.getTime() - 24 * 60 * 60 * 1_000);
+  vi.setSystemTime(cutoff);
+
+  await expect(getPublicBookingStatus(created.publicToken)).resolves.toMatchObject({
+    changePolicy: {
+      canCancel: false,
+      canReschedule: false,
+      changeCutoffAt: cutoff.toISOString(),
+    },
+  });
+  await expect(cancelPublicBooking(created.publicToken)).rejects.toMatchObject({
+    code: "CONFLICT",
   });
 });
 

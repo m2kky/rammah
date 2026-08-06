@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   availabilityWindows,
   bookings,
@@ -9,7 +9,10 @@ import {
   siteSettings,
 } from "../../db/schema/index.js";
 import { getTestDatabase } from "../../test/db.js";
-import { previewAvailabilitySlots } from "./availability-slots.service.js";
+import {
+  previewAvailabilitySlots,
+  previewPublicAvailabilitySlots,
+} from "./availability-slots.service.js";
 
 const seedSettings = async () => {
   const { db } = getTestDatabase();
@@ -62,6 +65,48 @@ const seedThursdayWindows = async () => {
 };
 
 describe.sequential("global appointment slot preview", () => {
+  it("keeps closed-date inventory in admin preview and removes it from public selection", async () => {
+    vi.setSystemTime(new Date("2026-08-05T09:00:00.000Z"));
+    const { db } = getTestDatabase();
+    await db.insert(siteSettings).values({
+      siteName: "Rammah",
+      bookingDefaultTimezone: "Africa/Cairo",
+      bookingMinimumAdvanceDays: 2,
+    });
+    const offering = await seedOffering();
+    await seedThursdayWindows();
+    await db.insert(globalAvailabilityOverrides).values({
+      date: "2026-08-07",
+      overrideMode: "available",
+      startLocalTime: "09:00",
+      endLocalTime: "10:00",
+    });
+
+    const input = {
+      offeringId: offering.id,
+      dateFrom: "2026-08-06",
+      dateTo: "2026-08-07",
+    };
+    const adminPreview = await previewAvailabilitySlots(input);
+    const publicPreview = await previewPublicAvailabilitySlots(input);
+
+    expect(adminPreview.days[0]?.slots).toHaveLength(12);
+    expect(adminPreview.days[0]?.slots[0]?.publicBookingPolicy).toEqual({
+      bookable: false,
+      reason: "minimum_advance_days",
+      earliestBookableDate: "2026-08-07",
+    });
+    expect(publicPreview.bookingPolicy).toEqual({
+      minimumAdvanceDays: 2,
+      timezone: "Africa/Cairo",
+      localToday: "2026-08-05",
+      earliestBookableDate: "2026-08-07",
+    });
+    expect(publicPreview.days[0]).toMatchObject({ date: "2026-08-06", slots: [], availableCount: 0 });
+    expect(publicPreview.days[1]?.slots).toHaveLength(1);
+    expect(publicPreview.days[1]?.slots[0]).not.toHaveProperty("publicBookingPolicy");
+  });
+
   it("combines all global windows and derives slot controls from the Offering", async () => {
     await seedSettings();
     const offering = await seedOffering();

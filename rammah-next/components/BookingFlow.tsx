@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
-  addDaysToDateKey,
   dateKeyForInstantInTimeZone,
   formatBookingDateKey as formatDate,
   formatBookingDayNumber as formatDayNumber,
@@ -13,6 +12,12 @@ import {
   formatBookingTime as formatTime,
   formatBookingWeekday as formatWeekday,
 } from "@/lib/booking-datetime";
+import {
+  buildBookingDateRail,
+  buildBoundedBookingRange,
+  isFirstBookableDateBeyondRail,
+  type PublicBookingPolicySummary,
+} from "@/lib/booking-policy";
 import {
   createPublicSlotHold,
   fetchPublicAvailabilitySlots,
@@ -131,6 +136,60 @@ type BookingFlowProps = {
 type BookingStep = "details" | "review";
 type DynamicAnswers = Record<string, string>;
 
+const bookingRailDays = 14;
+const scheduledProgramQueryDays = 90;
+
+type BookingWindow =
+  | {
+      mode: "appointment";
+      range: { from: string; to: string };
+      bookingPolicy: PublicBookingPolicySummary;
+      slots: PublicAvailabilitySlot[];
+    }
+  | {
+      mode: "scheduled_program";
+      range: { from: string; to: string };
+      bookingPolicy: PublicBookingPolicySummary;
+      sessions: PublicProgram[];
+    };
+
+const fetchBookingWindow = async (
+  offering: PublicBookingOffering,
+  startDate: string,
+): Promise<BookingWindow> => {
+  if (offering.schedulingMode === "scheduled_program") {
+    const range = buildBoundedBookingRange(startDate, scheduledProgramQueryDays);
+    const preview = await fetchPublicPrograms({
+      offeringId: offering.id,
+      dateFrom: range.from,
+      dateTo: range.to,
+    });
+
+    return {
+      mode: "scheduled_program",
+      range,
+      bookingPolicy: preview.bookingPolicy,
+      sessions: preview.programs.filter((program) => program.status === "available"),
+    };
+  }
+
+  const range = buildBoundedBookingRange(startDate, bookingRailDays);
+  const preview = await fetchPublicAvailabilitySlots({
+    offeringId: offering.id,
+    dateFrom: range.from,
+    dateTo: range.to,
+  });
+
+  return {
+    mode: "appointment",
+    range,
+    bookingPolicy: preview.bookingPolicy,
+    slots: preview.days
+      .flatMap((day) => day.slots)
+      .filter((slot) => slot.status === "available"),
+  };
+};
+
 export default function BookingFlow({ slug }: BookingFlowProps) {
   const router = useRouter();
   const [offering, setOffering] = useState<PublicBookingOffering | null>(null);
@@ -159,6 +218,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [bookingPolicy, setBookingPolicy] =
+    useState<PublicBookingPolicySummary | null>(null);
 
   const isFreeBooking =
     offering?.bookingMode === "free" && !offering.requiresPayment && !offering.quoteOnly;
@@ -180,29 +241,27 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const needsLocation =
     !usesScheduledProgram && attendanceMode !== "online" && locations.length > 0;
   const dateOptions = useMemo(() => {
-    if (usesScheduledProgram) {
-      const sessionDates = Array.from(new Set(sessions.map((session) => session.date))).sort();
-
-      return sessionDates.map((date) => ({
-        date,
-        count: sessions.filter((session) => session.date === date).length,
-      }));
+    if (!dateRange.from) return [];
+    const availableDateCounts = new Map<string, number>();
+    const availableDates = usesScheduledProgram
+      ? sessions.map((session) => session.date)
+      : slots.map((slot) => slot.date);
+    for (const date of availableDates) {
+      availableDateCounts.set(date, (availableDateCounts.get(date) ?? 0) + 1);
     }
 
-    if (!dateRange.from) return [];
-
-    return Array.from({ length: 14 }, (_, index) => {
-      const date = addDaysToDateKey(dateRange.from, index);
-
-      return {
-        date,
-        count: slots.filter((slot) => slot.date === date).length,
-      };
+    return buildBookingDateRail({
+      startDate: dateRange.from,
+      days: bookingRailDays,
+      availableDateCounts,
+      bookingPolicy,
+      includeAvailableDatesOutsideRail: usesScheduledProgram,
     });
-  }, [dateRange.from, sessions, slots, usesScheduledProgram]);
+  }, [bookingPolicy, dateRange.from, sessions, slots, usesScheduledProgram]);
   const activeDate =
     selectedDate ||
     dateOptions.find((dateOption) => dateOption.count > 0)?.date ||
+    dateOptions.find((dateOption) => !dateOption.closedByPolicy)?.date ||
     dateOptions[0]?.date ||
     "";
   const activeDateSessions = sessions.filter((session) => session.date === activeDate);
@@ -210,6 +269,16 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const activeDateCount = usesScheduledProgram
     ? activeDateSessions.length
     : activeDateSlots.length;
+  const activeDateOption = dateOptions.find((option) => option.date === activeDate);
+  const firstBookableDateBeyondRail = Boolean(
+    bookingPolicy &&
+      dateRange.from &&
+      isFirstBookableDateBeyondRail({
+        startDate: dateRange.from,
+        days: bookingRailDays,
+        earliestBookableDate: bookingPolicy.earliestBookableDate,
+      }),
+  );
 
   const updateAnswer = (fieldKey: string, value: string) => {
     setAnswers((currentAnswers) => ({
@@ -260,6 +329,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setSelectedSlot(null);
       setSelectedDate("");
       setDateRange({ from: "", to: "" });
+      setBookingPolicy(null);
 
       try {
         const [nextOffering, countryContext] = await Promise.all([
@@ -273,18 +343,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         const bookingConfig = await fetchPublicOfferingBookingConfig(nextOffering.id);
         const configuredOffering = bookingConfig.offering;
         const localToday = dateKeyForInstantInTimeZone(new Date(), configuredOffering.schedulingTimezone);
-        const availabilityRange = {
-          from: localToday,
-          to: addDaysToDateKey(localToday, 13),
-        };
-        const scheduledProgramRange = {
-          from: localToday,
-          to: addDaysToDateKey(localToday, 89),
-        };
-
         if (isCancelled) return;
 
-        setDateRange(availabilityRange);
         setOffering(configuredOffering);
         setFields(bookingConfig.fields);
         setLocations(bookingConfig.locations);
@@ -321,41 +381,37 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
           return;
         }
 
-        if (configuredOffering.schedulingMode === "scheduled_program") {
-          const sessionPreview = await fetchPublicPrograms({
-            offeringId: configuredOffering.id,
-            dateFrom: scheduledProgramRange.from,
-            dateTo: scheduledProgramRange.to,
-          });
-          const availableSessions = sessionPreview.programs.filter(
-            (session) => session.status === "available",
-          );
-
-          if (isCancelled) return;
-
-          setSessions(availableSessions);
-          setSelectedSession(availableSessions[0] ?? null);
-          setSelectedDate(availableSessions[0]?.date ?? "");
-          setAttendanceMode(availableSessions[0]?.attendanceMode ?? configuredOffering.attendanceMode);
-          setSelectedLocationId("");
-          return;
-        }
-
-        const preview = await fetchPublicAvailabilitySlots({
-          offeringId: configuredOffering.id,
-          dateFrom: availabilityRange.from,
-          dateTo: availabilityRange.to,
-        });
+        setDateRange(
+          buildBoundedBookingRange(
+            localToday,
+            configuredOffering.schedulingMode === "scheduled_program"
+              ? scheduledProgramQueryDays
+              : bookingRailDays,
+          ),
+        );
+        const bookingWindow = await fetchBookingWindow(configuredOffering, localToday);
 
         if (isCancelled) return;
 
-        const availableSlots = preview.days
-          .flatMap((day) => day.slots)
-          .filter((slot) => slot.status === "available");
-
-        setSlots(availableSlots);
-        setSelectedSlot(availableSlots[0] ?? null);
-        setSelectedDate(availableSlots[0]?.date ?? availabilityRange.from);
+        setDateRange(bookingWindow.range);
+        setBookingPolicy(bookingWindow.bookingPolicy);
+        if (bookingWindow.mode === "scheduled_program") {
+          setSessions(bookingWindow.sessions);
+          setSelectedSession(bookingWindow.sessions[0] ?? null);
+          setSelectedDate(
+            bookingWindow.sessions[0]?.date ?? bookingWindow.range.from,
+          );
+          setAttendanceMode(
+            bookingWindow.sessions[0]?.attendanceMode ?? configuredOffering.attendanceMode,
+          );
+          setSelectedLocationId("");
+        } else {
+          setSlots(bookingWindow.slots);
+          setSelectedSlot(bookingWindow.slots[0] ?? null);
+          setSelectedDate(
+            bookingWindow.slots[0]?.date ?? bookingWindow.range.from,
+          );
+        }
       } catch (loadError) {
         if (!isCancelled) {
           setError(loadError instanceof Error ? loadError.message : "Could not load booking.");
@@ -432,6 +488,50 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       window.clearTimeout(timeout);
     };
   }, [isPaidOffering, offering, priceCountryCode]);
+
+  const refreshBookingWindow = async (startDate: string) => {
+    if (!offering) return null;
+
+    setIsLoading(true);
+    setError("");
+    try {
+      const bookingWindow = await fetchBookingWindow(offering, startDate);
+      setDateRange(bookingWindow.range);
+      setBookingPolicy(bookingWindow.bookingPolicy);
+      setStep("details");
+
+      if (bookingWindow.mode === "scheduled_program") {
+        setSlots([]);
+        setSelectedSlot(null);
+        setSessions(bookingWindow.sessions);
+        setSelectedSession(bookingWindow.sessions[0] ?? null);
+        setSelectedDate(
+          bookingWindow.sessions[0]?.date ?? bookingWindow.range.from,
+        );
+        if (bookingWindow.sessions[0]) {
+          setAttendanceMode(bookingWindow.sessions[0].attendanceMode);
+          setSelectedLocationId("");
+        }
+      } else {
+        setSessions([]);
+        setSelectedSession(null);
+        setSlots(bookingWindow.slots);
+        setSelectedSlot(bookingWindow.slots[0] ?? null);
+        setSelectedDate(
+          bookingWindow.slots[0]?.date ?? bookingWindow.range.from,
+        );
+      }
+
+      return bookingWindow;
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Could not refresh available times.",
+      );
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const validateRequiredAnswers = () => {
     const missingField = fields.find((field) => {
@@ -573,7 +673,20 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setStep("details");
     } catch (submitError) {
       if (submitError instanceof PublicApiError && submitError.code === "SLOT_UNAVAILABLE") {
-        setError("That slot was just taken. Choose another time.");
+        setSelectedSlot(null);
+        setSelectedSession(null);
+        setStep("details");
+        const earliestBookableDate = submitError.meta?.earliestBookableDate;
+        const refreshed = await refreshBookingWindow(
+          dateRange.from || earliestBookableDate || "",
+        );
+        if (refreshed) {
+          setError(
+            earliestBookableDate
+              ? `That date is no longer bookable. Customers can book from ${earliestBookableDate}.`
+              : "That slot is no longer available. Choose another time.",
+          );
+        }
       } else if (submitError instanceof PublicApiError && submitError.code === "PROGRAM_FULL") {
         setError("That Program has just filled up. Choose another cohort.");
       } else if (submitError instanceof Error) {
@@ -1134,9 +1247,19 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 </div>
 
                 {error && (
-                  <p className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
-                    {error}
-                  </p>
+                  <div className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
+                    <p>{error}</p>
+                    {offering && isBookableOffering && dateRange.from ? (
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => void refreshBookingWindow(dateRange.from)}
+                        className="mt-1 font-semibold underline decoration-red-700/35 underline-offset-4 disabled:opacity-50"
+                      >
+                        Refresh available times
+                      </button>
+                    ) : null}
+                  </div>
                 )}
 
                 <div className="flex flex-col gap-3 sm:flex-row">
@@ -1232,6 +1355,13 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                               key={day.date}
                               type="button"
                               aria-pressed={isActive}
+                              aria-disabled={day.closedByPolicy}
+                              disabled={day.closedByPolicy}
+                              title={
+                                day.closedByPolicy && bookingPolicy
+                                  ? `Bookings open from ${bookingPolicy.earliestBookableDate}`
+                                  : undefined
+                              }
                               onClick={() => {
                                 setSelectedDate(day.date);
                                 if (selectedSession?.date !== day.date) {
@@ -1244,7 +1374,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                               className={`grid min-h-[82px] min-w-[82px] content-between border px-3 py-2 text-left transition-colors ${
                                 isActive
                                   ? "border-[#0F3B46] bg-[#0F3B46] text-white"
-                                  : hasTimes
+                                  : day.closedByPolicy
+                                    ? "cursor-not-allowed border-[#102329]/10 bg-white/20 text-[#102329]/28"
+                                    : hasTimes
                                     ? "border-[#102329]/14 bg-white/45 text-[#102329] hover:border-[#0F3B46]"
                                     : "border-[#102329]/10 bg-white/25 text-[#102329]/34"
                               }`}
@@ -1270,6 +1402,27 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                           );
                         })}
                       </div>
+
+                      {bookingPolicy &&
+                      (activeDateOption?.closedByPolicy || firstBookableDateBeyondRail) ? (
+                        <div className="border-l-2 border-[#8A6F2A] bg-[#8A6F2A]/5 px-4 py-3 font-inter text-sm leading-6 text-[#102329]/72">
+                          <p>
+                            No times are available before {bookingPolicy.earliestBookableDate}.
+                          </p>
+                          {firstBookableDateBeyondRail ? (
+                            <button
+                              type="button"
+                              disabled={isLoading}
+                              onClick={() =>
+                                void refreshBookingWindow(bookingPolicy.earliestBookableDate)
+                              }
+                              className="mt-2 font-semibold text-[#0F3B46] underline decoration-[#0F3B46]/35 underline-offset-4 disabled:opacity-50"
+                            >
+                              View first bookable date
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       <div className="border border-[#102329]/12 bg-white/45 p-3 sm:p-4">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -1580,9 +1733,19 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 )}
 
                 {error && (
-                  <p className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
-                    {error}
-                  </p>
+                  <div className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
+                    <p>{error}</p>
+                    {offering && isBookableOffering && dateRange.from ? (
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => void refreshBookingWindow(dateRange.from)}
+                        className="mt-1 font-semibold underline decoration-red-700/35 underline-offset-4 disabled:opacity-50"
+                      >
+                        Refresh available times
+                      </button>
+                    ) : null}
+                  </div>
                 )}
 
                 <button

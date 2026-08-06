@@ -20,7 +20,7 @@ const envSchema = z.object({
   PAYMENT_PROVIDER: z.enum(["mock", "kashier"]).default("mock"),
   PAYMENT_MODE: z.enum(["test", "live"]).default("test"),
   PAYMENT_HOLD_MINUTES: z.coerce.number().int().positive().default(15),
-  BOOKING_MINIMUM_NOTICE_MINUTES: nonNegativeInteger.default(1440),
+  BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: nonNegativeInteger.default(1440),
   BOOKING_DAILY_LIMIT: positiveInteger.default(8),
   KASHIER_MERCHANT_ID: z.string().optional(),
   KASHIER_API_KEY: z.string().optional(),

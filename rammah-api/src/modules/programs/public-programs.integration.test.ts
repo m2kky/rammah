@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import {
   bookingSlotHolds,
@@ -5,6 +6,7 @@ import {
   offerings,
   scheduledProgramOccurrences,
   scheduledPrograms,
+  siteSettings,
 } from "../../db/schema/index.js";
 import { getTestDatabase } from "../../test/db.js";
 import { listPublicPrograms } from "./public-programs.service.js";
@@ -53,6 +55,36 @@ const seedPublicProgram = async (capacity = 2) => {
 };
 
 describe.sequential("public Programs", () => {
+  it("uses the global policy against the first occurrence local date", async () => {
+    vi.setSystemTime(new Date("2030-08-15T10:00:00.000Z"));
+    const { offering } = await seedPublicProgram();
+    const { db } = getTestDatabase();
+    const [settings] = await db.insert(siteSettings).values({
+      siteName: "Rammah",
+      bookingDefaultTimezone: "Africa/Cairo",
+      bookingMinimumAdvanceDays: 30,
+    }).returning();
+
+    const input = {
+      offeringId: offering.id,
+      dateFrom: "2030-09-01",
+      dateTo: "2030-09-30",
+      locale: "en" as const,
+    };
+    await expect(listPublicPrograms(input)).resolves.toMatchObject({
+      programs: [],
+      bookingPolicy: { earliestBookableDate: "2030-09-14", minimumAdvanceDays: 30 },
+    });
+
+    await db.update(siteSettings)
+      .set({ bookingMinimumAdvanceDays: 26 })
+      .where(eq(siteSettings.id, settings!.id));
+    await expect(listPublicPrograms(input)).resolves.toMatchObject({
+      programs: [expect.objectContaining({ date: "2030-09-10" })],
+      bookingPolicy: { earliestBookableDate: "2030-09-10", minimumAdvanceDays: 26 },
+    });
+  });
+
   it("returns one enrollment target with ordered occurrences and live capacity", async () => {
     vi.setSystemTime(new Date("2030-08-15T10:00:00.000Z"));
     const { offering, program } = await seedPublicProgram(2);

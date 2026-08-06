@@ -302,6 +302,15 @@ export const getPublicBookingStatus = async (publicToken: string) => {
   const calendarEvent =
     booking.status === "confirmed" ? await findCalendarEventByBookingId(booking.id) : null;
   const targetWindow = projectCanonicalTargetWindow(booking.target);
+  const changeCutoffAt = targetWindow.startsAt
+    ? new Date(
+        targetWindow.startsAt.getTime() -
+          env.BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES * 60_000,
+      )
+    : null;
+  const canChange =
+    ["confirmed", "rescheduled"].includes(booking.status) &&
+    Boolean(changeCutoffAt && changeCutoffAt > new Date());
 
   return {
     id: booking.id,
@@ -342,6 +351,11 @@ export const getPublicBookingStatus = async (publicToken: string) => {
     confirmedAt: booking.confirmedAt?.toISOString() ?? null,
     cancelledAt: booking.cancelledAt?.toISOString() ?? null,
     calendar: toPublicCalendar(booking.status, calendarEvent),
+    changePolicy: {
+      canCancel: canChange,
+      canReschedule: canChange && booking.target.kind === "appointment",
+      changeCutoffAt: changeCutoffAt?.toISOString() ?? null,
+    },
     createdAt: booking.createdAt.toISOString(),
     updatedAt: booking.updatedAt.toISOString(),
   };
@@ -357,9 +371,9 @@ const assertCustomerChangeAllowed = (booking: Awaited<ReturnType<typeof findPubl
   }
   if (
     !["confirmed", "rescheduled"].includes(booking.status) ||
-    !booking.slotStartAt ||
-    booking.slotStartAt.getTime() - Date.now()
-      < env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000
+    !projectCanonicalTargetWindow(booking.target).startsAt ||
+    projectCanonicalTargetWindow(booking.target).startsAt!.getTime() - Date.now()
+      <= env.BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES * 60_000
   ) {
     throw new AppError({
       code: "CONFLICT",
@@ -386,7 +400,7 @@ export const reschedulePublicBooking = async (
   },
 ) => {
   const booking = assertCustomerChangeAllowed(await findPublicBookingByToken(publicToken));
-  await rescheduleAdminBookingById(booking.id, input);
+  await rescheduleAdminBookingById(booking.id, input, undefined, "public_reschedule");
   return getPublicBookingStatus(publicToken);
 };
 

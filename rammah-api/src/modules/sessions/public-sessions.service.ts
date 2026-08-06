@@ -1,6 +1,5 @@
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
-import { env } from "../../config/env.js";
 import { instantToDateKey } from "../../shared/datetime/iana-wall-time.js";
 import {
   findPublicSessions,
@@ -8,6 +7,11 @@ import {
   findSessionBlockingBookings,
   type PublicSessionRow,
 } from "./public-sessions.repository.js";
+import {
+  isEligibleBookingTarget,
+  toPublicBookingPolicy,
+} from "../availability/booking-policy.js";
+import { getCurrentBookingPolicy } from "../availability/booking-policy.service.js";
 
 export type PublicSessionsInput = {
   offeringId: string;
@@ -144,20 +148,19 @@ const toPublicSession = async (session: PublicSessionRow, now: Date) => {
 export const listPublicOfferingSessions = async (input: PublicSessionsInput) => {
   const range = assertRange(input);
   const now = new Date();
-  const sessions = await findPublicSessions({
-    offeringId: input.offeringId,
-    rangeStart: range.rangeStart,
-    rangeEnd: range.rangeEnd,
-  });
-
-  const minimumStartAt = new Date(
-    now.getTime() + env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000,
-  );
+  const [sessions, bookingPolicy] = await Promise.all([
+    findPublicSessions({
+      offeringId: input.offeringId,
+      rangeStart: range.rangeStart,
+      rangeEnd: range.rangeEnd,
+    }),
+    getCurrentBookingPolicy(now),
+  ]);
   const futureSessions = sessions.filter((session) => {
     const localDate = instantToDateKey(session.startsAt, session.timezone);
 
     return (
-      session.startsAt >= minimumStartAt &&
+      isEligibleBookingTarget(session.startsAt, bookingPolicy) &&
       localDate >= range.dateFrom &&
       localDate <= range.dateTo
     );
@@ -175,6 +178,7 @@ export const listPublicOfferingSessions = async (input: PublicSessionsInput) => 
     offeringId: input.offeringId,
     dateFrom: range.dateFrom,
     dateTo: range.dateTo,
+    bookingPolicy: toPublicBookingPolicy(bookingPolicy),
     sessions: publicSessions,
     generatedAt: now.toISOString(),
   };

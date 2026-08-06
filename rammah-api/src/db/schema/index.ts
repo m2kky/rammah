@@ -144,17 +144,30 @@ export const adminSessions = pgTable(
   }),
 );
 
-export const siteSettings = pgTable("site_settings", {
-  id: id(),
-  siteName: varchar("site_name", { length: 180 }).notNull(),
-  defaultLocale: varchar("default_locale", { length: 16 }).notNull().default("en"),
-  contactEmail: varchar("contact_email", { length: 255 }),
-  contactPhone: varchar("contact_phone", { length: 80 }),
-  socialLinks: jsonb("social_links").$type<Record<string, string>>().notNull().default({}),
-  bookingDefaultTimezone: varchar("booking_default_timezone", { length: 80 }).notNull().default("Africa/Cairo"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const siteSettings = pgTable(
+  "site_settings",
+  {
+    id: id(),
+    settingsKey: varchar("settings_key", { length: 32 }).notNull().default("global"),
+    siteName: varchar("site_name", { length: 180 }).notNull(),
+    defaultLocale: varchar("default_locale", { length: 16 }).notNull().default("en"),
+    contactEmail: varchar("contact_email", { length: 255 }),
+    contactPhone: varchar("contact_phone", { length: 80 }),
+    socialLinks: jsonb("social_links").$type<Record<string, string>>().notNull().default({}),
+    bookingDefaultTimezone: varchar("booking_default_timezone", { length: 80 }).notNull().default("Africa/Cairo"),
+    bookingMinimumAdvanceDays: integer("booking_minimum_advance_days").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    settingsKeyUnique: uniqueIndex("site_settings_settings_key_unique").on(table.settingsKey),
+    settingsKeyCheck: check("site_settings_global_key", sql`${table.settingsKey} = 'global'`),
+    minimumAdvanceDaysCheck: check(
+      "site_settings_booking_minimum_advance_days_range",
+      sql`${table.bookingMinimumAdvanceDays} BETWEEN 1 AND 365`,
+    ),
+  }),
+);
 
 export const navigationItems = pgTable(
   "navigation_items",

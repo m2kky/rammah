@@ -19,6 +19,7 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { writeAuditLog } from "../audit/audit.service.js";
 import { globalMediaDefinitions, sectionDefinitions } from "./cms-definitions.js";
+import { isValidIanaTimezone } from "../availability/booking-policy.js";
 
 export const adminCmsRouter = Router();
 
@@ -45,7 +46,9 @@ const settingsBodySchema = z.object({
   contactEmail: z.string().trim().email().max(255).nullable().optional(),
   contactPhone: z.string().trim().max(80).nullable().optional(),
   socialLinks: z.record(z.string()).optional(),
-  bookingDefaultTimezone: z.string().trim().min(1).max(80).optional(),
+  bookingDefaultTimezone: z.string().trim().min(1).max(80)
+    .refine(isValidIanaTimezone, "Use a valid IANA timezone.")
+    .optional(),
 });
 
 const navigationBodySchema = z.object({

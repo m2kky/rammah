@@ -252,6 +252,7 @@ export const rescheduleAdminBookingById = async (
   id: string,
   input: AdminBookingRescheduleInput,
   auditContext?: AuditContext,
+  policyContext: "public_reschedule" | "admin_reschedule" = "admin_reschedule",
 ) => {
   const startsAt = parseTimestamp(input.startsAt, "startsAt");
   const endsAt = parseTimestamp(input.endsAt, "endsAt");
@@ -271,6 +272,7 @@ export const rescheduleAdminBookingById = async (
     startsAt,
     endsAt,
     timezone: input.timezone?.trim() || "",
+    policyContext,
   });
 
   if (result.outcome === "not_found") {

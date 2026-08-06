@@ -1,4 +1,3 @@
-import { env } from "../../config/env.js";
 import { instantToDateKey } from "../../shared/datetime/iana-wall-time.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
@@ -8,6 +7,12 @@ import {
   findPublicPrograms,
   type PublicProgramRow,
 } from "./public-programs.repository.js";
+import {
+  isEligibleBookingTarget,
+  toPublicBookingPolicy,
+  type BookingPolicy,
+} from "../availability/booking-policy.js";
+import { getCurrentBookingPolicy } from "../availability/booking-policy.service.js";
 
 export type PublicProgramsInput = {
   offeringId?: string;
@@ -70,17 +75,14 @@ const locationDto = (row: {
       }
     : null;
 
-const toPublicProgram = async (program: PublicProgramRow, now: Date) => {
+const toPublicProgram = async (program: PublicProgramRow, now: Date, policy: BookingPolicy) => {
   const [occurrences, counts] = await Promise.all([
     findPublicProgramOccurrences(program.id),
     findPublicProgramCapacity(program.id, now),
   ]);
   if (occurrences.length === 0) return null;
   const firstOccurrence = occurrences[0]!;
-  if (
-    firstOccurrence.startsAt.getTime() - now.getTime() <
-    env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000
-  ) {
+  if (!isEligibleBookingTarget(firstOccurrence.startsAt, policy)) {
     return null;
   }
   const remainingCapacity = Math.max(
@@ -126,13 +128,18 @@ const toPublicProgram = async (program: PublicProgramRow, now: Date) => {
 export const listPublicPrograms = async (input: PublicProgramsInput) => {
   assertRange(input);
   const now = new Date();
-  const rows = await findPublicPrograms(input.offeringId);
+  const [rows, bookingPolicy] = await Promise.all([
+    findPublicPrograms(input.offeringId),
+    getCurrentBookingPolicy(now),
+  ]);
   const registrationOpen = rows.filter(
     (program) =>
       (!program.registrationOpensAt || program.registrationOpensAt <= now) &&
       (!program.registrationClosesAt || program.registrationClosesAt > now),
   );
-  const hydrated = await Promise.all(registrationOpen.map((program) => toPublicProgram(program, now)));
+  const hydrated = await Promise.all(
+    registrationOpen.map((program) => toPublicProgram(program, now, bookingPolicy)),
+  );
   const programs = hydrated
     .filter((program): program is NonNullable<typeof program> => Boolean(program))
     .filter((program) => {
@@ -150,6 +157,7 @@ export const listPublicPrograms = async (input: PublicProgramsInput) => {
     dateFrom: input.dateFrom,
     dateTo: input.dateTo,
     locale: input.locale ?? "en",
+    bookingPolicy: toPublicBookingPolicy(bookingPolicy),
     programs,
     generatedAt: now.toISOString(),
   };

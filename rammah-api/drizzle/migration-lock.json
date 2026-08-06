@@ -50,6 +50,11 @@
       "tag": "0009_naive_thunderbird",
       "sqlSha256": "ac18e825721455d0bbf82e304f488cd700629033aaf72e84d069a1c0faa102b5",
       "snapshotSha256": "3ff8e2ba34cd16048b1f83bfd4be68f0deb961259148955bead7e184c9115f03"
+    },
+    {
+      "tag": "0010_overconfident_miracleman",
+      "sqlSha256": "da851c15f418f71a5f75d845121ec3bd49dbe09572170c312da515465090e3c0",
+      "snapshotSha256": "0e73587c293696561c3e4127b8b7d410cb9170dead8cc1d4c52821ea20cfbb30"
     }
   ]
 }

@@ -149,6 +149,19 @@ export type AdminAvailabilitySlot = {
   bookedCount: number;
   heldCount: number;
   blockedReason: string | null;
+  publicBookingPolicy: {
+    bookable: boolean;
+    reason: "minimum_advance_days" | null;
+    earliestBookableDate: string;
+  };
+};
+
+export type AdminBookingPolicy = {
+  bookingMinimumAdvanceDays: number;
+  bookingDefaultTimezone: string;
+  localToday: string;
+  earliestBookableDate: string;
+  updatedAt: string | null;
 };
 
 export type AdminAvailabilitySlotPreview = {
@@ -166,6 +179,12 @@ export type AdminAvailabilitySlotPreview = {
   timezone: string;
   dateFrom: string;
   dateTo: string;
+  bookingPolicy: {
+    minimumAdvanceDays: number;
+    timezone: string;
+    localToday: string;
+    earliestBookableDate: string;
+  };
   days: Array<{
     date: string;
     weekday: number;
@@ -412,7 +431,6 @@ export type AdminSiteSettingsPayload = {
   contactEmail?: string | null;
   contactPhone?: string | null;
   socialLinks: Record<string, string>;
-  bookingDefaultTimezone: string;
 };
 
 export type AdminNavigationItem = {
@@ -1699,6 +1717,24 @@ export const archiveAdminSession = async (id: string) => {
   await adminRequest<void>(`/admin/sessions/${id}`, {
     method: "DELETE",
   });
+};
+
+export const fetchAdminBookingPolicy = async () => {
+  const payload = await adminRequest<{ data: AdminBookingPolicy }>(
+    "/admin/booking-policy",
+  );
+  return payload.data;
+};
+
+export const updateAdminBookingPolicy = async (input: {
+  bookingMinimumAdvanceDays: number;
+  bookingDefaultTimezone: string;
+}) => {
+  const payload = await adminRequest<{ data: AdminBookingPolicy }>(
+    "/admin/booking-policy",
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  return payload.data;
 };
 
 export const fetchAdminPrograms = async (

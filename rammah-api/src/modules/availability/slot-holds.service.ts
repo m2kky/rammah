@@ -5,6 +5,9 @@ import { createAtomicSlotHold, isScheduledProgramFull } from "./slot-capacity.re
 import { releaseSlotHold } from "./slot-holds.repository.js";
 import { createSlotHoldToken } from "./slot-hold-token.js";
 import { resolveLegacySessionTarget } from "../programs/program-compatibility.service.js";
+import { findPublicProgramOccurrences } from "../programs/public-programs.repository.js";
+import { isEligibleBookingTarget, toPublicBookingPolicy } from "./booking-policy.js";
+import { getCurrentBookingPolicy } from "./booking-policy.service.js";
 
 export type SlotHoldInput =
   | {
@@ -43,12 +46,30 @@ const parseTimestamp = (value: string, field: "startsAt" | "endsAt") => {
   return date;
 };
 
-const slotUnavailableError = () =>
+const slotUnavailableError = (meta?: Record<string, unknown>) =>
   new AppError({
     code: "SLOT_UNAVAILABLE",
     message: "This slot is no longer available.",
     statusCode: httpStatus.conflict,
+    meta,
   });
+
+const policyConflictMeta = async (target: {
+  scheduledProgramId: string | null;
+  startsAt: Date | null;
+}) => {
+  const bookingPolicy = await getCurrentBookingPolicy();
+  const startsAt = target.startsAt ?? (target.scheduledProgramId
+    ? (await findPublicProgramOccurrences(target.scheduledProgramId))[0]?.startsAt ?? null
+    : null);
+  if (!startsAt || isEligibleBookingTarget(startsAt, bookingPolicy)) return undefined;
+  const safePolicy = toPublicBookingPolicy(bookingPolicy);
+  return {
+    earliestBookableDate: safePolicy.earliestBookableDate,
+    minimumAdvanceDays: safePolicy.minimumAdvanceDays,
+    timezone: safePolicy.timezone,
+  };
+};
 
 export const createSlotHold = async (input: SlotHoldInput) => {
   let target:
@@ -143,7 +164,7 @@ export const createSlotHold = async (input: SlotHoldInput) => {
         statusCode: httpStatus.conflict,
       });
     }
-    throw slotUnavailableError();
+    throw slotUnavailableError(await policyConflictMeta(target));
   }
 
   const canonicalTarget = {

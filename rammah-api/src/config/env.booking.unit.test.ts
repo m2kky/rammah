@@ -18,7 +18,7 @@ describe("booking policy environment", () => {
 
   it("defaults to one-day notice and eight schedule groups per day", () => {
     expect(parseEnv(baseEnv)).toMatchObject({
-      BOOKING_MINIMUM_NOTICE_MINUTES: 1_440,
+      BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: 1_440,
       BOOKING_DAILY_LIMIT: 8,
     });
   });
@@ -27,11 +27,11 @@ describe("booking policy environment", () => {
     expect(
       parseEnv({
         ...baseEnv,
-        BOOKING_MINIMUM_NOTICE_MINUTES: "0",
+        BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: "0",
         BOOKING_DAILY_LIMIT: "1",
       }),
     ).toMatchObject({
-      BOOKING_MINIMUM_NOTICE_MINUTES: 0,
+      BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: 0,
       BOOKING_DAILY_LIMIT: 1,
     });
     expect(() => parseEnv({ ...baseEnv, BOOKING_DAILY_LIMIT: "0" })).toThrow();

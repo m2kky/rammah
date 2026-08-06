@@ -30,6 +30,7 @@ export class AppError extends Error {
   readonly code: AppErrorCode;
   readonly statusCode: number;
   readonly details: AppErrorDetail[];
+  readonly meta?: Record<string, unknown>;
   readonly expose: boolean;
 
   constructor(input: {
@@ -37,6 +38,7 @@ export class AppError extends Error {
     message: string;
     statusCode?: number;
     details?: AppErrorDetail[];
+    meta?: Record<string, unknown>;
     expose?: boolean;
   }) {
     super(input.message);
@@ -44,6 +46,7 @@ export class AppError extends Error {
     this.code = input.code;
     this.statusCode = input.statusCode ?? httpStatus.internalServerError;
     this.details = input.details ?? [];
+    this.meta = input.meta;
     this.expose = input.expose ?? this.statusCode < 500;
   }
 }

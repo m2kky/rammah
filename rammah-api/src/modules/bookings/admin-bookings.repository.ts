@@ -162,6 +162,7 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
   startsAt: Date;
   endsAt: Date;
   timezone: string;
+  policyContext: "public_reschedule" | "admin_reschedule";
 }) =>
   db.transaction(async (tx) => {
     // Canonical reschedule order: booking row, target advisory lock, then fixed-session row.
@@ -197,7 +198,7 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
         startsAt: input.startsAt,
         endsAt: input.endsAt,
       },
-      { excludeBookingId: booking.id },
+      { policyContext: input.policyContext, excludeBookingId: booking.id },
       async ({ timezone: targetTimezone, now }) => {
         const timezone = (targetTimezone ?? input.timezone.trim()) || booking.timezone;
         const rows = await tx

@@ -1,4 +1,3 @@
-import { env } from "../../config/env.js";
 import {
   instantToDateKey,
   wallTimeToInstant,
@@ -22,6 +21,12 @@ import {
   type SlotOverrideRow,
   type SlotWindowRow,
 } from "./availability-slots.repository.js";
+import {
+  isEligibleBookingTarget,
+  toAdminPublicBookingPolicy,
+  toPublicBookingPolicy,
+} from "./booking-policy.js";
+import { getCurrentBookingPolicy } from "./booking-policy.service.js";
 
 type SlotStatus = "available" | "blocked" | "booked" | "held";
 export type SlotSource = "window" | "available_override";
@@ -49,7 +54,27 @@ type CalculatedSlot = {
   bookedCount: number;
   heldCount: number;
   blockedReason: string | null;
+  publicBookingPolicy: {
+    bookable: boolean;
+    reason: "minimum_advance_days" | null;
+    earliestBookableDate: string;
+  };
 };
+
+const toPublicSlot = (slot: CalculatedSlot): Omit<CalculatedSlot, "publicBookingPolicy"> => ({
+  date: slot.date,
+  startsAt: slot.startsAt,
+  endsAt: slot.endsAt,
+  timezone: slot.timezone,
+  status: slot.status,
+  source: slot.source,
+  availabilityWindowId: slot.availabilityWindowId,
+  availabilityOverrideId: slot.availabilityOverrideId,
+  remainingCapacity: slot.remainingCapacity,
+  bookedCount: slot.bookedCount,
+  heldCount: slot.heldCount,
+  blockedReason: slot.blockedReason,
+});
 
 export type SlotPreviewInput = {
   offeringId: string;
@@ -276,7 +301,7 @@ const calculateSlotStatus = (input: {
   holds: ActiveSlotHoldRow[];
   programs: ProgramBlockerRow[];
   busyBlocks: ExternalBusyBlockRow[];
-}): CalculatedSlot => {
+}): Omit<CalculatedSlot, "publicBookingPolicy"> => {
   const sameTargetBookings = input.bookings.filter(
     (row) => row.offeringId === input.offering.id && exactTarget(input.slot, row),
   );
@@ -350,15 +375,17 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
     ]);
   }
 
-  const [timezone, windows, overrides, bookings, holds, programs, busyBlocks] =
+  const now = new Date();
+  const [timezone, windows, overrides, bookings, holds, programs, busyBlocks, bookingPolicy] =
     await Promise.all([
       findAvailabilityTimezone(),
       findPublishedAvailabilityWindows(),
       findGlobalAvailabilityOverrides(dateFrom, dateTo),
       findBlockingBookings(rangeStart, rangeEnd),
-      findActiveSlotHolds(rangeStart, rangeEnd, new Date()),
+      findActiveSlotHolds(rangeStart, rangeEnd, now),
       findPublishedProgramBlockers(rangeStart, rangeEnd),
       findExternalBusyBlocks(rangeStart, rangeEnd),
+      getCurrentBookingPolicy(now),
     ]);
   const closedDates = new Set(
     overrides
@@ -369,14 +396,12 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
     ...buildWindowSlots(dates, windows, offering, timezone),
     ...buildAvailableOverrideSlots(offering, overrides, timezone),
   ])
-    .filter((slot) => !closedDates.has(slot.date))
-    .filter(
-      (slot) =>
-        slot.startsAt.getTime() - Date.now() >=
-        env.BOOKING_MINIMUM_NOTICE_MINUTES * millisecondsPerMinute,
-    );
+    .filter((slot) => !closedDates.has(slot.date));
   const calculatedSlots = candidates.map((slot) =>
-    calculateSlotStatus({ slot, offering, bookings, holds, programs, busyBlocks }),
+    ({
+      ...calculateSlotStatus({ slot, offering, bookings, holds, programs, busyBlocks }),
+      publicBookingPolicy: toAdminPublicBookingPolicy(slot.startsAt, bookingPolicy),
+    }),
   );
   const visiblePrograms = programs.filter((program) => {
     const startDate = instantToDateKey(program.startsAt, timezone);
@@ -411,6 +436,7 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
     timezone,
     dateFrom,
     dateTo,
+    bookingPolicy: toPublicBookingPolicy(bookingPolicy),
     days,
     programBlockers: visiblePrograms.map((program) => ({
       occurrenceId: program.occurrenceId,
@@ -423,7 +449,7 @@ export const previewAvailabilitySlots = async (input: SlotPreviewInput) => {
     })),
     availableCount: days.reduce((total, day) => total + day.availableCount, 0),
     totalCount: days.reduce((total, day) => total + day.totalCount, 0),
-    generatedAt: new Date().toISOString(),
+    generatedAt: now.toISOString(),
   };
 };
 
@@ -436,5 +462,21 @@ export const previewPublicAvailabilitySlots = async (input: SlotPreviewInput) =>
       statusCode: httpStatus.notFound,
     });
   }
-  return preview;
+  const days = preview.days.map((day) => {
+    const slots = day.slots
+      .filter(({ publicBookingPolicy }) => publicBookingPolicy.bookable)
+      .map(toPublicSlot);
+    return {
+      ...day,
+      slots,
+      availableCount: slots.filter(({ status }) => status === "available").length,
+      totalCount: slots.length,
+    };
+  });
+  return {
+    ...preview,
+    days,
+    availableCount: days.reduce((total, day) => total + day.availableCount, 0),
+    totalCount: days.reduce((total, day) => total + day.totalCount, 0),
+  };
 };

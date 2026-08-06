@@ -182,7 +182,7 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
     const result = await withAvailableSlotCapacity(
       tx,
       capacityTarget,
-      { excludeHoldId: hold.id },
+      { policyContext: "active_hold_conversion", excludeHoldId: hold.id },
       async ({ now, offering, sessionLocationId, target }) => {
         const currentHold = {
           ...hold,

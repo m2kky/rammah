@@ -55,6 +55,7 @@ export const errorHandlerMiddleware: ErrorRequestHandler = (error, req, res, _ne
         code: error.code,
         message: error.expose ? error.message : "Unexpected server error.",
         details: error.details,
+        meta: error.meta,
         requestId: req.requestId,
       },
     });
