@@ -20,6 +20,10 @@ import {
   rescheduleAdminBookingById,
   updateAdminBookingStatusById,
 } from "./admin-bookings.service.js";
+import {
+  projectCanonicalTargetWindow,
+  serializeCanonicalBookingTarget,
+} from "./booking-target.repository.js";
 
 export type PublicBookingInput = {
   holdId: string;
@@ -115,6 +119,7 @@ const toPublicBooking = (
   if (!result.booking || !result.hold) {
     throw slotUnavailableError();
   }
+  const targetWindow = projectCanonicalTargetWindow(result.booking.target);
 
   return {
     id: result.booking.id,
@@ -146,10 +151,11 @@ const toPublicBooking = (
         }
       : null,
     slot: {
-      startsAt: result.booking.slotStartAt?.toISOString() ?? null,
-      endsAt: result.booking.slotEndAt?.toISOString() ?? null,
-      timezone: result.booking.timezone,
+      startsAt: targetWindow.startsAt?.toISOString() ?? null,
+      endsAt: targetWindow.endsAt?.toISOString() ?? null,
+      timezone: targetWindow.timezone,
     },
+    target: serializeCanonicalBookingTarget(result.booking.target),
     paymentRequired: result.booking.paymentRequired,
     calendar: null,
     confirmedAt: result.booking.confirmedAt?.toISOString() ?? null,
@@ -295,6 +301,7 @@ export const getPublicBookingStatus = async (publicToken: string) => {
 
   const calendarEvent =
     booking.status === "confirmed" ? await findCalendarEventByBookingId(booking.id) : null;
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
 
   return {
     id: booking.id,
@@ -326,10 +333,11 @@ export const getPublicBookingStatus = async (publicToken: string) => {
         }
       : null,
     slot: {
-      startsAt: booking.slotStartAt?.toISOString() ?? null,
-      endsAt: booking.slotEndAt?.toISOString() ?? null,
-      timezone: booking.timezone,
+      startsAt: targetWindow.startsAt?.toISOString() ?? null,
+      endsAt: targetWindow.endsAt?.toISOString() ?? null,
+      timezone: targetWindow.timezone,
     },
+    target: serializeCanonicalBookingTarget(booking.target),
     paymentRequired: booking.paymentRequired,
     confirmedAt: booking.confirmedAt?.toISOString() ?? null,
     cancelledAt: booking.cancelledAt?.toISOString() ?? null,

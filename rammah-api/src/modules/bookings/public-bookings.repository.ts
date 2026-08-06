@@ -14,6 +14,7 @@ import {
 } from "../availability/slot-capacity.repository.js";
 import { verifySlotHoldToken } from "../availability/slot-hold-token.js";
 import { lockOwnedSlotHold } from "../availability/slot-holds.repository.js";
+import { attachCanonicalBookingTargets } from "./booking-target.repository.js";
 
 export type PublicBookingAnswerInput = {
   fieldId?: string | null;
@@ -106,7 +107,8 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
         return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
       }
 
-      return { booking, hold, converted: true, rejection: null } as const;
+      const [canonicalBooking] = await attachCanonicalBookingTargets([booking]);
+      return { booking: canonicalBooking!, hold, converted: true, rejection: null } as const;
     }
 
     if (
@@ -196,6 +198,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
         if (!booking) {
           throw new Error("Booking insert did not return a row.");
         }
+        const [canonicalBooking] = await attachCanonicalBookingTargets([booking]);
 
         if (input.answers.length > 0) {
           await tx.insert(bookingAnswers).values(
@@ -225,7 +228,12 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
           throw new Error("Slot hold could not be converted.");
         }
 
-        return { booking, hold: currentHold, converted: true, rejection: null } as const;
+        return {
+          booking: canonicalBooking!,
+          hold: currentHold,
+          converted: true,
+          rejection: null,
+        } as const;
       },
     );
 
@@ -262,6 +270,7 @@ export const findPublicBookingByToken = async (publicToken: string) => {
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
       countryCode: bookings.countryCode,
+      scheduledProgramId: bookings.scheduledProgramId,
       slotStartAt: bookings.slotStartAt,
       slotEndAt: bookings.slotEndAt,
       timezone: bookings.timezone,
@@ -277,7 +286,7 @@ export const findPublicBookingByToken = async (publicToken: string) => {
     .where(eq(bookings.publicToken, publicToken))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (await attachCanonicalBookingTargets(rows))[0] ?? null;
 };
 
 export const findPublicBookableLocationById = async (input: {

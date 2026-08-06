@@ -135,6 +135,33 @@ export type PublicBooking = {
     endsAt: string | null;
     timezone: string;
   };
+  target:
+    | {
+        kind: "appointment";
+        scheduledProgramId: null;
+        startsAt: string;
+        endsAt: string;
+        timezone: string;
+        occurrences: [];
+      }
+    | {
+        kind: "scheduled_program";
+        scheduledProgramId: string;
+        timezone: string;
+        occurrences: Array<{
+          id: string;
+          startsAt: string;
+          endsAt: string;
+          timezone: string;
+          attendanceMode: PublicOffering["attendanceMode"];
+          location: {
+            id: string;
+            name: string;
+            city: string | null;
+            countryCode: string;
+          } | null;
+        }>;
+      };
   paymentRequired: boolean;
   calendar: {
     status: "pending" | "created" | "updated" | "cancelled" | "failed";

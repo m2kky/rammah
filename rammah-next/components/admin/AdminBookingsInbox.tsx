@@ -531,9 +531,14 @@ export default function AdminBookingsInbox() {
                   <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
                     Slot
                   </p>
-                  <p className="mt-2 font-inter text-sm text-[#102329]/70">
-                    {formatDateTime(selectedBooking.slot.startsAt)}
-                  </p>
+                  <div className="mt-2 space-y-1 font-inter text-sm text-[#102329]/70">
+                    {selectedBooking.target.kind === "scheduled_program" &&
+                    selectedBooking.target.occurrences.length > 0
+                      ? selectedBooking.target.occurrences.map((occurrence) => (
+                          <p key={occurrence.id}>{formatDateTime(occurrence.startsAt)}</p>
+                        ))
+                      : <p>{formatDateTime(selectedBooking.slot.startsAt)}</p>}
+                  </div>
                   {selectedBooking.location && (
                     <p className="mt-1 font-inter text-xs text-[#102329]/48">
                       {[selectedBooking.location.name, selectedBooking.location.city, selectedBooking.location.countryCode]
@@ -625,7 +630,8 @@ export default function AdminBookingsInbox() {
                 </div>
               )}
 
-              {["confirmed", "rescheduled"].includes(selectedBooking.status) && (
+              {["confirmed", "rescheduled"].includes(selectedBooking.status) &&
+                selectedBooking.target.kind === "appointment" && (
                 <div className="border-t border-[#102329]/10 pt-4">
                   <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
                     Reschedule
@@ -673,6 +679,18 @@ export default function AdminBookingsInbox() {
                   </div>
                 </div>
               )}
+
+              {["confirmed", "rescheduled"].includes(selectedBooking.status) &&
+                selectedBooking.target.kind === "scheduled_program" && (
+                  <div className="border-t border-[#102329]/10 pt-4">
+                    <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
+                      Program schedule
+                    </p>
+                    <p className="mt-2 font-inter text-sm leading-6 text-[#102329]/62">
+                      This booking follows its Program dates. Change those dates from Events &amp; Programs.
+                    </p>
+                  </div>
+                )}
 
               {isLoadingDetail && (
                 <p className="font-inter text-xs font-semibold text-[#102329]/45">Refreshing detail</p>

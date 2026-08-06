@@ -829,7 +829,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 <h2 className="text-3xl font-semibold tracking-normal">Your booking is confirmed.</h2>
                 <p className="font-inter text-sm leading-6 text-[#102329]/62">
                   We saved your session for{" "}
-                  {booking.slot.startsAt
+                  {booking.target.kind === "scheduled_program" &&
+                  booking.target.occurrences[0]
+                    ? `${booking.target.occurrences.length} program date${booking.target.occurrences.length === 1 ? "" : "s"}, starting ${formatInstantDate(booking.target.occurrences[0].startsAt, booking.target.occurrences[0].timezone)}, ${formatTime(booking.target.occurrences[0].startsAt, booking.target.occurrences[0].timezone)}`
+                    : booking.slot.startsAt
                       ? `${formatInstantDate(booking.slot.startsAt, booking.slot.timezone)}, ${formatTime(booking.slot.startsAt, booking.slot.timezone)}`
                     : "the selected time"}
                   .

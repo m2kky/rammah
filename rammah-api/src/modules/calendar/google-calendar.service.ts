@@ -312,6 +312,9 @@ const buildEventDescription = (booking: Awaited<ReturnType<typeof findConfirmedB
     `Customer: ${booking.customerFullName}`,
     `Email: ${booking.customerEmail}`,
     booking.customerPhone ? `Phone: ${booking.customerPhone}` : null,
+    booking.target.kind === "scheduled_program"
+      ? `Program occurrences: ${booking.target.occurrences.length}`
+      : null,
     `Source: Rammah booking system`,
   ]
     .filter(Boolean)
@@ -355,6 +358,10 @@ const buildCalendarEventBody = (
       source: "rammah",
       bookingId: booking.id,
       publicToken: booking.publicToken,
+      targetKind: booking.target.kind,
+      ...(booking.target.kind === "scheduled_program"
+        ? { scheduledProgramId: booking.target.scheduledProgramId }
+        : {}),
     },
   },
 });

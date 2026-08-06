@@ -8,6 +8,7 @@ import {
   paymentWebhookEvents,
   payments,
 } from "../../db/schema/index.js";
+import { attachCanonicalBookingTargets } from "../bookings/booking-target.repository.js";
 
 export type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
 
@@ -32,6 +33,10 @@ const adminPaymentSelect = {
   updatedAt: payments.updatedAt,
   bookingPublicToken: bookings.publicToken,
   bookingStatus: bookings.status,
+  scheduledProgramId: bookings.scheduledProgramId,
+  slotStartAt: bookings.slotStartAt,
+  slotEndAt: bookings.slotEndAt,
+  timezone: bookings.timezone,
   customerFullName: bookings.customerFullName,
   customerEmail: bookings.customerEmail,
   offeringId: offerings.id,
@@ -84,7 +89,7 @@ export const findAdminPayments = async (filters: AdminPaymentFilters = {}) => {
     query = query.where(where);
   }
 
-  return query.orderBy(desc(payments.createdAt));
+  return attachCanonicalBookingTargets(await query.orderBy(desc(payments.createdAt)));
 };
 
 export type AdminPaymentRow = Awaited<ReturnType<typeof findAdminPayments>>[number];
@@ -102,7 +107,7 @@ export const findAdminPaymentById = async (id: string) => {
     .where(eq(payments.id, id))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (await attachCanonicalBookingTargets(rows))[0] ?? null;
 };
 
 export const findPaymentEventsByPaymentId = async (paymentId: string) =>

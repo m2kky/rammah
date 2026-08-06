@@ -10,6 +10,10 @@ import {
   findPublicBookableLocationById,
   findPublicBookingHoldContextById,
 } from "../bookings/public-bookings.repository.js";
+import {
+  projectCanonicalTargetWindow,
+  serializeCanonicalBookingTarget,
+} from "../bookings/booking-target.repository.js";
 import { findPublishedLocationsForOffering } from "../offerings/offerings.repository.js";
 import { previewPublicOfferingPrice } from "../pricing/public-price-preview.service.js";
 import {
@@ -179,7 +183,9 @@ const toPublicPaidBooking = (input: {
   hold: NonNullable<Awaited<ReturnType<typeof createPaidBookingFromHold>>["hold"]>;
   payment: NonNullable<Awaited<ReturnType<typeof createPaidBookingFromHold>>["payment"]>;
   session: KashierSession;
-}) => ({
+}) => {
+  const targetWindow = projectCanonicalTargetWindow(input.booking.target);
+  return {
   booking: {
     id: input.booking.id,
     publicToken: input.booking.publicToken,
@@ -210,10 +216,11 @@ const toPublicPaidBooking = (input: {
         }
       : null,
     slot: {
-      startsAt: input.booking.slotStartAt?.toISOString() ?? null,
-      endsAt: input.booking.slotEndAt?.toISOString() ?? null,
-      timezone: input.booking.timezone,
+      startsAt: targetWindow.startsAt?.toISOString() ?? null,
+      endsAt: targetWindow.endsAt?.toISOString() ?? null,
+      timezone: targetWindow.timezone,
     },
+    target: serializeCanonicalBookingTarget(input.booking.target),
     paymentRequired: input.booking.paymentRequired,
     calendar: null,
     confirmedAt: input.booking.confirmedAt?.toISOString() ?? null,
@@ -222,7 +229,8 @@ const toPublicPaidBooking = (input: {
   },
   payment: toPublicPayment(input.payment),
   paymentSession: toPaymentSession(input.session),
-});
+  };
+};
 
 const getOrCreateSessionForPayment = async (input: {
   publicToken: string;

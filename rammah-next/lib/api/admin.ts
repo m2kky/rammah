@@ -187,6 +187,34 @@ export type AdminAvailabilitySlotPreview = {
   generatedAt: string;
 };
 
+export type AdminBookingTarget =
+  | {
+      kind: "appointment";
+      scheduledProgramId: null;
+      startsAt: string;
+      endsAt: string;
+      timezone: string;
+      occurrences: [];
+    }
+  | {
+      kind: "scheduled_program";
+      scheduledProgramId: string;
+      timezone: string;
+      occurrences: Array<{
+        id: string;
+        startsAt: string;
+        endsAt: string;
+        timezone: string;
+        attendanceMode: AdminOffering["attendanceMode"];
+        location: {
+          id: string;
+          name: string;
+          city: string | null;
+          countryCode: string;
+        } | null;
+      }>;
+    };
+
 export type AdminBooking = {
   id: string;
   publicToken: string;
@@ -215,6 +243,7 @@ export type AdminBooking = {
     endsAt: string | null;
     timezone: string;
   };
+  target: AdminBookingTarget;
   payment: {
     required: boolean;
     currency: string | null;
@@ -263,6 +292,7 @@ export type AdminPayment = {
       title: string;
       slug: string;
     };
+    target: AdminBookingTarget;
     calendar: AdminBooking["calendar"];
   };
 };

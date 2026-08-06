@@ -161,6 +161,7 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
   const canChange = Boolean(
     booking &&
       ["confirmed", "rescheduled"].includes(booking.status) &&
+      booking.target.kind === "appointment" &&
       booking.slot.startsAt &&
       new Date(booking.slot.startsAt) > new Date(),
   );
@@ -355,8 +356,15 @@ export default function BookingStatus({ publicToken }: BookingStatusProps) {
                     <dt className="font-inter text-xs font-semibold uppercase text-[#102329]/42">
                       Session time
                     </dt>
-                    <dd className="mt-2 font-inter text-sm text-[#102329]/72">
-                      {formatDateTime(booking.slot.startsAt, booking.slot.timezone)}
+                    <dd className="mt-2 space-y-1 font-inter text-sm text-[#102329]/72">
+                      {booking.target.kind === "scheduled_program" &&
+                      booking.target.occurrences.length > 0
+                        ? booking.target.occurrences.map((occurrence) => (
+                            <span key={occurrence.id} className="block">
+                              {formatDateTime(occurrence.startsAt, occurrence.timezone)}
+                            </span>
+                          ))
+                        : formatDateTime(booking.slot.startsAt, booking.slot.timezone)}
                     </dd>
                   </div>
                   <div>

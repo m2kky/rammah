@@ -6,6 +6,10 @@ import {
   googleCalendarConnections,
   offerings,
 } from "../../db/schema/index.js";
+import {
+  attachCanonicalBookingTargets,
+  projectCanonicalTargetWindow,
+} from "../bookings/booking-target.repository.js";
 
 export const calendarEventSelect = {
   id: calendarEvents.id,
@@ -278,6 +282,7 @@ export const findConfirmedBookingForCalendarSync = async (bookingId: string) => 
       customerFullName: bookings.customerFullName,
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
+      scheduledProgramId: bookings.scheduledProgramId,
       slotStartAt: bookings.slotStartAt,
       slotEndAt: bookings.slotEndAt,
       timezone: bookings.timezone,
@@ -289,5 +294,13 @@ export const findConfirmedBookingForCalendarSync = async (bookingId: string) => 
     .where(eq(bookings.id, bookingId))
     .limit(1);
 
-  return rows[0] ?? null;
+  const booking = (await attachCanonicalBookingTargets(rows))[0] ?? null;
+  if (!booking) return null;
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
+  return {
+    ...booking,
+    slotStartAt: targetWindow.startsAt,
+    slotEndAt: targetWindow.endsAt,
+    timezone: targetWindow.timezone,
+  };
 };

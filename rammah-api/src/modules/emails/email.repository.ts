@@ -8,6 +8,10 @@ import {
   payments,
   quoteRequests,
 } from "../../db/schema/index.js";
+import {
+  attachCanonicalBookingTargets,
+  projectCanonicalTargetWindow,
+} from "../bookings/booking-target.repository.js";
 
 export type EmailDeliveryStatus = (typeof emailDeliveries.$inferSelect)["status"];
 export type EmailTemplateStatus = (typeof emailTemplates.$inferSelect)["status"];
@@ -287,6 +291,7 @@ export const findBookingEmailContextById = async (id: string) => {
       customerFullName: bookings.customerFullName,
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
+      scheduledProgramId: bookings.scheduledProgramId,
       slotStartAt: bookings.slotStartAt,
       slotEndAt: bookings.slotEndAt,
       timezone: bookings.timezone,
@@ -300,7 +305,7 @@ export const findBookingEmailContextById = async (id: string) => {
     .innerJoin(offerings, eq(bookings.offeringId, offerings.id))
     .where(eq(bookings.id, id))
     .limit(1);
-  const booking = rows[0] ?? null;
+  const booking = (await attachCanonicalBookingTargets(rows))[0] ?? null;
 
   if (!booking) return null;
 
@@ -316,8 +321,12 @@ export const findBookingEmailContextById = async (id: string) => {
     .orderBy(desc(payments.createdAt))
     .limit(1);
 
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
   return {
     ...booking,
+    slotStartAt: targetWindow.startsAt,
+    slotEndAt: targetWindow.endsAt,
+    timezone: targetWindow.timezone,
     payment: paymentRows[0] ?? null,
   };
 };

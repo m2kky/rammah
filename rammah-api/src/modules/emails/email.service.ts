@@ -177,6 +177,25 @@ const formatDateRange = (input: {
   return `Time: ${formatter.format(input.startsAt)} - ${formatter.format(input.endsAt)}`;
 };
 
+const formatBookingSchedule = (
+  booking: NonNullable<Awaited<ReturnType<typeof findBookingEmailContextById>>>,
+) =>
+  booking.target.kind === "scheduled_program" && booking.target.occurrences.length > 0
+    ? booking.target.occurrences
+        .map((occurrence) =>
+          formatDateRange({
+            startsAt: occurrence.startsAt,
+            endsAt: occurrence.endsAt,
+            timezone: occurrence.timezone,
+          }),
+        )
+        .join("\n")
+    : formatDateRange({
+        startsAt: booking.slotStartAt,
+        endsAt: booking.slotEndAt,
+        timezone: booking.timezone,
+      });
+
 const formatAmount = (amountMinor: number, currency: string | null) => {
   if (!currency || amountMinor <= 0) return "Free booking";
 
@@ -368,11 +387,7 @@ const bookingVariables = async (
       customerPhone: booking.customerPhone,
       offeringTitle: booking.offeringTitle,
       offeringSlug: booking.offeringSlug,
-      slotLabel: formatDateRange({
-        startsAt: booking.slotStartAt,
-        endsAt: booking.slotEndAt,
-        timezone: booking.timezone,
-      }),
+      slotLabel: formatBookingSchedule(booking),
       paymentLabel,
       meetUrl,
       meetLine: meetUrl ? `Meet link: ${meetUrl}` : "Meet link will appear on your booking page.",
