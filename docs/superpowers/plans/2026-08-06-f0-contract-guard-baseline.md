@@ -65,3 +65,7 @@ Slice A1 turns these suites green and then promotes the relevant tests into the 
 Slice A1 makes both regression commands green. The API unit baseline now also includes the timezone regression file, while focused integration coverage verifies fixed-session grouping, recurring hold acquisition and daily-limit boundaries with the API process forced to `UTC`. Frontend unit coverage runs the date and time formatters with a non-Cairo process timezone; the focused regression guard verifies that `BookingFlow.tsx` branches on the booking-config `schedulingMode` and passes each DTO timezone into formatting.
 
 The temporary pre-A2 booking-config projection is deterministic: published availability selects `appointment`; a legacy Offering with only future published sessions selects `scheduled_program`; an empty legacy Offering defaults to `appointment`. The selected source also provides the temporary scheduling timezone used to build the initial public query range. A2 replaces this projection with the persisted canonical mode.
+
+## A2 Resolution
+
+A2 has replaced the temporary projection with persisted Offering scheduling mode, canonical global availability tables, Programs/occurrences, and exact booking targets. Migration `0008_cultured_unus` is locked and verified; the integrated evidence, compatibility expiry boundary, and current test counts are recorded in `2026-08-06-a2-canonical-booking-evidence.md`.

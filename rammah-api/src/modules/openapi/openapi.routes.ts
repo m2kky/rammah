@@ -29,9 +29,13 @@ const operation = (input: {
   secured?: boolean;
   status?: number;
   noContent?: boolean;
+  description?: string;
+  deprecated?: boolean;
 }) => ({
   summary: input.summary,
   tags: input.tags,
+  ...(input.description ? { description: input.description } : {}),
+  ...(input.deprecated ? { deprecated: true } : {}),
   ...(input.secured ? { security: [{ adminSession: [] }] } : {}),
   responses: {
     [input.noContent ? httpStatus.noContent : input.status ?? httpStatus.ok]: input.noContent
@@ -46,6 +50,21 @@ const operation = (input: {
   },
 });
 
+const deprecatedSessionWrite = (summary: string) => ({
+  summary,
+  description: "Deprecated write endpoint. Returns conflict; fixed schedules are managed as Events & Programs.",
+  deprecated: true,
+  tags: ["Admin Sessions"],
+  security: [{ adminSession: [] }],
+  responses: {
+    "400": { $ref: "#/components/responses/BadRequest" },
+    "401": { $ref: "#/components/responses/Unauthorized" },
+    "409": jsonResponse("Legacy Sessions are read-only"),
+    "429": { $ref: "#/components/responses/RateLimited" },
+    "500": { $ref: "#/components/responses/ServerError" },
+  },
+});
+
 const publicPaths: Record<string, PathSpec> = {
   "/health/live": { get: operation({ summary: "Live health check", tags: ["Health"] }) },
   "/health/ready": { get: operation({ summary: "Ready health check", tags: ["Health"] }) },
@@ -55,8 +74,8 @@ const publicPaths: Record<string, PathSpec> = {
   "/public/offerings/{id}/booking-config": { get: operation({ summary: "Get public offering booking configuration", tags: ["Public Offerings"] }) },
   "/public/offerings/{slug}": { get: operation({ summary: "Get public offering by slug", tags: ["Public Offerings"] }) },
   "/public/availability-slots": { get: operation({ summary: "Preview public availability slots", tags: ["Public Booking"] }) },
-  "/public/sessions": { get: operation({ summary: "List public fixed-date sessions", tags: ["Public Booking"] }) },
-  "/public/slot-holds": { post: operation({ summary: "Create public slot hold", tags: ["Public Booking"], status: httpStatus.created }) },
+  "/public/sessions": { get: operation({ summary: "List legacy fixed-date Program adapters", tags: ["Public Booking"], description: "Deprecated compatibility projection. Each returned row includes its canonical scheduledProgramId; A4 replaces this route with public Program discovery.", deprecated: true }) },
+  "/public/slot-holds": { post: operation({ summary: "Create canonical public booking hold", tags: ["Public Booking"], description: "Accepts a discriminated appointment or scheduled_program target. Legacy offeringSessionId is accepted only when it resolves to a migrated Program adapter.", status: httpStatus.created }) },
   "/public/slot-holds/{id}": { delete: operation({ summary: "Release public slot hold", tags: ["Public Booking"], noContent: true }) },
   "/public/bookings": { post: operation({ summary: "Create free booking", tags: ["Public Booking"], status: httpStatus.created }) },
   "/public/bookings/{publicToken}/status": { get: operation({ summary: "Get public booking status", tags: ["Public Booking"] }) },
@@ -113,8 +132,15 @@ const adminPaths: Record<string, PathSpec> = {
   "/admin/booking-form-fields/{id}": adminResourceItem("Admin Booking Form Fields", "booking form field"),
   "/admin/locations": adminResource("Admin Locations", "locations"),
   "/admin/locations/{id}": adminResourceItem("Admin Locations", "location"),
-  "/admin/sessions": adminResource("Admin Sessions", "sessions"),
-  "/admin/sessions/{id}": adminResourceItem("Admin Sessions", "session"),
+  "/admin/sessions": {
+    get: operation({ summary: "List legacy Program session adapters", tags: ["Admin Sessions"], secured: true, deprecated: true }),
+    post: deprecatedSessionWrite("Reject legacy session creation"),
+  },
+  "/admin/sessions/{id}": {
+    get: operation({ summary: "Get legacy Program session adapter", tags: ["Admin Sessions"], secured: true, deprecated: true }),
+    patch: deprecatedSessionWrite("Reject legacy session update"),
+    delete: deprecatedSessionWrite("Reject legacy session archive"),
+  },
   "/admin/payments": { get: operation({ summary: "List payments", tags: ["Admin Payments"], secured: true }) },
   "/admin/payments/{id}": { get: operation({ summary: "Get payment", tags: ["Admin Payments"], secured: true }) },
   "/admin/payments/{id}/reconcile": { post: operation({ summary: "Reconcile payment", tags: ["Admin Payments"], secured: true }) },

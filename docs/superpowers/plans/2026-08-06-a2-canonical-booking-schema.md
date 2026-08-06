@@ -34,7 +34,7 @@
 - Produces: `inspectLegacySchedulingMigration(pool): Promise<SchedulingMigrationReport>`.
 - Produces: package command `db:scheduling:preflight`.
 
-- [ ] **Step 1: Write the failing pure classification tests**
+- [x] **Step 1: Write the failing pure classification tests**
 
 ```ts
 expect(classifyLegacyOfferingSources([{ offeringId: "a", hasRules: true, hasSessions: false }]))
@@ -45,17 +45,17 @@ expect(classifyLegacyOfferingSources([{ offeringId: "c", hasRules: true, hasSess
   .toEqual([{ offeringId: "c", schedulingMode: null, blocked: true }]);
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npm --prefix rammah-api exec -- vitest run --config vitest.config.ts src/modules/scheduling/scheduling-migration-preflight.unit.test.ts`
 
 Expected: FAIL because the classifier does not exist.
 
-- [ ] **Step 3: Implement the classifier and database report**
+- [x] **Step 3: Implement the classifier and database report**
 
 Use one grouped SQL query over `offerings`, published `availability_rules`, and future published `offering_sessions`. Add report sections for mixed sources, inconsistent rule duration/buffers per Offering, and incompatible published global window sets across Offerings. The script exits non-zero and prints exact Offering IDs when any blocker exists.
 
-- [ ] **Step 4: Add and verify the command**
+- [x] **Step 4: Add and verify the command**
 
 Add:
 
@@ -65,7 +65,7 @@ Add:
 
 Run the focused unit test and `npm --prefix rammah-api run typecheck`; both must pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add rammah-api/package.json rammah-api/src/modules/scheduling rammah-api/src/scripts/scheduling-migration-preflight.ts
@@ -89,7 +89,7 @@ git commit -m "test: add scheduling migration preflight"
 - Produces: `availabilityWindows`, `globalAvailabilityOverrides`, `scheduledPrograms`, and `scheduledProgramOccurrences` Drizzle tables.
 - Produces: nullable `bookings.scheduledProgramId` and `bookingSlotHolds.scheduledProgramId` with exact canonical target checks.
 
-- [ ] **Step 1: Write failing schema/upgrade assertions**
+- [x] **Step 1: Write failing schema/upgrade assertions**
 
 Assert that a fresh schema has all four canonical tables and that the migration count becomes `9`. In the upgrade test, apply migrations `0000`-`0007` inside a transaction, seed one session-only Offering with booking/hold/payment rows, apply migration `0008`, and assert:
 
@@ -103,7 +103,7 @@ expect(migratedBooking.slotStartAt).toBeNull();
 
 Add a second transaction that seeds both active sources and expects the A2 migration to reject with the Offering ID.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -113,7 +113,7 @@ npm --prefix rammah-api exec -- vitest run --config vitest.integration.config.ts
 
 Expected: FAIL because canonical tables/columns and migration `0008` do not exist.
 
-- [ ] **Step 3: Add canonical Drizzle schema**
+- [x] **Step 3: Add canonical Drizzle schema**
 
 Add Offering fields `schedulingMode`, nullable `durationMinutes`, `bufferBeforeMinutes`, and `bufferAfterMinutes`. Add checks equivalent to:
 
@@ -125,7 +125,7 @@ AND ((scheduling_mode = 'appointment' AND duration_minutes IS NOT NULL AND durat
 
 Create global window/override tables with local `HH:MM` values, Scheduled Programs with registration bounds/capacity, and occurrences with ordered instants plus calendar/Meet identity.
 
-- [ ] **Step 4: Generate exactly one migration and review it**
+- [x] **Step 4: Generate exactly one migration and review it**
 
 Run:
 
@@ -136,7 +136,7 @@ npm --prefix rammah-api run db:generate
 
 Expected: Drizzle creates journal index/prefix `0008` only.
 
-- [ ] **Step 5: Add guarded data migration SQL to the new migration**
+- [x] **Step 5: Add guarded data migration SQL to the new migration**
 
 The new migration must:
 
@@ -148,7 +148,7 @@ The new migration must:
 6. Backfill `scheduled_program_id` on fixed bookings/holds, retain `offering_session_id`, and null canonical slot timestamps.
 7. Add canonical target constraints only after backfill.
 
-- [ ] **Step 6: Lock and verify migration history**
+- [x] **Step 6: Lock and verify migration history**
 
 Append the exact SQL/snapshot SHA-256 hashes to `migration-lock.json`, then run:
 
@@ -159,7 +159,7 @@ npm --prefix rammah-api run db:migrate:test
 
 Expected: current prefix `0008`, next prefix `0009`, and a clean fresh migration.
 
-- [ ] **Step 7: Run upgrade tests and commit**
+- [x] **Step 7: Run upgrade tests and commit**
 
 ```powershell
 git add rammah-api/src/db rammah-api/drizzle rammah-api/src/test
@@ -185,19 +185,19 @@ git commit -m "feat: add canonical scheduling schema"
 - Consumes: persisted `offerings.schedulingMode`, buffers, and nullable duration.
 - Produces: admin/public DTO fields `schedulingMode`, `durationMinutes`, `capacity`, `bufferBeforeMinutes`, `bufferAfterMinutes`.
 
-- [ ] **Step 1: Write failing validation tests**
+- [x] **Step 1: Write failing validation tests**
 
 Cover appointment duration, non-negative buffers, scheduled-program nullable duration, independence from `offeringType`/`bookingMode`, and a blocked mode change when incompatible future dependencies exist.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run the Offering unit test; expected failures are missing persisted fields and missing blocker validation.
 
-- [ ] **Step 3: Replace the A1 compatibility projection**
+- [x] **Step 3: Replace the A1 compatibility projection**
 
 Read mode/time-independent fields directly from `offerings`. Remove `findPublicOfferingSchedulingSources` from the public booking-config path. Keep the migration preflight module as the only legacy-source classifier.
 
-- [ ] **Step 4: Add admin validation and editor controls**
+- [x] **Step 4: Add admin validation and editor controls**
 
 Use exact choices:
 
@@ -207,7 +207,7 @@ type SchedulingMode = "appointment" | "scheduled_program";
 
 Show duration/capacity-per-time/buffers for appointments and default seats for scheduled programs. Preserve the existing commercial booking mode fields.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run API/frontend unit tests, both typechecks, frontend lint, and commit as `feat: persist offering scheduling mode`.
 
@@ -226,19 +226,19 @@ Run API/frontend unit tests, both typechecks, frontend lint, and commit as `feat
 - Produces: `resolveLegacySessionTarget({ offeringId, offeringSessionId }): Promise<{ scheduledProgramId: string; occurrence: CanonicalOccurrence } | null>`.
 - Produces: deprecated session DTOs sourced from canonical Programs/occurrences and including `scheduledProgramId`.
 
-- [ ] **Step 1: Write failing compatibility tests**
+- [x] **Step 1: Write failing compatibility tests**
 
 Verify a migrated legacy session ID resolves to exactly one Program/occurrence, the deprecated public list remains sorted/grouped by occurrence timezone, and an unknown/unmigrated session ID is rejected.
 
-- [ ] **Step 2: Implement read-only dual reads**
+- [x] **Step 2: Implement read-only dual reads**
 
 Canonical Program/occurrence rows are authoritative. Legacy session IDs are accepted only when the Program/occurrence IDs match the migration mapping. Do not create new `offering_sessions` rows after A2.
 
-- [ ] **Step 3: Keep admin compatibility bounded**
+- [x] **Step 3: Keep admin compatibility bounded**
 
 Existing `/admin/sessions` reads through the adapter. Writes return a conflict response directing callers to the future Events & Programs editor; A4 replaces the screen and route.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run session compatibility unit/integration tests and commit as `refactor: map legacy sessions to programs`.
 
@@ -262,19 +262,19 @@ Run session compatibility unit/integration tests and commit as `refactor: map le
 - Accepts legacy `offeringSessionId` only after `resolveLegacySessionTarget` succeeds.
 - Produces canonical hold response target `{ kind, scheduledProgramId, startsAt, endsAt, timezone }`.
 
-- [ ] **Step 1: Write failing conversion/capacity tests**
+- [x] **Step 1: Write failing conversion/capacity tests**
 
 Cover mode mismatch, legacy adapter success, unrecognized legacy ID rejection, exact Program capacity under parallel holds, and active-hold free/paid conversion after canonical slot columns become null.
 
-- [ ] **Step 2: Add Program advisory lock and capacity path**
+- [x] **Step 2: Add Program advisory lock and capacity path**
 
 Use one lock key derived from `scheduledProgramId`. Capacity counts active Program holds and `pending_payment|confirmed|rescheduled` Program bookings. Joining the same Program is allowed until capacity; its own occurrences do not self-conflict.
 
-- [ ] **Step 3: Convert free and paid booking writers**
+- [x] **Step 3: Convert free and paid booking writers**
 
 Copy the hold's canonical target into the booking. Never trust client timestamps for a Program. Preserve existing owned hold-token, idempotency and payment-finalization behavior.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run focused booking/payment integration matrices, then commit as `feat: use canonical booking targets`.
 
@@ -296,19 +296,19 @@ Run focused booking/payment integration matrices, then commit as `feat: use cano
 - Produces one canonical booking target DTO with ordered `occurrences` for Program bookings.
 - Compatibility projections use occurrence instants/timezone when legacy consumers still require a single start/end.
 
-- [ ] **Step 1: Write failing migrated-history tests**
+- [x] **Step 1: Write failing migrated-history tests**
 
 Seed a migrated paid booking and assert payment detail, booking status, email payload and calendar reconciliation resolve without `bookings.slotStartAt`/`slotEndAt`.
 
-- [ ] **Step 2: Join canonical target data in repositories**
+- [x] **Step 2: Join canonical target data in repositories**
 
 Appointment projections use booking slot columns. Program projections use ordered non-cancelled occurrences and Program timezone/location/capacity. Never manufacture appointment timestamps for Program API responses.
 
-- [ ] **Step 3: Keep A1 frontend deterministic**
+- [x] **Step 3: Keep A1 frontend deterministic**
 
 `BookingFlow.tsx` continues to branch only on persisted `schedulingMode`. Until A4 replaces cards with `/public/programs`, scheduled-program selection consumes the deprecated session adapter and submits the returned canonical Program ID.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run booking status, payment finalization, callback, calendar and email tests; commit as `fix: resolve migrated program bookings`.
 
@@ -323,7 +323,7 @@ Run booking status, payment finalization, callback, calendar and email tests; co
 - Consumes every A2 contract and migration from Tasks 1-6.
 - Produces evidence and the stable schema boundary consumed by A3, A4, B1 and D1.
 
-- [ ] **Step 1: Run the complete migration gate**
+- [x] **Step 1: Run the complete migration gate**
 
 ```powershell
 npm --prefix rammah-api run db:migrations:preflight
@@ -333,7 +333,7 @@ npm --prefix rammah-api run test:integration
 
 Expected: fresh migration, upgrade migration, legacy compatibility, booking/payment/calendar/email and capacity suites all pass.
 
-- [ ] **Step 2: Run complete API/frontend verification**
+- [x] **Step 2: Run complete API/frontend verification**
 
 ```powershell
 npm --prefix rammah-api run test:unit
@@ -350,7 +350,7 @@ git diff --check
 
 Expected: zero failures and a Next 16.2.1 production build.
 
-- [ ] **Step 3: Record evidence and commit**
+- [x] **Step 3: Record evidence and commit**
 
 Document migration prefix/hash, preflight behavior, legacy compatibility expiry boundary and exact test counts. Commit as `docs: record canonical booking migration evidence`.
 
