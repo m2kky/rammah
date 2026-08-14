@@ -3,9 +3,12 @@ import { db } from "../../db/client.js";
 import {
   globalMediaAssignments,
   globalMediaAssignmentSets,
+  blogPosts,
   mediaAssets,
+  offerings,
   pageSections,
   pages,
+  seoMetadata,
   sectionMediaAssignments,
 } from "../../db/schema/index.js";
 import { AppError } from "../../shared/errors/app-error.js";
@@ -223,7 +226,14 @@ export const setGlobalMediaSlot = async (input: SetGlobalMediaSlotInput) => {
 };
 
 export const listMediaAssetUsages = async (mediaAssetId: string) => {
-  const [sectionUsages, globalUsages] = await Promise.all([
+  const [
+    sectionUsages,
+    globalUsages,
+    legacySectionUsages,
+    seoUsages,
+    offeringUsages,
+    blogPostUsages,
+  ] = await Promise.all([
     db
       .select({
         pageId: pages.id,
@@ -259,10 +269,79 @@ export const listMediaAssetUsages = async (mediaAssetId: string) => {
         asc(globalMediaAssignmentSets.version),
         asc(globalMediaAssignments.sortOrder),
       ),
+    db
+      .select({
+        pageId: pages.id,
+        pageSlug: pages.slug,
+        pageTitle: pages.title,
+        sectionId: pageSections.id,
+        sectionType: pageSections.sectionType,
+      })
+      .from(pageSections)
+      .innerJoin(pages, eq(pages.id, pageSections.pageId))
+      .where(eq(pageSections.mediaAssetId, mediaAssetId))
+      .orderBy(asc(pages.slug), asc(pageSections.sortOrder)),
+    db
+      .select({
+        id: seoMetadata.id,
+        resourceType: seoMetadata.resourceType,
+        resourceId: seoMetadata.resourceId,
+      })
+      .from(seoMetadata)
+      .where(eq(seoMetadata.ogImageAssetId, mediaAssetId))
+      .orderBy(asc(seoMetadata.resourceType)),
+    db
+      .select({ id: offerings.id, title: offerings.title, slug: offerings.slug })
+      .from(offerings)
+      .where(eq(offerings.featuredMediaAssetId, mediaAssetId))
+      .orderBy(asc(offerings.title)),
+    db
+      .select({ id: blogPosts.id, title: blogPosts.title, slug: blogPosts.slug })
+      .from(blogPosts)
+      .where(eq(blogPosts.featuredMediaAssetId, mediaAssetId))
+      .orderBy(asc(blogPosts.title)),
   ]);
 
   return [
-    ...sectionUsages.map((usage) => ({ ownerType: "section" as const, ...usage })),
-    ...globalUsages.map((usage) => ({ ownerType: "global" as const, ...usage })),
+    ...sectionUsages.map((usage) => ({
+      ownerType: "section" as const,
+      ownerId: usage.sectionId,
+      ownerLabel: `${usage.pageTitle} / ${usage.sectionType}`,
+      ...usage,
+    })),
+    ...globalUsages.map((usage) => ({
+      ownerType: "global" as const,
+      ownerId: usage.assignmentSetId,
+      ownerLabel: `${usage.definitionKey} v${usage.version}`,
+      ...usage,
+    })),
+    ...legacySectionUsages.map((usage) => ({
+      ownerType: "section_legacy" as const,
+      ownerId: usage.sectionId,
+      ownerLabel: `${usage.pageTitle} / ${usage.sectionType}`,
+      slotKey: "legacyMedia",
+      ...usage,
+    })),
+    ...seoUsages.map((usage) => ({
+      ownerType: "seo" as const,
+      ownerId: usage.id,
+      ownerLabel: `${usage.resourceType} SEO`,
+      slotKey: "ogImage",
+      ...usage,
+    })),
+    ...offeringUsages.map((usage) => ({
+      ownerType: "offering" as const,
+      ownerId: usage.id,
+      ownerLabel: usage.title,
+      slotKey: "featuredMedia",
+      ...usage,
+    })),
+    ...blogPostUsages.map((usage) => ({
+      ownerType: "blog_post" as const,
+      ownerId: usage.id,
+      ownerLabel: usage.title,
+      slotKey: "featuredMedia",
+      ...usage,
+    })),
   ];
 };

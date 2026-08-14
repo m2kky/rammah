@@ -18,6 +18,7 @@ import { adminBookingsRouter } from "./modules/bookings/admin-bookings.routes.js
 import { publicBookingsRouter } from "./modules/bookings/public-bookings.routes.js";
 import { adminGoogleCalendarRouter } from "./modules/calendar/admin-google-calendar.routes.js";
 import { adminCmsRouter } from "./modules/cms/admin-cms.routes.js";
+import { mediaRouter } from "./modules/cms/media.routes.js";
 import { publicCmsRouter } from "./modules/cms/public-cms.routes.js";
 import { publicCountryRouter } from "./modules/country/public-country.routes.js";
 import { adminEmailsRouter } from "./modules/emails/admin-emails.routes.js";
@@ -77,6 +78,7 @@ export const createApp = () => {
   app.use(`${env.API_BASE_PATH}/admin/emails`, adminEmailsRouter);
   app.use(`${env.API_BASE_PATH}/admin/quote-requests`, adminQuoteRequestsRouter);
   app.use(`${env.API_BASE_PATH}/admin/cms`, adminCmsRouter);
+  app.use(`${env.API_BASE_PATH}/admin/cms/media-assets`, mediaRouter);
   app.use(`${env.API_BASE_PATH}/admin/integrations/google-calendar`, adminGoogleCalendarRouter);
   app.use(`${env.API_BASE_PATH}/admin/booking-policy`, adminBookingPolicyRouter);
   app.use(`${env.API_BASE_PATH}/admin/availability-windows`, adminAvailabilityWindowsRouter);

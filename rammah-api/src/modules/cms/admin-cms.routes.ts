@@ -6,7 +6,6 @@ import {
   blogCategories,
   blogPosts,
   legalPages,
-  mediaAssets,
   navigationItems,
   pageSections,
   pages,
@@ -103,25 +102,6 @@ const blogPostBodySchema = z.object({
   publishedAt: z.string().datetime().nullable().optional(),
 });
 
-const mediaAssetBodySchema = z.object({
-  displayName: z.string().trim().min(1).optional(),
-  fileName: z.string().trim().min(1),
-  mimeType: z.string().trim().min(1).max(120),
-  sourceType: z.enum(["r2", "external"]).optional(),
-  mediaKind: z.enum(["image", "video", "animation_bundle"]).optional(),
-  storageKey: z.string().trim().min(1).nullable().optional(),
-  publicUrl: z.string().trim().url().nullable().optional(),
-  altText: z.string().trim().nullable().optional(),
-  sizeBytes: z.number().int().nonnegative(),
-  width: z.number().int().positive().nullable().optional(),
-  height: z.number().int().positive().nullable().optional(),
-  durationMs: z.number().int().nonnegative().nullable().optional(),
-  metadata: z.record(z.unknown()).optional(),
-  processingState: z.enum(["pending", "ready", "failed"]).optional(),
-  processingError: z.string().trim().nullable().optional(),
-  status: contentStatusSchema.default("draft"),
-});
-
 const seoMetadataBodySchema = z.object({
   resourceType: z.string().trim().min(1).max(80),
   resourceId: z.string().uuid(),
@@ -154,26 +134,6 @@ const normalizeOptionalText = (value: string | null | undefined) => {
   if (value === null) return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-};
-
-const validateMediaSourceFields = (
-  sourceType: "r2" | "external",
-  storageKey: string | null,
-  publicUrl: string | null,
-) => {
-  const invalid =
-    (sourceType === "r2" && !storageKey) ||
-    (sourceType === "external" && (!publicUrl || !publicUrl.startsWith("https://")));
-  if (invalid) {
-    throw new AppError({
-      code: "VALIDATION_ERROR",
-      message:
-        sourceType === "r2"
-          ? "R2 media requires a storage key."
-          : "External media requires an HTTPS public URL.",
-      statusCode: httpStatus.unprocessableEntity,
-    });
-  }
 };
 
 const parseDate = (value: string | null | undefined) =>
@@ -546,66 +506,6 @@ adminCmsRouter.delete("/blog/posts/:id", validateRequest({ params: idParamsSchem
     const post = rows[0] ?? null;
     if (!post) throw notFound("Blog post was not found.");
     await audit(req, { action: "admin.cms.blog_posts.archive", resourceType: "blog_post", resourceId: post.id, afterSnapshot: serializeRecord(post) });
-    res.status(httpStatus.noContent).send();
-  } catch (error) { next(error); }
-});
-
-adminCmsRouter.get("/media-assets", validateRequest({ query: listQuerySchema }), makeList(mediaAssets, mediaAssets.status, [mediaAssets.fileName, mediaAssets.storageKey]));
-adminCmsRouter.post("/media-assets", validateRequest({ body: mediaAssetBodySchema }), async (req, res, next) => {
-  try {
-    const mediaKind = req.body.mediaKind ?? (req.body.mimeType.startsWith("video/") ? "video" : "image");
-    const storageKey = normalizeOptionalText(req.body.storageKey) ?? null;
-    const publicUrl = normalizeOptionalText(req.body.publicUrl) ?? null;
-    const sourceType = req.body.sourceType ?? (storageKey ? "r2" : "external");
-    validateMediaSourceFields(sourceType, storageKey, publicUrl);
-    const rows = await db.insert(mediaAssets).values({
-      ...req.body,
-      displayName: req.body.displayName ?? req.body.fileName,
-      sourceType,
-      mediaKind,
-      storageKey,
-      publicUrl,
-      altText: normalizeOptionalText(req.body.altText) ?? null,
-      processingError: normalizeOptionalText(req.body.processingError) ?? null,
-    }).returning();
-    const asset = rows[0];
-    await audit(req, { action: "admin.cms.media_assets.create", resourceType: "media_asset", resourceId: asset.id, afterSnapshot: serializeRecord(asset) });
-    res.status(httpStatus.created).json({ data: serializeRecord(asset) });
-  } catch (error) { next(error); }
-});
-adminCmsRouter.patch("/media-assets/:id", validateRequest({ params: idParamsSchema, body: patch(mediaAssetBodySchema) }), async (req, res, next) => {
-  try {
-    const beforeRows = await db.select().from(mediaAssets).where(eq(mediaAssets.id, req.params.id)).limit(1);
-    const before = beforeRows[0] ?? null;
-    if (!before) throw notFound("Media asset was not found.");
-    const storageKey = req.body.storageKey === undefined
-      ? before.storageKey
-      : normalizeOptionalText(req.body.storageKey) ?? null;
-    const publicUrl = req.body.publicUrl === undefined
-      ? before.publicUrl
-      : normalizeOptionalText(req.body.publicUrl) ?? null;
-    const sourceType = req.body.sourceType ?? before.sourceType;
-    validateMediaSourceFields(sourceType, storageKey, publicUrl);
-    const rows = await db.update(mediaAssets).set({
-      ...req.body,
-      sourceType,
-      storageKey,
-      publicUrl,
-      altText: normalizeOptionalText(req.body.altText),
-      processingError: normalizeOptionalText(req.body.processingError),
-      updatedAt: new Date(),
-    }).where(eq(mediaAssets.id, req.params.id)).returning();
-    const asset = rows[0];
-    await audit(req, { action: "admin.cms.media_assets.update", resourceType: "media_asset", resourceId: asset.id, beforeSnapshot: serializeRecord(before), afterSnapshot: serializeRecord(asset) });
-    res.status(httpStatus.ok).json({ data: serializeRecord(asset) });
-  } catch (error) { next(error); }
-});
-adminCmsRouter.delete("/media-assets/:id", validateRequest({ params: idParamsSchema }), async (req, res, next) => {
-  try {
-    const rows = await db.update(mediaAssets).set({ status: "archived", updatedAt: new Date() }).where(eq(mediaAssets.id, req.params.id)).returning();
-    const asset = rows[0] ?? null;
-    if (!asset) throw notFound("Media asset was not found.");
-    await audit(req, { action: "admin.cms.media_assets.archive", resourceType: "media_asset", resourceId: asset.id, afterSnapshot: serializeRecord(asset) });
     res.status(httpStatus.noContent).send();
   } catch (error) { next(error); }
 });

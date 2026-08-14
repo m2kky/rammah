@@ -179,8 +179,25 @@ const adminPaths: Record<string, PathSpec> = {
   "/admin/cms/blog/categories/{id}": adminMutableResourceItem("Admin CMS", "blog category"),
   "/admin/cms/blog/posts": adminResource("Admin CMS", "blog posts"),
   "/admin/cms/blog/posts/{id}": adminMutableResourceItem("Admin CMS", "blog post"),
-  "/admin/cms/media-assets": adminResource("Admin CMS", "media assets"),
+  "/admin/cms/media-assets": {
+    get: operation({ summary: "List safe media asset DTOs", tags: ["Admin CMS"], secured: true }),
+  },
+  "/admin/cms/media-assets/upload-intents": {
+    post: operation({ summary: "Create a direct R2 upload intent", tags: ["Admin CMS"], secured: true, status: httpStatus.created }),
+  },
+  "/admin/cms/media-assets/finalize": {
+    post: operation({ summary: "Verify and finalize an R2 upload", tags: ["Admin CMS"], secured: true }),
+  },
+  "/admin/cms/media-assets/external": {
+    post: operation({ summary: "Register an external HTTPS media URL", tags: ["Admin CMS"], secured: true, status: httpStatus.created }),
+  },
+  "/admin/cms/media-assets/{id}/usages": {
+    get: operation({ summary: "List every use of a media asset", tags: ["Admin CMS"], secured: true }),
+  },
   "/admin/cms/media-assets/{id}": adminMutableResourceItem("Admin CMS", "media asset"),
+  "/admin/cms/media-assets/{id}/permanent": {
+    delete: operation({ summary: "Permanently delete archived unused media", tags: ["Admin CMS"], secured: true, noContent: true }),
+  },
   "/admin/cms/seo-metadata": { put: operation({ summary: "Upsert SEO metadata", tags: ["Admin CMS"], secured: true }) },
   "/admin/booking-policy": { get: operation({ summary: "Get global booking policy", tags: ["Admin Availability"], secured: true }), patch: operation({ summary: "Update global booking policy", tags: ["Admin Availability"], secured: true }) },
 };
