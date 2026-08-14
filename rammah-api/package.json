@@ -39,16 +39,20 @@
     "npm": "11.9.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1104.0",
+    "@aws-sdk/s3-request-presigner": "^3.1104.0",
     "@js-temporal/polyfill": "^0.5.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
+    "file-type": "^22.0.1",
     "geoip-country": "^5.0.202607220102",
     "googleapis": "^173.0.0",
     "helmet": "^8.0.0",
     "pg": "^8.13.1",
+    "unzipper": "^0.12.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -57,6 +61,7 @@
     "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
+    "@types/unzipper": "^0.10.11",
     "@vitest/coverage-v8": "^4.1.10",
     "drizzle-kit": "^0.31.10",
     "tsx": "^4.19.2",
