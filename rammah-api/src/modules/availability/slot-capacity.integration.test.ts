@@ -2,13 +2,15 @@ import { and, eq, gt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { env } from "../../config/env.js";
 import {
-  availabilityOverrides,
-  availabilityRules,
+  availabilityWindows,
   bookingSlotHolds,
   bookings,
   externalCalendarBusyBlocks,
+  globalAvailabilityOverrides,
   offeringSessions,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import { recurringSlotCapacityLockKey } from "../../shared/db/advisory-lock.js";
 import { getTestDatabase } from "../../test/db.js";
@@ -49,24 +51,19 @@ const seedOffering = async (capacity: number) => {
 const seedRecurringTarget = async (capacity: number) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(capacity);
-  const [rule] = await db
-    .insert(availabilityRules)
+  const [window] = await db
+    .insert(availabilityWindows)
     .values({
-      offeringId: offering.id,
       weekday: recurringWindowStart.getDay(),
-      startTime: "10:00",
-      endTime: "14:00",
-      timezone: "Africa/Cairo",
-      slotDurationMinutes: 60,
-      bufferBeforeMinutes: 0,
-      bufferAfterMinutes: 0,
+      startLocalTime: "10:00",
+      endLocalTime: "14:00",
       status: "published",
     })
     .returning();
 
   return {
     offering,
-    rule: rule!,
+    window: window!,
     input: {
       offeringId: offering.id,
       startsAt: firstRecurringSlot.startsAt.toISOString(),
@@ -78,6 +75,10 @@ const seedRecurringTarget = async (capacity: number) => {
 const seedFixedTarget = async (capacity: number) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(capacity);
+  await db
+    .update(offerings)
+    .set({ schedulingMode: "scheduled_program", durationMinutes: null })
+    .where(eq(offerings.id, offering.id));
   const [session] = await db
     .insert(offeringSessions)
     .values({
@@ -90,6 +91,26 @@ const seedFixedTarget = async (capacity: number) => {
       status: "published",
     })
     .returning();
+  await db.insert(scheduledPrograms).values({
+    id: session!.id,
+    offeringId: offering.id,
+    title: offering.title,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    capacity,
+    status: "published",
+  });
+  await db.insert(scheduledProgramOccurrences).values({
+    id: session!.id,
+    scheduledProgramId: session!.id,
+    startsAt: session!.startsAt,
+    endsAt: session!.endsAt,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    status: "scheduled",
+  });
 
   return {
     offering,
@@ -166,6 +187,17 @@ describe.sequential("atomic public slot-hold capacity", () => {
         endsAt: first.session.endsAt,
       })
       .where(eq(offeringSessions.id, second.session.id));
+    await db
+      .update(scheduledProgramOccurrences)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(scheduledProgramOccurrences.id, second.session.id));
+    await db
+      .update(scheduledPrograms)
+      .set({ status: "draft" })
+      .where(eq(scheduledPrograms.id, second.session.id));
     second.input.startsAt = first.session.startsAt.toISOString();
     second.input.endsAt = first.session.endsAt.toISOString();
 
@@ -174,7 +206,7 @@ describe.sequential("atomic public slot-hold capacity", () => {
     await expectUnavailable(createSlotHold(second.input));
   });
 
-  it("serializes competing offerings so only one overlapping schedule wins", async () => {
+  it("rejects both targets when invalid legacy data has overlapping published Programs", async () => {
     const first = await seedFixedTarget(1);
     const second = await seedFixedTarget(1);
     const { db } = getTestDatabase();
@@ -186,6 +218,13 @@ describe.sequential("atomic public slot-hold capacity", () => {
         endsAt: first.session.endsAt,
       })
       .where(eq(offeringSessions.id, second.session.id));
+    await db
+      .update(scheduledProgramOccurrences)
+      .set({
+        startsAt: first.session.startsAt,
+        endsAt: first.session.endsAt,
+      })
+      .where(eq(scheduledProgramOccurrences.id, second.session.id));
     second.input.startsAt = first.session.startsAt.toISOString();
     second.input.endsAt = first.session.endsAt.toISOString();
 
@@ -194,8 +233,8 @@ describe.sequential("atomic public slot-hold capacity", () => {
       createSlotHold(second.input),
     ]);
 
-    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(0);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(2);
   });
 
   it("blocks a ninth distinct schedule group on the same day", async () => {
@@ -295,13 +334,11 @@ describe.sequential("atomic public slot-hold capacity", () => {
     const { offering, session } = await seedFixedTarget(1);
     await db.insert(bookings).values({
       offeringId: offering.id,
-      offeringSessionId: session.id,
+      scheduledProgramId: session.id,
       attendanceMode: "online",
       status: "rescheduled",
       customerFullName: "Rescheduled Capacity",
       customerEmail: "rescheduled-fixed@example.test",
-      slotStartAt: session.startsAt,
-      slotEndAt: session.endsAt,
       timezone: "Africa/Cairo",
     });
 
@@ -321,15 +358,18 @@ describe.sequential("atomic public slot-hold capacity", () => {
   it("matches generated buffer spacing without counting the buffer as occupied time", async () => {
     const { db } = getTestDatabase();
     const offering = await seedOffering(1);
-    await db.insert(availabilityRules).values({
-      offeringId: offering.id,
+    await db
+      .update(offerings)
+      .set({
+        durationMinutes: 30,
+        bufferBeforeMinutes: 10,
+        bufferAfterMinutes: 5,
+      })
+      .where(eq(offerings.id, offering.id));
+    await db.insert(availabilityWindows).values({
       weekday: recurringWindowStart.getDay(),
-      startTime: "10:00",
-      endTime: "12:00",
-      timezone: "Africa/Cairo",
-      slotDurationMinutes: 30,
-      bufferBeforeMinutes: 10,
-      bufferAfterMinutes: 5,
+      startLocalTime: "10:00",
+      endLocalTime: "12:00",
       status: "published",
     });
     const startsAt = new Date(`${recurringDate}T10:10:00`);
@@ -357,14 +397,10 @@ describe.sequential("atomic public slot-hold capacity", () => {
 
   it("rejects a recurring candidate overlapped by a blocked override", async () => {
     const { db } = getTestDatabase();
-    const { offering, rule, input } = await seedRecurringTarget(1);
-    await db.insert(availabilityOverrides).values({
-      offeringId: offering.id,
-      availabilityRuleId: rule.id,
+    const { input } = await seedRecurringTarget(1);
+    await db.insert(globalAvailabilityOverrides).values({
       date: recurringDate,
-      overrideType: "blocked",
-      startsAt: firstRecurringSlot.startsAt,
-      endsAt: firstRecurringSlot.endsAt,
+      overrideMode: "unavailable",
     });
 
     await expectUnavailable(createSlotHold(input));

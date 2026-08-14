@@ -26,6 +26,9 @@ export const bookingScheduleLockKeys = (input: {
 export const fixedSessionCapacityIdentity = (offeringSessionId: string) =>
   `fixed:v1:${offeringSessionId}`;
 
+export const scheduledProgramCapacityIdentity = (scheduledProgramId: string) =>
+  `program:v1:${scheduledProgramId}`;
+
 export const recurringSlotCapacityIdentity = (input: {
   offeringId: string;
   startsAt: Date;
@@ -35,6 +38,9 @@ export const recurringSlotCapacityIdentity = (input: {
 
 export const fixedSessionCapacityLockKey = (offeringSessionId: string) =>
   capacityLockKey(fixedSessionCapacityIdentity(offeringSessionId));
+
+export const scheduledProgramCapacityLockKey = (scheduledProgramId: string) =>
+  capacityLockKey(scheduledProgramCapacityIdentity(scheduledProgramId));
 
 export const recurringSlotCapacityLockKey = (input: {
   offeringId: string;

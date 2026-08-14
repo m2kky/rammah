@@ -177,6 +177,31 @@ const formatDateRange = (input: {
   return `Time: ${formatter.format(input.startsAt)} - ${formatter.format(input.endsAt)}`;
 };
 
+const formatBookingSchedule = (
+  booking: NonNullable<Awaited<ReturnType<typeof findBookingEmailContextById>>>,
+) =>
+  booking.target.kind === "scheduled_program" && booking.target.occurrences.length > 0
+    ? booking.target.occurrences
+        .map((occurrence) => {
+          const time = formatDateRange({
+            startsAt: occurrence.startsAt,
+            endsAt: occurrence.endsAt,
+            timezone: occurrence.timezone,
+          });
+          const access = occurrence.meetUrl
+            ? `Meet: ${occurrence.meetUrl}`
+            : occurrence.location
+              ? `Location: ${[occurrence.location.name, occurrence.location.city, occurrence.location.countryCode].filter(Boolean).join(", ")}`
+              : null;
+          return access ? `${time} · ${access}` : time;
+        })
+        .join("\n")
+    : formatDateRange({
+        startsAt: booking.slotStartAt,
+        endsAt: booking.slotEndAt,
+        timezone: booking.timezone,
+      });
+
 const formatAmount = (amountMinor: number, currency: string | null) => {
   if (!currency || amountMinor <= 0) return "Free booking";
 
@@ -352,7 +377,12 @@ const bookingVariables = async (
   if (!booking || !allowedStatuses.includes(booking.status)) return null;
 
   const calendarEvent = await findCalendarEventByBookingId(booking.id);
-  const meetUrl = calendarEvent?.status === "created" ? calendarEvent.meetUrl : null;
+  const programMeetUrls = booking.target.kind === "scheduled_program"
+    ? booking.target.occurrences.map(({ meetUrl }) => meetUrl).filter(Boolean)
+    : [];
+  const meetUrl =
+    programMeetUrls[0] ??
+    (calendarEvent?.status === "created" ? calendarEvent.meetUrl : null);
   const paymentLabel = booking.paymentRequired
     ? `Payment: ${formatAmount(booking.totalAmountMinor, booking.priceCurrency)} (${booking.payment?.status ?? "pending"})`
     : "Payment: not required";
@@ -368,14 +398,14 @@ const bookingVariables = async (
       customerPhone: booking.customerPhone,
       offeringTitle: booking.offeringTitle,
       offeringSlug: booking.offeringSlug,
-      slotLabel: formatDateRange({
-        startsAt: booking.slotStartAt,
-        endsAt: booking.slotEndAt,
-        timezone: booking.timezone,
-      }),
+      slotLabel: formatBookingSchedule(booking),
       paymentLabel,
       meetUrl,
-      meetLine: meetUrl ? `Meet link: ${meetUrl}` : "Meet link will appear on your booking page.",
+      meetLine: programMeetUrls.length > 1
+        ? `Meet links: ${programMeetUrls.join(" | ")}`
+        : meetUrl
+          ? `Meet link: ${meetUrl}`
+          : "Meet link will appear on your booking page.",
     },
   };
 };

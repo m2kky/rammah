@@ -4,8 +4,15 @@ import {
   bookings,
   calendarEvents,
   googleCalendarConnections,
+  offlineLocations,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
+import {
+  attachCanonicalBookingTargets,
+  projectCanonicalTargetWindow,
+} from "../bookings/booking-target.repository.js";
 
 export const calendarEventSelect = {
   id: calendarEvents.id,
@@ -278,6 +285,7 @@ export const findConfirmedBookingForCalendarSync = async (bookingId: string) => 
       customerFullName: bookings.customerFullName,
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
+      scheduledProgramId: bookings.scheduledProgramId,
       slotStartAt: bookings.slotStartAt,
       slotEndAt: bookings.slotEndAt,
       timezone: bookings.timezone,
@@ -289,5 +297,75 @@ export const findConfirmedBookingForCalendarSync = async (bookingId: string) => 
     .where(eq(bookings.id, bookingId))
     .limit(1);
 
+  const booking = (await attachCanonicalBookingTargets(rows))[0] ?? null;
+  if (!booking) return null;
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
+  return {
+    ...booking,
+    slotStartAt: targetWindow.startsAt,
+    slotEndAt: targetWindow.endsAt,
+    timezone: targetWindow.timezone,
+  };
+};
+
+export const findProgramForCalendarSync = async (programId: string) => {
+  const rows = await db
+    .select({
+      programId: scheduledPrograms.id,
+      programTitle: scheduledPrograms.title,
+      programStatus: scheduledPrograms.status,
+      offeringTitle: offerings.title,
+      occurrenceId: scheduledProgramOccurrences.id,
+      startsAt: scheduledProgramOccurrences.startsAt,
+      endsAt: scheduledProgramOccurrences.endsAt,
+      timezone: scheduledProgramOccurrences.timezone,
+      attendanceMode: scheduledProgramOccurrences.attendanceMode,
+      locationName: offlineLocations.name,
+      locationAddressLine1: offlineLocations.addressLine1,
+      locationAddressLine2: offlineLocations.addressLine2,
+      locationCity: offlineLocations.city,
+      locationCountryCode: offlineLocations.countryCode,
+      googleCalendarEventId: scheduledProgramOccurrences.googleCalendarEventId,
+      meetUrl: scheduledProgramOccurrences.meetUrl,
+      occurrenceStatus: scheduledProgramOccurrences.status,
+      sortOrder: scheduledProgramOccurrences.sortOrder,
+    })
+    .from(scheduledPrograms)
+    .innerJoin(offerings, eq(scheduledPrograms.offeringId, offerings.id))
+    .innerJoin(
+      scheduledProgramOccurrences,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .leftJoin(
+      offlineLocations,
+      eq(scheduledProgramOccurrences.locationId, offlineLocations.id),
+    )
+    .where(eq(scheduledPrograms.id, programId));
+  return rows.sort(
+    (left, right) =>
+      left.startsAt.getTime() - right.startsAt.getTime() ||
+      left.sortOrder - right.sortOrder ||
+      left.occurrenceId.localeCompare(right.occurrenceId),
+  );
+};
+
+export type ProgramCalendarOccurrenceRow = Awaited<
+  ReturnType<typeof findProgramForCalendarSync>
+>[number];
+
+export const saveProgramOccurrenceCalendarEvent = async (input: {
+  occurrenceId: string;
+  googleCalendarEventId: string;
+  meetUrl: string | null;
+}) => {
+  const rows = await db
+    .update(scheduledProgramOccurrences)
+    .set({
+      googleCalendarEventId: input.googleCalendarEventId,
+      meetUrl: input.meetUrl,
+      updatedAt: new Date(),
+    })
+    .where(eq(scheduledProgramOccurrences.id, input.occurrenceId))
+    .returning({ id: scheduledProgramOccurrences.id });
   return rows[0] ?? null;
 };

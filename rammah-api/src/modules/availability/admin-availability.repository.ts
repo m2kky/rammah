@@ -1,58 +1,42 @@
 import { and, asc, eq, ne, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import {
-  availabilityRules,
-  contentStatusEnum,
-  offerings,
-} from "../../db/schema/index.js";
+import { availabilityWindows } from "../../db/schema/index.js";
 
-export type ContentStatus = (typeof contentStatusEnum.enumValues)[number];
-export type AdminAvailabilityRuleInsert = typeof availabilityRules.$inferInsert;
-export type AdminAvailabilityRuleUpdate = Partial<
-  Omit<AdminAvailabilityRuleInsert, "id" | "createdAt">
+export type AvailabilityWindowStatus = "draft" | "published" | "archived";
+export type AdminAvailabilityWindowInsert = typeof availabilityWindows.$inferInsert;
+export type AdminAvailabilityWindowUpdate = Partial<
+  Omit<AdminAvailabilityWindowInsert, "id" | "createdAt">
 >;
 
-export type AdminAvailabilityRuleFilters = {
-  offeringId?: string;
-  status?: ContentStatus;
+export type AdminAvailabilityWindowFilters = {
+  status?: AvailabilityWindowStatus;
+  weekday?: number;
 };
 
-const adminAvailabilityRuleSelect = {
-  id: availabilityRules.id,
-  offeringId: availabilityRules.offeringId,
-  offeringTitle: offerings.title,
-  offeringSlug: offerings.slug,
-  weekday: availabilityRules.weekday,
-  startTime: availabilityRules.startTime,
-  endTime: availabilityRules.endTime,
-  timezone: availabilityRules.timezone,
-  slotDurationMinutes: availabilityRules.slotDurationMinutes,
-  bufferBeforeMinutes: availabilityRules.bufferBeforeMinutes,
-  bufferAfterMinutes: availabilityRules.bufferAfterMinutes,
-  status: availabilityRules.status,
-  createdAt: availabilityRules.createdAt,
-  updatedAt: availabilityRules.updatedAt,
+const adminAvailabilityWindowSelect = {
+  id: availabilityWindows.id,
+  weekday: availabilityWindows.weekday,
+  startLocalTime: availabilityWindows.startLocalTime,
+  endLocalTime: availabilityWindows.endLocalTime,
+  status: availabilityWindows.status,
+  createdAt: availabilityWindows.createdAt,
+  updatedAt: availabilityWindows.updatedAt,
 };
 
-export const findAdminAvailabilityRules = async (
-  filters: AdminAvailabilityRuleFilters = {},
+export const findAdminAvailabilityWindows = async (
+  filters: AdminAvailabilityWindowFilters = {},
 ) => {
   const conditions: SQL[] = [];
 
-  if (filters.offeringId) {
-    conditions.push(eq(availabilityRules.offeringId, filters.offeringId));
-  }
-
   if (filters.status) {
-    conditions.push(eq(availabilityRules.status, filters.status));
+    conditions.push(eq(availabilityWindows.status, filters.status));
   }
 
-  let query = db
-    .select(adminAvailabilityRuleSelect)
-    .from(availabilityRules)
-    .innerJoin(offerings, eq(availabilityRules.offeringId, offerings.id))
-    .$dynamic();
+  if (filters.weekday !== undefined) {
+    conditions.push(eq(availabilityWindows.weekday, filters.weekday));
+  }
 
+  let query = db.select(adminAvailabilityWindowSelect).from(availabilityWindows).$dynamic();
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   if (where) {
@@ -60,94 +44,77 @@ export const findAdminAvailabilityRules = async (
   }
 
   return query.orderBy(
-    asc(offerings.title),
-    asc(availabilityRules.weekday),
-    asc(availabilityRules.startTime),
+    asc(availabilityWindows.weekday),
+    asc(availabilityWindows.startLocalTime),
+    asc(availabilityWindows.endLocalTime),
+    asc(availabilityWindows.id),
   );
 };
 
-export type AdminAvailabilityRuleRow = Awaited<
-  ReturnType<typeof findAdminAvailabilityRules>
+export type AdminAvailabilityWindowRow = Awaited<
+  ReturnType<typeof findAdminAvailabilityWindows>
 >[number];
 
-export const findAdminAvailabilityRuleById = async (id: string) => {
+export const findAdminAvailabilityWindowById = async (id: string) => {
   const rows = await db
-    .select(adminAvailabilityRuleSelect)
-    .from(availabilityRules)
-    .innerJoin(offerings, eq(availabilityRules.offeringId, offerings.id))
-    .where(eq(availabilityRules.id, id))
+    .select(adminAvailabilityWindowSelect)
+    .from(availabilityWindows)
+    .where(eq(availabilityWindows.id, id))
     .limit(1);
 
   return rows[0] ?? null;
 };
 
-export const findOfferingForAvailability = async (id: string) => {
-  const rows = await db
-    .select({ id: offerings.id })
-    .from(offerings)
-    .where(eq(offerings.id, id))
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-export const findPublishedRulesForInvariant = async (
-  offeringId: string,
-  excludeId?: string,
-) =>
+export const findPublishedWindowsForInvariant = async (excludeId?: string) =>
   db
-    .select({
-      id: availabilityRules.id,
-      weekday: availabilityRules.weekday,
-      startTime: availabilityRules.startTime,
-      endTime: availabilityRules.endTime,
-      timezone: availabilityRules.timezone,
-    })
-    .from(availabilityRules)
+    .select(adminAvailabilityWindowSelect)
+    .from(availabilityWindows)
     .where(
       and(
-        eq(availabilityRules.offeringId, offeringId),
-        eq(availabilityRules.status, "published"),
-        excludeId ? ne(availabilityRules.id, excludeId) : undefined,
+        eq(availabilityWindows.status, "published"),
+        excludeId ? ne(availabilityWindows.id, excludeId) : undefined,
       ),
     );
 
-export const insertAdminAvailabilityRule = async (
-  input: AdminAvailabilityRuleInsert,
+export const insertAdminAvailabilityWindow = async (
+  input: AdminAvailabilityWindowInsert,
 ) => {
   const rows = await db
-    .insert(availabilityRules)
+    .insert(availabilityWindows)
     .values(input)
-    .returning({ id: availabilityRules.id });
+    .returning({ id: availabilityWindows.id });
 
-  return rows[0] ? findAdminAvailabilityRuleById(rows[0].id) : null;
+  return rows[0] ? findAdminAvailabilityWindowById(rows[0].id) : null;
 };
 
-export const updateAdminAvailabilityRule = async (
+export const updateAdminAvailabilityWindow = async (
   id: string,
-  input: AdminAvailabilityRuleUpdate,
+  input: AdminAvailabilityWindowUpdate,
 ) => {
   const rows = await db
-    .update(availabilityRules)
-    .set({
-      ...input,
-      updatedAt: new Date(),
-    })
-    .where(eq(availabilityRules.id, id))
-    .returning({ id: availabilityRules.id });
+    .update(availabilityWindows)
+    .set({ ...input, updatedAt: new Date() })
+    .where(eq(availabilityWindows.id, id))
+    .returning({ id: availabilityWindows.id });
 
-  return rows[0] ? findAdminAvailabilityRuleById(rows[0].id) : null;
+  return rows[0] ? findAdminAvailabilityWindowById(rows[0].id) : null;
 };
 
-export const archiveAdminAvailabilityRule = async (id: string) => {
+export const deleteAdminAvailabilityWindow = async (id: string) => {
   const rows = await db
-    .update(availabilityRules)
-    .set({
-      status: "archived",
-      updatedAt: new Date(),
-    })
-    .where(eq(availabilityRules.id, id))
-    .returning({ id: availabilityRules.id });
+    .delete(availabilityWindows)
+    .where(eq(availabilityWindows.id, id))
+    .returning({ id: availabilityWindows.id });
 
   return rows[0] ?? null;
+};
+
+export const archiveAdminAvailabilityWindow = async (id: string) => {
+  const rows = await db
+    .update(availabilityWindows)
+    .set({ status: "archived", updatedAt: new Date() })
+    .where(eq(availabilityWindows.id, id))
+    .returning({ id: availabilityWindows.id });
+
+  return rows[0] ? findAdminAvailabilityWindowById(rows[0].id) : null;
 };

@@ -19,6 +19,7 @@ import AdminOfferingPricing from "./AdminOfferingPricing";
 type OfferingType = AdminOffering["offeringType"];
 type AttendanceMode = AdminOffering["attendanceMode"];
 type BookingMode = AdminOffering["bookingMode"];
+type SchedulingMode = AdminOffering["schedulingMode"];
 
 type FormState = {
   categoryId: string;
@@ -29,7 +30,10 @@ type FormState = {
   offeringType: OfferingType;
   attendanceMode: AttendanceMode;
   bookingMode: BookingMode;
+  schedulingMode: SchedulingMode;
   durationMinutes: string;
+  bufferBeforeMinutes: string;
+  bufferAfterMinutes: string;
   capacity: string;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -61,6 +65,23 @@ const bookingModes: Array<{ value: BookingMode; label: string; hint: string }> =
   { value: "quote_only", label: "Quote", hint: "Collect inquiry before pricing" },
 ];
 
+const schedulingModes: Array<{
+  value: SchedulingMode;
+  label: string;
+  hint: string;
+}> = [
+  {
+    value: "appointment",
+    label: "Appointment slots",
+    hint: "The client chooses a time from your availability windows.",
+  },
+  {
+    value: "scheduled_program",
+    label: "Scheduled program",
+    hint: "A course, workshop, or event with fixed occurrence dates.",
+  },
+];
+
 const contentStatuses: Array<{ value: AdminOfferingStatus; label: string }> = [
   { value: "draft", label: "Draft" },
   { value: "published", label: "Published" },
@@ -77,7 +98,10 @@ const defaultState: FormState = {
   offeringType: "coaching",
   attendanceMode: "online",
   bookingMode: "free",
+  schedulingMode: "appointment",
   durationMinutes: "60",
+  bufferBeforeMinutes: "0",
+  bufferAfterMinutes: "0",
   capacity: "1",
   requiresPayment: false,
   quoteOnly: false,
@@ -104,7 +128,11 @@ const toFormState = (offering: AdminOffering): FormState => ({
   offeringType: offering.offeringType,
   attendanceMode: offering.attendanceMode,
   bookingMode: offering.bookingMode,
-  durationMinutes: String(offering.durationMinutes),
+  schedulingMode: offering.schedulingMode,
+  durationMinutes:
+    offering.durationMinutes === null ? "" : String(offering.durationMinutes),
+  bufferBeforeMinutes: String(offering.bufferBeforeMinutes),
+  bufferAfterMinutes: String(offering.bufferAfterMinutes),
   capacity: String(offering.capacity),
   requiresPayment: offering.requiresPayment,
   quoteOnly: offering.quoteOnly,
@@ -128,7 +156,13 @@ const buildPayload = (state: FormState): AdminOfferingPayload => ({
   offeringType: state.offeringType,
   attendanceMode: state.attendanceMode,
   bookingMode: state.bookingMode,
-  durationMinutes: toNumber(state.durationMinutes, 60),
+  schedulingMode: state.schedulingMode,
+  durationMinutes:
+    state.schedulingMode === "appointment"
+      ? toNumber(state.durationMinutes, 60)
+      : null,
+  bufferBeforeMinutes: toNumber(state.bufferBeforeMinutes, 0),
+  bufferAfterMinutes: toNumber(state.bufferAfterMinutes, 0),
   capacity: toNumber(state.capacity, 1),
   requiresPayment: state.requiresPayment,
   quoteOnly: state.quoteOnly,
@@ -217,6 +251,15 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
       bookingMode: value,
       requiresPayment: value === "paid",
       quoteOnly: value === "quote_only",
+    }));
+  };
+
+  const handleSchedulingModeChange = (value: SchedulingMode) => {
+    setState((current) => ({
+      ...current,
+      schedulingMode: value,
+      durationMinutes:
+        value === "appointment" ? current.durationMinutes || "60" : "",
     }));
   };
 
@@ -415,15 +458,15 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
             </section>
 
             <section className="space-y-5 border-t border-[#102329]/12 pt-5">
-              <h2 className="text-2xl font-semibold">Booking Behavior</h2>
-              <div className="grid gap-3 lg:grid-cols-3">
-                {bookingModes.map((mode) => (
+              <h2 className="text-2xl font-semibold">Scheduling type</h2>
+              <div className="grid gap-3 lg:grid-cols-2">
+                {schedulingModes.map((mode) => (
                   <button
                     key={mode.value}
                     type="button"
-                    onClick={() => handleBookingModeChange(mode.value)}
+                    onClick={() => handleSchedulingModeChange(mode.value)}
                     className={`min-h-24 border p-4 text-left transition-colors ${
-                      state.bookingMode === mode.value
+                      state.schedulingMode === mode.value
                         ? "border-[#0F3B46] bg-[#0F3B46] text-white"
                         : "border-[#102329]/16 bg-white text-[#102329] hover:border-[#0F3B46]/50"
                     }`}
@@ -434,7 +477,30 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                 ))}
               </div>
 
-              <div className="grid gap-5 lg:grid-cols-4">
+              <div className="border-t border-[#102329]/10 pt-5">
+                <h3 className="text-lg font-semibold">Payment behavior</h3>
+                <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                  {bookingModes.map((mode) => (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      onClick={() => handleBookingModeChange(mode.value)}
+                      className={`min-h-24 border p-4 text-left transition-colors ${
+                        state.bookingMode === mode.value
+                          ? "border-[#0F3B46] bg-[#0F3B46] text-white"
+                          : "border-[#102329]/16 bg-white text-[#102329] hover:border-[#0F3B46]/50"
+                      }`}
+                    >
+                      <span className="block text-lg font-semibold">{mode.label}</span>
+                      <span className="mt-2 block font-inter text-xs leading-5 opacity-70">
+                        {mode.hint}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-5 lg:grid-cols-3">
                 <label className="block">
                   <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
                     Attendance
@@ -452,24 +518,63 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                   </select>
                 </label>
 
-                <label className="block">
-                  <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                    Duration
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={state.durationMinutes}
-                    onChange={(event) => updateField("durationMinutes", event.target.value)}
-                    className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
-                    required
-                  />
-                </label>
+                {state.schedulingMode === "appointment" ? (
+                  <>
+                    <label className="block">
+                      <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
+                        Appointment duration (minutes)
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={1440}
+                        value={state.durationMinutes}
+                        onChange={(event) => updateField("durationMinutes", event.target.value)}
+                        className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
+                        required
+                      />
+                      <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                        Length of each generated customer appointment.
+                      </span>
+                    </label>
+
+                    <label className="block">
+                      <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
+                        Buffer before (minutes)
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={state.bufferBeforeMinutes}
+                        onChange={(event) => updateField("bufferBeforeMinutes", event.target.value)}
+                        className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
+                        required
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
+                        Buffer after (minutes)
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={state.bufferAfterMinutes}
+                        onChange={(event) => updateField("bufferAfterMinutes", event.target.value)}
+                        className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
+                        required
+                      />
+                    </label>
+                  </>
+                ) : null}
 
                 <label className="block">
                   <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/55">
-                    Capacity
+                    {state.schedulingMode === "appointment"
+                      ? "Capacity per time for appointments"
+                      : "Default seats for scheduled programs"}
                   </span>
                   <input
                     type="number"
@@ -480,6 +585,11 @@ export default function AdminOfferingEditor({ offeringId }: { offeringId?: strin
                     className="mt-2 h-12 w-full border border-[#102329]/18 bg-white px-4 font-inter text-sm outline-none transition-colors focus:border-[#0F3B46]"
                     required
                   />
+                  <span className="mt-2 block font-inter text-xs leading-5 text-[#102329]/48">
+                    {state.schedulingMode === "appointment"
+                      ? "Maximum customers who may book the exact same time."
+                      : "Copied when a new Event or Program is created; that Program can then be edited."}
+                  </span>
                 </label>
 
                 <label className="block">

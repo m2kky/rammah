@@ -8,6 +8,7 @@ import {
   offerings,
 } from "../../db/schema/index.js";
 import { withAvailableSlotCapacity } from "../availability/slot-capacity.repository.js";
+import { attachCanonicalBookingTargets } from "./booking-target.repository.js";
 
 export type BookingStatus = (typeof bookingStatusEnum.enumValues)[number];
 
@@ -39,6 +40,7 @@ const adminBookingSelect = {
   customerEmail: bookings.customerEmail,
   customerPhone: bookings.customerPhone,
   countryCode: bookings.countryCode,
+  scheduledProgramId: bookings.scheduledProgramId,
   slotStartAt: bookings.slotStartAt,
   slotEndAt: bookings.slotEndAt,
   timezone: bookings.timezone,
@@ -98,7 +100,7 @@ export const findAdminBookings = async (filters: AdminBookingFilters = {}) => {
     query = query.where(where);
   }
 
-  return query.orderBy(desc(bookings.createdAt));
+  return attachCanonicalBookingTargets(await query.orderBy(desc(bookings.createdAt)));
 };
 
 export type AdminBookingRow = Awaited<ReturnType<typeof findAdminBookings>>[number];
@@ -116,7 +118,7 @@ export const findAdminBookingById = async (id: string) => {
     .where(eq(bookings.id, id))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (await attachCanonicalBookingTargets(rows))[0] ?? null;
 };
 
 export const updateAdminBookingStatus = async (
@@ -160,6 +162,7 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
   startsAt: Date;
   endsAt: Date;
   timezone: string;
+  policyContext: "public_reschedule" | "admin_reschedule";
 }) =>
   db.transaction(async (tx) => {
     // Canonical reschedule order: booking row, target advisory lock, then fixed-session row.
@@ -191,16 +194,18 @@ export const rescheduleAdminBookingWithinCapacity = async (input: {
       {
         offeringId: booking.offeringId,
         offeringSessionId: input.offeringSessionId,
+        scheduledProgramId: null,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
       },
-      { excludeBookingId: booking.id },
+      { policyContext: input.policyContext, excludeBookingId: booking.id },
       async ({ timezone: targetTimezone, now }) => {
         const timezone = (targetTimezone ?? input.timezone.trim()) || booking.timezone;
         const rows = await tx
           .update(bookings)
           .set({
             offeringSessionId: input.offeringSessionId,
+            scheduledProgramId: null,
             slotStartAt: input.startsAt,
             slotEndAt: input.endsAt,
             timezone,

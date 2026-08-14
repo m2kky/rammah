@@ -1,86 +1,60 @@
-import { and, asc, eq, gt, gte, lt, lte, ne, type SQL } from "drizzle-orm";
+import { and, asc, eq, gte, lte, ne, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
-  availabilityOverrides,
-  availabilityRules,
-  offerings,
-  overrideTypeEnum,
+  availabilityOverrideModeEnum,
+  globalAvailabilityOverrides,
 } from "../../db/schema/index.js";
 
-export type OverrideType = (typeof overrideTypeEnum.enumValues)[number];
-export type AdminAvailabilityOverrideInsert = typeof availabilityOverrides.$inferInsert;
+export type AvailabilityOverrideMode =
+  (typeof availabilityOverrideModeEnum.enumValues)[number];
+export type AdminAvailabilityOverrideInsert =
+  typeof globalAvailabilityOverrides.$inferInsert;
 export type AdminAvailabilityOverrideUpdate = Partial<
   Omit<AdminAvailabilityOverrideInsert, "id" | "createdAt">
 >;
-
 export type AdminAvailabilityOverrideFilters = {
-  offeringId?: string;
-  availabilityRuleId?: string;
-  overrideType?: OverrideType;
+  type?: AvailabilityOverrideMode;
   dateFrom?: string;
   dateTo?: string;
 };
 
 const adminAvailabilityOverrideSelect = {
-  id: availabilityOverrides.id,
-  availabilityRuleId: availabilityOverrides.availabilityRuleId,
-  offeringId: availabilityOverrides.offeringId,
-  offeringTitle: offerings.title,
-  offeringSlug: offerings.slug,
-  ruleWeekday: availabilityRules.weekday,
-  ruleStartTime: availabilityRules.startTime,
-  ruleEndTime: availabilityRules.endTime,
-  date: availabilityOverrides.date,
-  overrideType: availabilityOverrides.overrideType,
-  startsAt: availabilityOverrides.startsAt,
-  endsAt: availabilityOverrides.endsAt,
-  reason: availabilityOverrides.reason,
-  createdAt: availabilityOverrides.createdAt,
-  updatedAt: availabilityOverrides.updatedAt,
+  id: globalAvailabilityOverrides.id,
+  date: globalAvailabilityOverrides.date,
+  overrideMode: globalAvailabilityOverrides.overrideMode,
+  startLocalTime: globalAvailabilityOverrides.startLocalTime,
+  endLocalTime: globalAvailabilityOverrides.endLocalTime,
+  reason: globalAvailabilityOverrides.reason,
+  createdAt: globalAvailabilityOverrides.createdAt,
+  updatedAt: globalAvailabilityOverrides.updatedAt,
 };
 
 export const findAdminAvailabilityOverrides = async (
   filters: AdminAvailabilityOverrideFilters = {},
 ) => {
   const conditions: SQL[] = [];
-
-  if (filters.offeringId) {
-    conditions.push(eq(availabilityOverrides.offeringId, filters.offeringId));
+  if (filters.type) {
+    conditions.push(eq(globalAvailabilityOverrides.overrideMode, filters.type));
   }
-
-  if (filters.availabilityRuleId) {
-    conditions.push(eq(availabilityOverrides.availabilityRuleId, filters.availabilityRuleId));
-  }
-
-  if (filters.overrideType) {
-    conditions.push(eq(availabilityOverrides.overrideType, filters.overrideType));
-  }
-
   if (filters.dateFrom) {
-    conditions.push(gte(availabilityOverrides.date, filters.dateFrom));
+    conditions.push(gte(globalAvailabilityOverrides.date, filters.dateFrom));
   }
-
   if (filters.dateTo) {
-    conditions.push(lte(availabilityOverrides.date, filters.dateTo));
+    conditions.push(lte(globalAvailabilityOverrides.date, filters.dateTo));
   }
 
   let query = db
     .select(adminAvailabilityOverrideSelect)
-    .from(availabilityOverrides)
-    .innerJoin(offerings, eq(availabilityOverrides.offeringId, offerings.id))
-    .leftJoin(availabilityRules, eq(availabilityOverrides.availabilityRuleId, availabilityRules.id))
+    .from(globalAvailabilityOverrides)
     .$dynamic();
-
   const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-  if (where) {
-    query = query.where(where);
-  }
+  if (where) query = query.where(where);
 
   return query.orderBy(
-    asc(availabilityOverrides.date),
-    asc(availabilityOverrides.startsAt),
-    asc(offerings.title),
+    asc(globalAvailabilityOverrides.date),
+    asc(globalAvailabilityOverrides.startLocalTime),
+    asc(globalAvailabilityOverrides.endLocalTime),
+    asc(globalAvailabilityOverrides.id),
   );
 };
 
@@ -91,50 +65,33 @@ export type AdminAvailabilityOverrideRow = Awaited<
 export const findAdminAvailabilityOverrideById = async (id: string) => {
   const rows = await db
     .select(adminAvailabilityOverrideSelect)
-    .from(availabilityOverrides)
-    .innerJoin(offerings, eq(availabilityOverrides.offeringId, offerings.id))
-    .leftJoin(availabilityRules, eq(availabilityOverrides.availabilityRuleId, availabilityRules.id))
-    .where(eq(availabilityOverrides.id, id))
+    .from(globalAvailabilityOverrides)
+    .where(eq(globalAvailabilityOverrides.id, id))
     .limit(1);
-
   return rows[0] ?? null;
 };
 
-export const findOverlappingAvailableOverride = async (input: {
-  offeringId: string;
-  date: string;
-  startsAt: Date;
-  endsAt: Date;
-  excludeId?: string;
-}) => {
-  const rows = await db
-    .select({ id: availabilityOverrides.id })
-    .from(availabilityOverrides)
+export const findAdminAvailabilityOverridesForDate = async (
+  date: string,
+  excludeId?: string,
+) =>
+  db
+    .select(adminAvailabilityOverrideSelect)
+    .from(globalAvailabilityOverrides)
     .where(
       and(
-        eq(availabilityOverrides.offeringId, input.offeringId),
-        eq(availabilityOverrides.date, input.date),
-        eq(availabilityOverrides.overrideType, "available"),
-        lt(availabilityOverrides.startsAt, input.endsAt),
-        gt(availabilityOverrides.endsAt, input.startsAt),
-        input.excludeId
-          ? ne(availabilityOverrides.id, input.excludeId)
-          : undefined,
+        eq(globalAvailabilityOverrides.date, date),
+        excludeId ? ne(globalAvailabilityOverrides.id, excludeId) : undefined,
       ),
-    )
-    .limit(1);
-
-  return rows[0] ?? null;
-};
+    );
 
 export const insertAdminAvailabilityOverride = async (
   input: AdminAvailabilityOverrideInsert,
 ) => {
   const rows = await db
-    .insert(availabilityOverrides)
+    .insert(globalAvailabilityOverrides)
     .values(input)
-    .returning({ id: availabilityOverrides.id });
-
+    .returning({ id: globalAvailabilityOverrides.id });
   return rows[0] ? findAdminAvailabilityOverrideById(rows[0].id) : null;
 };
 
@@ -143,22 +100,17 @@ export const updateAdminAvailabilityOverride = async (
   input: AdminAvailabilityOverrideUpdate,
 ) => {
   const rows = await db
-    .update(availabilityOverrides)
-    .set({
-      ...input,
-      updatedAt: new Date(),
-    })
-    .where(eq(availabilityOverrides.id, id))
-    .returning({ id: availabilityOverrides.id });
-
+    .update(globalAvailabilityOverrides)
+    .set({ ...input, updatedAt: new Date() })
+    .where(eq(globalAvailabilityOverrides.id, id))
+    .returning({ id: globalAvailabilityOverrides.id });
   return rows[0] ? findAdminAvailabilityOverrideById(rows[0].id) : null;
 };
 
 export const deleteAdminAvailabilityOverride = async (id: string) => {
   const rows = await db
-    .delete(availabilityOverrides)
-    .where(eq(availabilityOverrides.id, id))
-    .returning({ id: availabilityOverrides.id });
-
+    .delete(globalAvailabilityOverrides)
+    .where(eq(globalAvailabilityOverrides.id, id))
+    .returning({ id: globalAvailabilityOverrides.id });
   return rows[0] ?? null;
 };

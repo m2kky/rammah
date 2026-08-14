@@ -6,7 +6,12 @@ export type AppErrorCode =
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
+  | "SCHEDULE_CONFLICT"
+  | "INVALID_MEDIA_SLOT"
+  | "MEDIA_KIND_MISMATCH"
+  | "SLOT_CARDINALITY_EXCEEDED"
   | "SLOT_UNAVAILABLE"
+  | "PROGRAM_FULL"
   | "PRICE_CHANGED"
   | "PAYMENT_REQUIRED"
   | "PAYMENT_FAILED"
@@ -25,6 +30,7 @@ export class AppError extends Error {
   readonly code: AppErrorCode;
   readonly statusCode: number;
   readonly details: AppErrorDetail[];
+  readonly meta?: Record<string, unknown>;
   readonly expose: boolean;
 
   constructor(input: {
@@ -32,6 +38,7 @@ export class AppError extends Error {
     message: string;
     statusCode?: number;
     details?: AppErrorDetail[];
+    meta?: Record<string, unknown>;
     expose?: boolean;
   }) {
     super(input.message);
@@ -39,6 +46,7 @@ export class AppError extends Error {
     this.code = input.code;
     this.statusCode = input.statusCode ?? httpStatus.internalServerError;
     this.details = input.details ?? [];
+    this.meta = input.meta;
     this.expose = input.expose ?? this.statusCode < 500;
   }
 }

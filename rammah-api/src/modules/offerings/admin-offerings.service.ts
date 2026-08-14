@@ -9,6 +9,7 @@ import {
   findAdminOfferingPriceById,
   findAdminOfferingPricesByOfferingId,
   findAdminOfferings,
+  findOfferingSchedulingDependencies,
   findOfferingPriceByCountryCurrency,
   findOfferingBySlug,
   findOfferingCategoryById,
@@ -35,7 +36,10 @@ export type AdminOfferingInput = {
   offeringType: AdminOfferingInsert["offeringType"];
   attendanceMode: AdminOfferingInsert["attendanceMode"];
   bookingMode: AdminOfferingInsert["bookingMode"];
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -91,7 +95,10 @@ const toAdminOffering = (offering: AdminOfferingRow) => ({
   offeringType: offering.offeringType,
   attendanceMode: offering.attendanceMode,
   bookingMode: offering.bookingMode,
+  schedulingMode: offering.schedulingMode,
   durationMinutes: offering.durationMinutes,
+  bufferBeforeMinutes: offering.bufferBeforeMinutes,
+  bufferAfterMinutes: offering.bufferAfterMinutes,
   capacity: offering.capacity,
   requiresPayment: offering.requiresPayment,
   quoteOnly: offering.quoteOnly,
@@ -160,6 +167,106 @@ const assertSlugAvailable = async (slug: string, excludeId?: string) => {
         {
           field: "slug",
           message: "Use a unique offering slug.",
+        },
+      ],
+    });
+  }
+};
+
+export const validateEarlyBookingPrice = (
+  baseAmountMinor: number,
+  earlyBirdAmountMinor: number | null,
+  earlyBirdEndsAt: Date | null,
+) => {
+  const hasAmount = earlyBirdAmountMinor !== null;
+  const hasExpiry = earlyBirdEndsAt !== null;
+
+  if (hasAmount !== hasExpiry) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Early-booking amount and expiry must be supplied together.",
+      statusCode: httpStatus.badRequest,
+      details: [
+        {
+          field: hasAmount ? "earlyBirdEndsAt" : "earlyBirdAmountMinor",
+          message: "Provide both the early-booking price and its end date and time.",
+        },
+      ],
+    });
+  }
+
+  if (
+    earlyBirdAmountMinor !== null &&
+    earlyBirdAmountMinor >= baseAmountMinor
+  ) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Early-booking price must be lower than the Standard price.",
+      statusCode: httpStatus.badRequest,
+      details: [
+        {
+          field: "earlyBirdAmountMinor",
+          message: "Enter a discounted amount below the Standard price.",
+        },
+      ],
+    });
+  }
+};
+
+const assertSchedulingConfiguration = (input: {
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+}) => {
+  const durationIsInvalid =
+    input.schedulingMode === "appointment"
+      ? input.durationMinutes === null || input.durationMinutes <= 0
+      : input.durationMinutes !== null;
+
+  if (
+    durationIsInvalid ||
+    input.bufferBeforeMinutes < 0 ||
+    input.bufferAfterMinutes < 0
+  ) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Offering scheduling configuration is invalid.",
+      statusCode: httpStatus.badRequest,
+      details: [
+        {
+          field: "durationMinutes",
+          message:
+            input.schedulingMode === "appointment"
+              ? "Appointments require a positive duration."
+              : "Scheduled programs must not define an appointment duration.",
+        },
+      ],
+    });
+  }
+};
+
+const assertSchedulingModeChangeAllowed = async (
+  offeringId: string,
+  currentMode: "appointment" | "scheduled_program",
+  nextMode: "appointment" | "scheduled_program",
+) => {
+  if (currentMode === nextMode) return;
+
+  const dependencies = await findOfferingSchedulingDependencies(offeringId);
+  const blocked =
+    (nextMode === "scheduled_program" && dependencies.hasAppointmentTargets) ||
+    (nextMode === "appointment" && dependencies.hasProgramTargets);
+
+  if (blocked) {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "Scheduling mode cannot change while incompatible future bookings or events exist.",
+      statusCode: httpStatus.conflict,
+      details: [
+        {
+          field: "schedulingMode",
+          message: "Archive or resolve the incompatible future schedule before changing modes.",
         },
       ],
     });
@@ -236,6 +343,7 @@ export const createAdminOffering = async (
 
   await assertCategoryExists(input.categoryId);
   await assertSlugAvailable(slug);
+  assertSchedulingConfiguration(input);
 
   const offering = await insertAdminOffering({
     categoryId: input.categoryId ?? null,
@@ -246,7 +354,10 @@ export const createAdminOffering = async (
     offeringType: input.offeringType,
     attendanceMode: input.attendanceMode,
     bookingMode: input.bookingMode,
+    schedulingMode: input.schedulingMode,
     durationMinutes: input.durationMinutes,
+    bufferBeforeMinutes: input.bufferBeforeMinutes,
+    bufferAfterMinutes: input.bufferAfterMinutes,
     capacity: input.capacity,
     requiresPayment: input.requiresPayment,
     quoteOnly: input.quoteOnly,
@@ -285,16 +396,23 @@ export const createAdminOfferingPrice = async (
 
   const countryCode = toUpperCode(input.countryCode);
   const currency = toUpperCode(input.currency);
+  const earlyBirdAmountMinor = input.earlyBirdAmountMinor ?? null;
+  const earlyBirdEndsAt = toNullableDate(input.earlyBirdEndsAt) ?? null;
 
   await assertPriceAvailable(offeringId, countryCode, currency);
+  validateEarlyBookingPrice(
+    input.baseAmountMinor,
+    earlyBirdAmountMinor,
+    earlyBirdEndsAt,
+  );
 
   const price = await insertAdminOfferingPrice({
     offeringId,
     countryCode,
     currency,
     baseAmountMinor: input.baseAmountMinor,
-    earlyBirdAmountMinor: input.earlyBirdAmountMinor ?? null,
-    earlyBirdEndsAt: toNullableDate(input.earlyBirdEndsAt),
+    earlyBirdAmountMinor,
+    earlyBirdEndsAt,
     status: input.status,
   });
 
@@ -338,6 +456,24 @@ export const updateAdminOfferingById = async (
     await assertSlugAvailable(input.slug.toLowerCase(), id);
   }
 
+  const nextSchedulingConfiguration = {
+    schedulingMode: input.schedulingMode ?? existingOffering.schedulingMode,
+    durationMinutes:
+      input.durationMinutes !== undefined
+        ? input.durationMinutes
+        : existingOffering.durationMinutes,
+    bufferBeforeMinutes:
+      input.bufferBeforeMinutes ?? existingOffering.bufferBeforeMinutes,
+    bufferAfterMinutes:
+      input.bufferAfterMinutes ?? existingOffering.bufferAfterMinutes,
+  };
+  assertSchedulingConfiguration(nextSchedulingConfiguration);
+  await assertSchedulingModeChangeAllowed(
+    id,
+    existingOffering.schedulingMode,
+    nextSchedulingConfiguration.schedulingMode,
+  );
+
   const updatePayload = removeUndefined<AdminOfferingUpdate>({
     categoryId: input.categoryId,
     title: input.title?.trim(),
@@ -347,7 +483,10 @@ export const updateAdminOfferingById = async (
     offeringType: input.offeringType,
     attendanceMode: input.attendanceMode,
     bookingMode: input.bookingMode,
+    schedulingMode: input.schedulingMode,
     durationMinutes: input.durationMinutes,
+    bufferBeforeMinutes: input.bufferBeforeMinutes,
+    bufferAfterMinutes: input.bufferAfterMinutes,
     capacity: input.capacity,
     requiresPayment: input.requiresPayment,
     quoteOnly: input.quoteOnly,
@@ -403,12 +542,24 @@ export const updateAdminOfferingPriceById = async (
     await assertPriceAvailable(offeringId, countryCode, currency, priceId);
   }
 
+  const baseAmountMinor = input.baseAmountMinor ?? existingPrice.baseAmountMinor;
+  const earlyBirdAmountMinor =
+    input.earlyBirdAmountMinor !== undefined
+      ? input.earlyBirdAmountMinor
+      : existingPrice.earlyBirdAmountMinor;
+  const earlyBirdEndsAt =
+    input.earlyBirdEndsAt !== undefined
+      ? toNullableDate(input.earlyBirdEndsAt) ?? null
+      : existingPrice.earlyBirdEndsAt;
+  validateEarlyBookingPrice(baseAmountMinor, earlyBirdAmountMinor, earlyBirdEndsAt);
+
   const updatePayload = removeUndefined<AdminOfferingPriceUpdate>({
     countryCode: input.countryCode !== undefined ? countryCode : undefined,
     currency: input.currency !== undefined ? currency : undefined,
     baseAmountMinor: input.baseAmountMinor,
     earlyBirdAmountMinor: input.earlyBirdAmountMinor,
-    earlyBirdEndsAt: toNullableDate(input.earlyBirdEndsAt),
+    earlyBirdEndsAt:
+      input.earlyBirdEndsAt === undefined ? undefined : earlyBirdEndsAt,
     status: input.status,
   });
 

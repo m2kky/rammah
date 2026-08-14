@@ -6,6 +6,8 @@ Finish the existing CMS so an administrator can manage every image and video dis
 
 The approved media workflow supports both direct uploads to Cloudflare R2 and externally hosted HTTPS URLs.
 
+Operational booking controls are specified separately in `docs/superpowers/specs/2026-08-05-global-booking-advance-days-design.md`. The Availability dashboard owns the global booking timezone and minimum advance calendar days; the CMS Site Settings screen does not duplicate those controls.
+
 ## Current-State Findings
 
 The repository already contains database tables and admin APIs for pages, page sections, legal pages, media asset records, navigation, and SEO metadata. The public site also reads some text content from those APIs.
@@ -79,7 +81,7 @@ If upload or finalization fails, the dashboard preserves the form state and offe
 
 The R2 bucket CORS policy must allow presigned `PUT` requests from the configured admin origin. API verification uses server-to-server `HEAD` and byte-range requests and does not depend on browser CORS. The public/CDN endpoint must support `GET`, `HEAD`, byte-range video requests, and the required response headers. Uploaded objects use immutable, collision-resistant keys and long-lived cache headers.
 
-External URLs must use HTTPS. The application renders them directly and does not proxy or fetch arbitrary external content through the API. Because arbitrary remote URLs cannot be trusted or guaranteed to remain available, the dashboard requires a successful browser preview before saving and displays a persistent external-source badge. Public rendering uses native `img` and `video` elements for arbitrary external assets; R2 assets may use the optimized Next.js image path. The site security policy permits HTTPS image and media sources while retaining the existing script and frame restrictions.
+External URLs must use HTTPS. The application renders them directly and does not proxy or fetch arbitrary external content through the API. Because arbitrary remote URLs cannot be trusted or guaranteed to remain available, the dashboard requires a successful browser preview before saving and displays a persistent external-source badge. Public rendering uses native `img` and `video` elements for arbitrary external assets. R2 images may use `next/image` only when the build-time R2 public origin is configured through a strict `images.remotePatterns` entry; arbitrary administrator-provided hosts never enter that allowlist. The site security policy permits HTTPS image and media sources while retaining the existing script and frame restrictions.
 
 ### Media Assignments
 
@@ -159,13 +161,15 @@ The **Pages** view supports:
 - Open an authenticated full-page draft preview
 - Publish or archive the page
 
-New general-purpose pages render at `/<slug>` through a generic Next.js route. Existing static routes take precedence. Slugs are lowercase, single-segment URL slugs for this delivery. A single server-owned reserved-slug set covers all static and system routes, including `admin`, `api`, `booking`, `blog`, `services`, `about`, `contact`, `legal`, `privacy`, `terms`, `thank-you`, and their aliases. API validation is authoritative and contract tests keep the dashboard validation aligned.
+New general-purpose pages render at `/<slug>` through a generic Next.js route. Existing static routes take precedence. Slugs are lowercase, single-segment URL slugs for this delivery. A single server-owned reserved-slug set covers all static and system routes, including `admin`, `api`, `booking`, `blog`, `services`, `about`, `contact`, `legal`, `privacy`, `privacy-policy`, `terms`, `terms-and-conditions`, `thank-you`, `cms-preview`, and their aliases. API validation is authoritative and contract tests keep the dashboard validation aligned.
 
 The public route renders only published pages and published sections, ordered by `sortOrder`. Draft and archived pages return the normal not-found experience.
 
 Section reordering uses one purpose-built endpoint that accepts the complete ordered section ID list. The API verifies ownership and completeness, then updates all sort positions in one database transaction so partial or duplicate ordering cannot be exposed.
 
-Draft preview uses a short-lived, signed, page-scoped token issued only to an authenticated administrator. A one-time bootstrap URL exchanges the token for an HTTP-only preview cookie and immediately redirects to a clean preview URL. The preview route is `noindex`, bypasses public publication filters only for the token's page, and never exposes draft navigation or unrelated drafts. The cookie expires automatically and can be cleared from the preview toolbar.
+Draft preview uses Next.js 16 Draft Mode plus a short-lived, signed, page-scoped token issued only to an authenticated administrator. A one-time Route Handler validates the token with the API, resolves the canonical page slug server-side, enables Draft Mode, stores the scoped token in a separate HTTP-only, same-site cookie, and redirects to the normal clean `/<slug>` route. It never redirects to an untrusted query-string path. The normal page renderer checks `await draftMode()` and the scoped token before bypassing publication filters, so preview and production cannot drift into separate renderers. Draft responses are `noindex`, never expose unrelated drafts, and use an explicit disable Route Handler that clears both Draft Mode and the scoped token cookie.
+
+The frontend targets Next.js 16.3.0. App Router request APIs are treated as asynchronous: dynamic-route `params`, `searchParams`, `cookies()`, and `draftMode()` are always awaited. Generic and legal routes use generated `PageProps` helpers, and `generateMetadata` shares a React `cache`-memoized page loader with the page component to avoid duplicate CMS reads during one render.
 
 `scheduled` has operational meaning: a page or legal page must have a future `publishedAt`, and a CMS publication handler registered with the existing worker publishes due records, re-runs publication validation, writes an audit event, and is idempotent. If validation fails at publish time, the item remains scheduled with an actionable dashboard error. Public routes never treat `scheduled` content as published directly.
 
@@ -191,6 +195,8 @@ The CMS navigation is organized as:
 4. Navigation
 5. Legal Pages
 6. Site Settings
+
+Booking timezone and minimum advance days live together in the separate Booking Policy card on the Availability page. Site Settings remains responsible for site identity, locale, contact details, social links, and other non-booking CMS configuration.
 
 The page editor separates page details, SEO, and sections. Media fields are labeled by purpose and always show the current preview. A media picker modal provides library selection plus upload and external-URL tabs without navigating away from the editor.
 
@@ -289,6 +295,8 @@ API unit and integration tests cover:
 - Legal-page creation and public retrieval
 - Scheduled publication success, validation failure, audit, and idempotency
 - Draft-preview authorization, page scoping, expiry, and `noindex` behavior
+- Next.js Draft Mode enable/disable behavior, secure canonical redirects, and async request APIs
+- Strict R2 `images.remotePatterns` configuration while arbitrary external media stays on native elements
 - Resolved section and global media contracts
 
 Frontend unit tests cover:

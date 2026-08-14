@@ -20,6 +20,10 @@ import {
   rescheduleAdminBookingById,
   updateAdminBookingStatusById,
 } from "./admin-bookings.service.js";
+import {
+  projectCanonicalTargetWindow,
+  serializeCanonicalBookingTarget,
+} from "./booking-target.repository.js";
 
 export type PublicBookingInput = {
   holdId: string;
@@ -69,10 +73,15 @@ const validationError = (
 const resolveLocationId = async (input: {
   offeringId: string;
   offeringSessionId?: string | null;
+  scheduledProgramId?: string | null;
   attendanceMode: "online" | "offline" | "hybrid";
   locationId?: string | null;
 }) => {
-  if (input.offeringSessionId || input.attendanceMode === "online") {
+  if (
+    input.offeringSessionId ||
+    input.scheduledProgramId ||
+    input.attendanceMode === "online"
+  ) {
     return null;
   }
 
@@ -110,6 +119,7 @@ const toPublicBooking = (
   if (!result.booking || !result.hold) {
     throw slotUnavailableError();
   }
+  const targetWindow = projectCanonicalTargetWindow(result.booking.target);
 
   return {
     id: result.booking.id,
@@ -141,10 +151,11 @@ const toPublicBooking = (
         }
       : null,
     slot: {
-      startsAt: result.booking.slotStartAt?.toISOString() ?? null,
-      endsAt: result.booking.slotEndAt?.toISOString() ?? null,
-      timezone: result.booking.timezone,
+      startsAt: targetWindow.startsAt?.toISOString() ?? null,
+      endsAt: targetWindow.endsAt?.toISOString() ?? null,
+      timezone: targetWindow.timezone,
     },
+    target: serializeCanonicalBookingTarget(result.booking.target),
     paymentRequired: result.booking.paymentRequired,
     calendar: null,
     confirmedAt: result.booking.confirmedAt?.toISOString() ?? null,
@@ -211,6 +222,7 @@ export const submitFreeBooking = async (input: PublicBookingInput) => {
     const locationId = await resolveLocationId({
       offeringId: activeHold.offeringId,
       offeringSessionId: activeHold.offeringSessionId,
+      scheduledProgramId: activeHold.scheduledProgramId,
       attendanceMode: input.attendanceMode ?? activeHold.offeringAttendanceMode,
       locationId: input.locationId,
     });
@@ -289,6 +301,16 @@ export const getPublicBookingStatus = async (publicToken: string) => {
 
   const calendarEvent =
     booking.status === "confirmed" ? await findCalendarEventByBookingId(booking.id) : null;
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
+  const changeCutoffAt = targetWindow.startsAt
+    ? new Date(
+        targetWindow.startsAt.getTime() -
+          env.BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES * 60_000,
+      )
+    : null;
+  const canChange =
+    ["confirmed", "rescheduled"].includes(booking.status) &&
+    Boolean(changeCutoffAt && changeCutoffAt > new Date());
 
   return {
     id: booking.id,
@@ -320,14 +342,20 @@ export const getPublicBookingStatus = async (publicToken: string) => {
         }
       : null,
     slot: {
-      startsAt: booking.slotStartAt?.toISOString() ?? null,
-      endsAt: booking.slotEndAt?.toISOString() ?? null,
-      timezone: booking.timezone,
+      startsAt: targetWindow.startsAt?.toISOString() ?? null,
+      endsAt: targetWindow.endsAt?.toISOString() ?? null,
+      timezone: targetWindow.timezone,
     },
+    target: serializeCanonicalBookingTarget(booking.target),
     paymentRequired: booking.paymentRequired,
     confirmedAt: booking.confirmedAt?.toISOString() ?? null,
     cancelledAt: booking.cancelledAt?.toISOString() ?? null,
     calendar: toPublicCalendar(booking.status, calendarEvent),
+    changePolicy: {
+      canCancel: canChange,
+      canReschedule: canChange && booking.target.kind === "appointment",
+      changeCutoffAt: changeCutoffAt?.toISOString() ?? null,
+    },
     createdAt: booking.createdAt.toISOString(),
     updatedAt: booking.updatedAt.toISOString(),
   };
@@ -343,9 +371,9 @@ const assertCustomerChangeAllowed = (booking: Awaited<ReturnType<typeof findPubl
   }
   if (
     !["confirmed", "rescheduled"].includes(booking.status) ||
-    !booking.slotStartAt ||
-    booking.slotStartAt.getTime() - Date.now()
-      < env.BOOKING_MINIMUM_NOTICE_MINUTES * 60_000
+    !projectCanonicalTargetWindow(booking.target).startsAt ||
+    projectCanonicalTargetWindow(booking.target).startsAt!.getTime() - Date.now()
+      <= env.BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES * 60_000
   ) {
     throw new AppError({
       code: "CONFLICT",
@@ -372,7 +400,7 @@ export const reschedulePublicBooking = async (
   },
 ) => {
   const booking = assertCustomerChangeAllowed(await findPublicBookingByToken(publicToken));
-  await rescheduleAdminBookingById(booking.id, input);
+  await rescheduleAdminBookingById(booking.id, input, undefined, "public_reschedule");
   return getPublicBookingStatus(publicToken);
 };
 
@@ -383,33 +411,66 @@ const toIcsTimestamp = (date: Date) =>
 
 export const buildPublicBookingCalendar = async (publicToken: string) => {
   const booking = await findPublicBookingByToken(publicToken);
-  if (!booking || !booking.slotStartAt || !booking.slotEndAt) {
+  if (!booking) {
     throw new AppError({
       code: "NOT_FOUND",
       message: "Booking was not found.",
       statusCode: httpStatus.notFound,
     });
   }
-  const location = booking.locationName
-    ? [booking.locationName, booking.locationAddressLine1, booking.locationCity]
-        .filter(Boolean)
-        .join(", ")
-    : "";
+  const occurrences = booking.target.kind === "scheduled_program"
+    ? booking.target.occurrences.map((occurrence) => ({
+        id: occurrence.id,
+        startsAt: occurrence.startsAt,
+        endsAt: occurrence.endsAt,
+        location: occurrence.location
+          ? [occurrence.location.name, occurrence.location.city, occurrence.location.countryCode]
+              .filter(Boolean)
+              .join(", ")
+          : "",
+        meetUrl: occurrence.meetUrl,
+      }))
+    : [{
+        id: "appointment",
+        startsAt: booking.target.startsAt,
+        endsAt: booking.target.endsAt,
+        location: booking.locationName
+          ? [booking.locationName, booking.locationAddressLine1, booking.locationCity]
+              .filter(Boolean)
+              .join(", ")
+          : "",
+        meetUrl: null,
+      }];
+  if (occurrences.length === 0) {
+    throw new AppError({
+      code: "NOT_FOUND",
+      message: "Booking schedule was not found.",
+      statusCode: httpStatus.notFound,
+    });
+  }
 
   return [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Rammah//Booking//EN",
-    "BEGIN:VEVENT",
-    `UID:${booking.publicToken}@rammah`,
-    `DTSTAMP:${toIcsTimestamp(new Date())}`,
-    `DTSTART:${toIcsTimestamp(booking.slotStartAt)}`,
-    `DTEND:${toIcsTimestamp(booking.slotEndAt)}`,
-    `SUMMARY:${escapeIcs(booking.offeringTitle)}`,
-    `DESCRIPTION:${escapeIcs(`Booking reference: ${booking.bookingReference}`)}`,
-    ...(location ? [`LOCATION:${escapeIcs(location)}`] : []),
-    `STATUS:${booking.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
-    "END:VEVENT",
+    ...occurrences.flatMap((occurrence, index) => [
+      "BEGIN:VEVENT",
+      `UID:${booking.publicToken}-${occurrence.id}@rammah`,
+      `DTSTAMP:${toIcsTimestamp(new Date())}`,
+      `DTSTART:${toIcsTimestamp(occurrence.startsAt)}`,
+      `DTEND:${toIcsTimestamp(occurrence.endsAt)}`,
+      `SUMMARY:${escapeIcs(booking.offeringTitle)}`,
+      `DESCRIPTION:${escapeIcs([
+        `Booking reference: ${booking.bookingReference}`,
+        booking.target.kind === "scheduled_program"
+          ? `Program date ${index + 1} of ${occurrences.length}`
+          : null,
+        occurrence.meetUrl ? `Meet: ${occurrence.meetUrl}` : null,
+      ].filter(Boolean).join("\n"))}`,
+      ...(occurrence.location ? [`LOCATION:${escapeIcs(occurrence.location)}`] : []),
+      `STATUS:${booking.status === "cancelled" ? "CANCELLED" : "CONFIRMED"}`,
+      "END:VEVENT",
+    ]),
     "END:VCALENDAR",
     "",
   ].join("\r\n");

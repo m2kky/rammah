@@ -8,9 +8,13 @@ import {
   offeringLocations,
   offerings,
 } from "../../db/schema/index.js";
-import { withAvailableSlotCapacity } from "../availability/slot-capacity.repository.js";
+import {
+  withAvailableSlotCapacity,
+  type SlotCapacityInput,
+} from "../availability/slot-capacity.repository.js";
 import { verifySlotHoldToken } from "../availability/slot-hold-token.js";
 import { lockOwnedSlotHold } from "../availability/slot-holds.repository.js";
+import { attachCanonicalBookingTargets } from "./booking-target.repository.js";
 
 export type PublicBookingAnswerInput = {
   fieldId?: string | null;
@@ -41,6 +45,7 @@ export const findPublicBookingHoldContextById = async (
       id: bookingSlotHolds.id,
       offeringId: bookingSlotHolds.offeringId,
       offeringSessionId: bookingSlotHolds.offeringSessionId,
+      scheduledProgramId: bookingSlotHolds.scheduledProgramId,
       offeringAttendanceMode: offerings.attendanceMode,
       holdStatus: bookingSlotHolds.status,
       expiresAt: bookingSlotHolds.expiresAt,
@@ -65,6 +70,7 @@ const bookingSelect = {
   publicToken: bookings.publicToken,
   bookingReference: bookings.bookingReference,
   offeringId: bookings.offeringId,
+  scheduledProgramId: bookings.scheduledProgramId,
   locationId: bookings.locationId,
   attendanceMode: bookings.attendanceMode,
   status: bookings.status,
@@ -101,23 +107,38 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
         return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
       }
 
-      return { booking, hold, converted: true, rejection: null } as const;
+      const [canonicalBooking] = await attachCanonicalBookingTargets([booking]);
+      return { booking: canonicalBooking!, hold, converted: true, rejection: null } as const;
     }
 
-    if (hold.holdStatus !== "active" || hold.expiresAt <= new Date()) {
+    if (
+      hold.holdStatus !== "active" ||
+      hold.expiresAt <= new Date() ||
+      (!hold.scheduledProgramId && (!hold.slotStartAt || !hold.slotEndAt))
+    ) {
       return { booking: null, hold, converted: false, rejection: "hold_unavailable" } as const;
     }
 
+    const capacityTarget: SlotCapacityInput = hold.scheduledProgramId
+      ? {
+          offeringId: hold.offeringId,
+          offeringSessionId: null,
+          scheduledProgramId: hold.scheduledProgramId,
+          startsAt: null,
+          endsAt: null,
+        }
+      : {
+          offeringId: hold.offeringId,
+          offeringSessionId: hold.offeringSessionId,
+          scheduledProgramId: null,
+          startsAt: hold.slotStartAt!,
+          endsAt: hold.slotEndAt!,
+        };
     const result = await withAvailableSlotCapacity(
       tx,
-      {
-        offeringId: hold.offeringId,
-        offeringSessionId: hold.offeringSessionId,
-        startsAt: hold.slotStartAt,
-        endsAt: hold.slotEndAt,
-      },
-      { excludeHoldId: hold.id },
-      async ({ now, offering, sessionLocationId }) => {
+      capacityTarget,
+      { policyContext: "active_hold_conversion", excludeHoldId: hold.id },
+      async ({ now, offering, sessionLocationId, target }) => {
         const currentHold = {
           ...hold,
           offeringTitle: offering.title,
@@ -157,6 +178,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
           .values({
             offeringId: hold.offeringId,
             offeringSessionId: hold.offeringSessionId,
+            scheduledProgramId: hold.scheduledProgramId,
             locationId: sessionLocationId ?? input.locationId ?? null,
             attendanceMode,
             status: "confirmed",
@@ -166,7 +188,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
             countryCode: input.countryCode ?? null,
             slotStartAt: hold.slotStartAt,
             slotEndAt: hold.slotEndAt,
-            timezone: input.timezone,
+            timezone: target.timezone,
             paymentRequired: false,
             confirmedAt: now,
           })
@@ -176,6 +198,7 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
         if (!booking) {
           throw new Error("Booking insert did not return a row.");
         }
+        const [canonicalBooking] = await attachCanonicalBookingTargets([booking]);
 
         if (input.answers.length > 0) {
           await tx.insert(bookingAnswers).values(
@@ -205,7 +228,12 @@ export const createFreeBookingFromHold = async (input: CreateFreeBookingInput) =
           throw new Error("Slot hold could not be converted.");
         }
 
-        return { booking, hold: currentHold, converted: true, rejection: null } as const;
+        return {
+          booking: canonicalBooking!,
+          hold: currentHold,
+          converted: true,
+          rejection: null,
+        } as const;
       },
     );
 
@@ -242,6 +270,7 @@ export const findPublicBookingByToken = async (publicToken: string) => {
       customerEmail: bookings.customerEmail,
       customerPhone: bookings.customerPhone,
       countryCode: bookings.countryCode,
+      scheduledProgramId: bookings.scheduledProgramId,
       slotStartAt: bookings.slotStartAt,
       slotEndAt: bookings.slotEndAt,
       timezone: bookings.timezone,
@@ -257,7 +286,7 @@ export const findPublicBookingByToken = async (publicToken: string) => {
     .where(eq(bookings.publicToken, publicToken))
     .limit(1);
 
-  return rows[0] ?? null;
+  return (await attachCanonicalBookingTargets(rows))[0] ?? null;
 };
 
 export const findPublicBookableLocationById = async (input: {

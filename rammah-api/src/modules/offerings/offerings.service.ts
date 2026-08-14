@@ -6,6 +6,7 @@ import {
   findPublishedLocationsForOffering,
   findPublishedOfferings,
   findPublishedPricesByOfferingIds,
+  findPublicBookingTimezone,
 } from "./offerings.repository.js";
 import { toPublicOffering } from "./offerings.mapper.js";
 import { listPublicBookingFormFields } from "../booking-form-fields/booking-form-fields.service.js";
@@ -49,14 +50,19 @@ export const getPublicOfferingBookingConfig = async (offeringId: string) => {
     });
   }
 
-  const [prices, fields, locations] = await Promise.all([
+  const [prices, fields, locations, schedulingTimezone] = await Promise.all([
     findPublishedPricesByOfferingIds([offering.id]),
     listPublicBookingFormFields(offering.id),
     findPublishedLocationsForOffering(offering.id),
+    findPublicBookingTimezone(),
   ]);
 
   return {
-    offering: toPublicOffering(offering, prices),
+    offering: {
+      ...toPublicOffering(offering, prices),
+      schedulingMode: offering.schedulingMode,
+      schedulingTimezone,
+    },
     fields,
     locations,
   };

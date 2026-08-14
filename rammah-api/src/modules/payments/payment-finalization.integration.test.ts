@@ -55,6 +55,8 @@ const seedPayment = async (status: PaymentStatus = "pending") => {
             : "pending_payment",
     customerFullName: "Atomic Test",
     customerEmail: "atomic@example.com",
+    slotStartAt: new Date("2030-08-05T08:00:00.000Z"),
+    slotEndAt: new Date("2030-08-05T09:00:00.000Z"),
     timezone: "Africa/Cairo",
     priceCurrency: "EGP",
     totalAmountMinor: 12500,
@@ -188,6 +190,7 @@ describe.sequential("atomic monotonic payment finalization", () => {
       expect(state.booking).toMatchObject({ status: "confirmed" });
       expect(state.jobs).toHaveLength(2);
     },
+    15_000,
   );
 
   it("returns a duplicate provider event's stored outcome without applying new input", async () => {

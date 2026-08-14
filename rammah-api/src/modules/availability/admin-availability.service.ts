@@ -2,42 +2,35 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
 import {
-  archiveAdminAvailabilityRule,
-  findAdminAvailabilityRuleById,
-  findAdminAvailabilityRules,
-  findOfferingForAvailability,
-  findPublishedRulesForInvariant,
-  insertAdminAvailabilityRule,
-  updateAdminAvailabilityRule,
-  type AdminAvailabilityRuleFilters,
-  type AdminAvailabilityRuleInsert,
-  type AdminAvailabilityRuleRow,
-  type AdminAvailabilityRuleUpdate,
+  archiveAdminAvailabilityWindow,
+  deleteAdminAvailabilityWindow,
+  findAdminAvailabilityWindowById,
+  findAdminAvailabilityWindows,
+  findPublishedWindowsForInvariant,
+  insertAdminAvailabilityWindow,
+  updateAdminAvailabilityWindow,
+  type AdminAvailabilityWindowFilters,
+  type AdminAvailabilityWindowRow,
+  type AdminAvailabilityWindowUpdate,
+  type AvailabilityWindowStatus,
 } from "./admin-availability.repository.js";
 
-export type AdminAvailabilityRuleInput = {
-  offeringId: string;
+export type AdminAvailabilityWindowInput = {
   weekday: number;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  status: AdminAvailabilityRuleInsert["status"];
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AvailabilityWindowStatus;
 };
 
-export type AdminAvailabilityRulePatchInput = Partial<AdminAvailabilityRuleInput>;
+export type AdminAvailabilityWindowPatchInput = Partial<AdminAvailabilityWindowInput>;
 
 const removeUndefined = <T extends Record<string, unknown>>(input: T) =>
-  Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined),
-  ) as Partial<T>;
+  Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<T>;
 
 const notFoundError = () =>
   new AppError({
     code: "NOT_FOUND",
-    message: "Availability rule was not found.",
+    message: "Availability window was not found.",
     statusCode: httpStatus.notFound,
   });
 
@@ -52,28 +45,37 @@ const validationError = (
     details,
   });
 
-const toAdminAvailabilityRule = (rule: AdminAvailabilityRuleRow) => ({
-  id: rule.id,
-  offering: {
-    id: rule.offeringId,
-    title: rule.offeringTitle,
-    slug: rule.offeringSlug,
-  },
-  weekday: rule.weekday,
-  startTime: rule.startTime,
-  endTime: rule.endTime,
-  timezone: rule.timezone,
-  slotDurationMinutes: rule.slotDurationMinutes,
-  bufferBeforeMinutes: rule.bufferBeforeMinutes,
-  bufferAfterMinutes: rule.bufferAfterMinutes,
-  status: rule.status,
-  createdAt: rule.createdAt.toISOString(),
-  updatedAt: rule.updatedAt.toISOString(),
+const conflictError = (message: string) =>
+  new AppError({ code: "CONFLICT", message, statusCode: httpStatus.conflict });
+
+const allowedActionsFor = (status: AdminAvailabilityWindowRow["status"]) => ({
+  edit: status !== "archived",
+  archive: status === "published" || status === "scheduled",
+  delete: status === "draft",
 });
 
-const normalizeTime = (value: string) => {
-  const [hour = "", minute = ""] = value.split(":");
-  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+const toAdminAvailabilityWindow = (window: AdminAvailabilityWindowRow) => ({
+  id: window.id,
+  weekday: window.weekday,
+  startLocalTime: window.startLocalTime.slice(0, 5),
+  endLocalTime: window.endLocalTime.slice(0, 5),
+  status: window.status,
+  allowedActions: allowedActionsFor(window.status),
+  createdAt: window.createdAt.toISOString(),
+  updatedAt: window.updatedAt.toISOString(),
+});
+
+const timePattern = /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/;
+
+const normalizeTime = (value: string, field: "startLocalTime" | "endLocalTime") => {
+  const trimmed = value.trim();
+  if (!timePattern.test(trimmed)) {
+    throw validationError("Availability time is invalid.", [
+      { field, message: "Use HH:MM or HH:MM:SS time." },
+    ]);
+  }
+  const [hour, minute] = trimmed.split(":");
+  return `${hour}:${minute}`;
 };
 
 const timeToMinutes = (value: string) => {
@@ -81,264 +83,194 @@ const timeToMinutes = (value: string) => {
   return Number(hour) * 60 + Number(minute);
 };
 
-const assertOfferingExists = async (offeringId: string) => {
-  const offering = await findOfferingForAvailability(offeringId);
-
-  if (!offering) {
-    throw new AppError({
-      code: "NOT_FOUND",
-      message: "Offering was not found.",
-      statusCode: httpStatus.notFound,
-    });
+const assertWindow = (input: { weekday: number; startLocalTime: string; endLocalTime: string }) => {
+  if (!Number.isInteger(input.weekday) || input.weekday < 0 || input.weekday > 6) {
+    throw validationError("Availability weekday is invalid.", [
+      { field: "weekday", message: "Choose a weekday from 0 to 6." },
+    ]);
   }
-};
 
-const assertTimeWindow = (input: {
-  startTime: string;
-  endTime: string;
-  slotDurationMinutes: number;
-}) => {
-  const startMinutes = timeToMinutes(input.startTime);
-  const endMinutes = timeToMinutes(input.endTime);
-
-  if (startMinutes >= endMinutes) {
+  if (timeToMinutes(input.startLocalTime) >= timeToMinutes(input.endLocalTime)) {
     throw validationError("Availability start time must be before end time.", [
-        {
-          field: "startTime",
-          message: "Start time must be before end time.",
-        },
-      ]);
-  }
-
-  if (input.slotDurationMinutes > endMinutes - startMinutes) {
-    throw validationError("Slot duration cannot exceed the availability window.", [
-        {
-          field: "slotDurationMinutes",
-          message: "Slot duration must fit inside the start/end window.",
-        },
-      ]);
+      { field: "startLocalTime", message: "Start time must be before end time." },
+    ]);
   }
 };
 
-const assertPublishedRuleInvariant = async (input: {
-  offeringId: string;
+const assertPublishedWindowInvariant = async (input: {
   weekday: number;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  status: AdminAvailabilityRuleInsert["status"];
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AvailabilityWindowStatus;
   excludeId?: string;
 }) => {
-  if (input.status !== "published") {
-    return;
-  }
+  if (input.status !== "published") return;
 
-  const publishedRules = await findPublishedRulesForInvariant(
-    input.offeringId,
-    input.excludeId,
-  );
-  const timezoneConflict = publishedRules.find(
-    (rule) => rule.timezone !== input.timezone,
+  const published = await findPublishedWindowsForInvariant(input.excludeId);
+  const conflicts = published.filter(
+    (window) =>
+      window.weekday === input.weekday &&
+      timeToMinutes(input.startLocalTime) < timeToMinutes(window.endLocalTime) &&
+      timeToMinutes(input.endLocalTime) > timeToMinutes(window.startLocalTime),
   );
 
-  if (timezoneConflict) {
-    throw validationError("Published availability rules must use one timezone.", [
+  if (conflicts.length > 0) {
+    const conflictIds = conflicts.map(({ id }) => id).sort();
+    throw validationError("Published availability windows cannot overlap.", [
       {
-        field: "timezone",
-        message: "Use the timezone already published for this offering.",
-      },
-    ]);
-  }
-
-  const startMinutes = timeToMinutes(input.startTime);
-  const endMinutes = timeToMinutes(input.endTime);
-  const overlap = publishedRules.find(
-    (rule) =>
-      rule.weekday === input.weekday &&
-      startMinutes < timeToMinutes(rule.endTime) &&
-      endMinutes > timeToMinutes(rule.startTime),
-  );
-
-  if (overlap) {
-    throw validationError("Published availability rules cannot overlap.", [
-      {
-        field: "startTime",
-        message: "Choose a window that does not overlap another published rule.",
+        field: "startLocalTime",
+        message: `Conflicts with availability window IDs: ${conflictIds.join(", ")}.`,
       },
     ]);
   }
 };
 
-export const listAdminAvailabilityRules = async (
-  filters: AdminAvailabilityRuleFilters,
+export const listAdminAvailabilityWindows = async (
+  filters: AdminAvailabilityWindowFilters,
 ) => {
-  const rules = await findAdminAvailabilityRules(filters);
-  return rules.map(toAdminAvailabilityRule);
+  const windows = await findAdminAvailabilityWindows(filters);
+  return windows.map(toAdminAvailabilityWindow);
 };
 
-export const getAdminAvailabilityRule = async (id: string) => {
-  const rule = await findAdminAvailabilityRuleById(id);
-
-  if (!rule) {
-    throw notFoundError();
-  }
-
-  return toAdminAvailabilityRule(rule);
+export const getAdminAvailabilityWindow = async (id: string) => {
+  const window = await findAdminAvailabilityWindowById(id);
+  if (!window) throw notFoundError();
+  return toAdminAvailabilityWindow(window);
 };
 
-export const createAdminAvailabilityRule = async (
-  input: AdminAvailabilityRuleInput,
+export const createAdminAvailabilityWindow = async (
+  input: AdminAvailabilityWindowInput,
   auditContext?: AuditContext,
 ) => {
-  await assertOfferingExists(input.offeringId);
+  if (input.status === "archived") {
+    throw validationError("A new availability window cannot start archived.", [
+      { field: "status", message: "Create it as Draft or Published." },
+    ]);
+  }
+  const startLocalTime = normalizeTime(input.startLocalTime, "startLocalTime");
+  const endLocalTime = normalizeTime(input.endLocalTime, "endLocalTime");
+  assertWindow({ weekday: input.weekday, startLocalTime, endLocalTime });
+  await assertPublishedWindowInvariant({ ...input, startLocalTime, endLocalTime });
 
-  const startTime = normalizeTime(input.startTime);
-  const endTime = normalizeTime(input.endTime);
-  assertTimeWindow({
-    startTime,
-    endTime,
-    slotDurationMinutes: input.slotDurationMinutes,
-  });
-  const timezone = input.timezone.trim();
-  await assertPublishedRuleInvariant({
-    offeringId: input.offeringId,
+  const window = await insertAdminAvailabilityWindow({
     weekday: input.weekday,
-    startTime,
-    endTime,
-    timezone,
+    startLocalTime,
+    endLocalTime,
     status: input.status,
   });
-
-  const rule = await insertAdminAvailabilityRule({
-    offeringId: input.offeringId,
-    weekday: input.weekday,
-    startTime,
-    endTime,
-    timezone,
-    slotDurationMinutes: input.slotDurationMinutes,
-    bufferBeforeMinutes: input.bufferBeforeMinutes,
-    bufferAfterMinutes: input.bufferAfterMinutes,
-    status: input.status,
-  });
-
-  if (!rule) {
+  if (!window) {
     throw new AppError({
       code: "INTERNAL_ERROR",
-      message: "Availability rule could not be created.",
+      message: "Availability window could not be created.",
       statusCode: httpStatus.internalServerError,
     });
   }
 
-  const createdRule = toAdminAvailabilityRule(rule);
-
+  const created = toAdminAvailabilityWindow(window);
   await writeAuditLog(auditContext, {
-    action: "admin.availability_rules.create",
-    resourceType: "availability_rule",
-    resourceId: createdRule.id,
+    action: "admin.availability_windows.create",
+    resourceType: "availability_window",
+    resourceId: created.id,
     beforeSnapshot: null,
-    afterSnapshot: createdRule,
+    afterSnapshot: created,
   });
-
-  return createdRule;
+  return created;
 };
 
-export const updateAdminAvailabilityRuleById = async (
+export const updateAdminAvailabilityWindowById = async (
   id: string,
-  input: AdminAvailabilityRulePatchInput,
+  input: AdminAvailabilityWindowPatchInput,
   auditContext?: AuditContext,
 ) => {
-  const existingRule = await findAdminAvailabilityRuleById(id);
-
-  if (!existingRule) {
-    throw notFoundError();
+  const existing = await findAdminAvailabilityWindowById(id);
+  if (!existing) throw notFoundError();
+  if (!allowedActionsFor(existing.status).edit) {
+    throw conflictError("Archived availability windows cannot be edited.");
   }
 
-  if (input.offeringId !== undefined) {
-    await assertOfferingExists(input.offeringId);
+  const weekday = input.weekday ?? existing.weekday;
+  const startLocalTime = input.startLocalTime === undefined
+    ? existing.startLocalTime.slice(0, 5)
+    : normalizeTime(input.startLocalTime, "startLocalTime");
+  const endLocalTime = input.endLocalTime === undefined
+    ? existing.endLocalTime.slice(0, 5)
+    : normalizeTime(input.endLocalTime, "endLocalTime");
+  const status = input.status ?? (existing.status as AvailabilityWindowStatus);
+  if (existing.status === "published" && status === "draft") {
+    throw conflictError(
+      "A published availability window has history and cannot return to draft; archive it instead.",
+    );
+  }
+  if (status === "archived") {
+    throw conflictError("Use the archive action to archive an availability window.");
   }
 
-  const startTime =
-    input.startTime !== undefined ? normalizeTime(input.startTime) : existingRule.startTime;
-  const endTime =
-    input.endTime !== undefined ? normalizeTime(input.endTime) : existingRule.endTime;
-  const slotDurationMinutes =
-    input.slotDurationMinutes ?? existingRule.slotDurationMinutes;
-  const offeringId = input.offeringId ?? existingRule.offeringId;
-  const weekday = input.weekday ?? existingRule.weekday;
-  const timezone = input.timezone?.trim() ?? existingRule.timezone;
-  const status = input.status ?? existingRule.status;
-
-  assertTimeWindow({
-    startTime,
-    endTime,
-    slotDurationMinutes,
-  });
-  await assertPublishedRuleInvariant({
-    offeringId,
+  assertWindow({ weekday, startLocalTime, endLocalTime });
+  await assertPublishedWindowInvariant({
     weekday,
-    startTime,
-    endTime,
-    timezone,
+    startLocalTime,
+    endLocalTime,
     status,
     excludeId: id,
   });
 
-  const beforeRule = toAdminAvailabilityRule(existingRule);
-  const updatePayload = removeUndefined<AdminAvailabilityRuleUpdate>({
-    offeringId: input.offeringId,
+  const before = toAdminAvailabilityWindow(existing);
+  const updatePayload = removeUndefined<AdminAvailabilityWindowUpdate>({
     weekday: input.weekday,
-    startTime: input.startTime !== undefined ? startTime : undefined,
-    endTime: input.endTime !== undefined ? endTime : undefined,
-    timezone: input.timezone !== undefined ? timezone : undefined,
-    slotDurationMinutes: input.slotDurationMinutes,
-    bufferBeforeMinutes: input.bufferBeforeMinutes,
-    bufferAfterMinutes: input.bufferAfterMinutes,
+    startLocalTime: input.startLocalTime === undefined ? undefined : startLocalTime,
+    endLocalTime: input.endLocalTime === undefined ? undefined : endLocalTime,
     status: input.status,
   });
+  const updated = await updateAdminAvailabilityWindow(id, updatePayload);
+  if (!updated) throw notFoundError();
 
-  const updatedRule = await updateAdminAvailabilityRule(id, updatePayload);
-
-  if (!updatedRule) {
-    throw notFoundError();
-  }
-
-  const afterRule = toAdminAvailabilityRule(updatedRule);
-
+  const after = toAdminAvailabilityWindow(updated);
   await writeAuditLog(auditContext, {
-    action: "admin.availability_rules.update",
-    resourceType: "availability_rule",
-    resourceId: afterRule.id,
-    beforeSnapshot: beforeRule,
-    afterSnapshot: afterRule,
+    action: "admin.availability_windows.update",
+    resourceType: "availability_window",
+    resourceId: id,
+    beforeSnapshot: before,
+    afterSnapshot: after,
   });
-
-  return afterRule;
+  return after;
 };
 
-export const archiveAdminAvailabilityRuleById = async (
+export const deleteOrArchiveAdminAvailabilityWindowById = async (
   id: string,
   auditContext?: AuditContext,
 ) => {
-  const existingRule = await findAdminAvailabilityRuleById(id);
+  const existing = await findAdminAvailabilityWindowById(id);
+  if (!existing) throw notFoundError();
 
-  if (!existingRule) {
-    throw notFoundError();
+  const before = toAdminAvailabilityWindow(existing);
+  const allowedActions = allowedActionsFor(existing.status);
+
+  if (allowedActions.delete) {
+    const deleted = await deleteAdminAvailabilityWindow(id);
+    if (!deleted) throw notFoundError();
+    await writeAuditLog(auditContext, {
+      action: "admin.availability_windows.delete",
+      resourceType: "availability_window",
+      resourceId: id,
+      beforeSnapshot: before,
+      afterSnapshot: null,
+    });
+    return { action: "deleted" as const, data: null };
   }
 
-  const beforeRule = toAdminAvailabilityRule(existingRule);
-  const archivedRule = await archiveAdminAvailabilityRule(id);
-
-  if (!archivedRule) {
-    throw notFoundError();
+  if (allowedActions.archive) {
+    const archived = await archiveAdminAvailabilityWindow(id);
+    if (!archived) throw notFoundError();
+    const after = toAdminAvailabilityWindow(archived);
+    await writeAuditLog(auditContext, {
+      action: "admin.availability_windows.archive",
+      resourceType: "availability_window",
+      resourceId: id,
+      beforeSnapshot: before,
+      afterSnapshot: after,
+    });
+    return { action: "archived" as const, data: after };
   }
 
-  const afterRule = await getAdminAvailabilityRule(id);
-
-  await writeAuditLog(auditContext, {
-    action: "admin.availability_rules.archive",
-    resourceType: "availability_rule",
-    resourceId: id,
-    beforeSnapshot: beforeRule,
-    afterSnapshot: afterRule,
-  });
+  throw conflictError("This availability window cannot be deleted or archived.");
 };

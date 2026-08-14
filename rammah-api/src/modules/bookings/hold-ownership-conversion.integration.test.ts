@@ -1,10 +1,10 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../app.js";
 import {
-  availabilityRules,
+  availabilityWindows,
   bookingAnswers,
   bookingFormFields,
   bookingSlotHolds,
@@ -13,10 +13,12 @@ import {
   offeringSessions,
   offerings,
   payments,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import {
-  fixedSessionCapacityLockKey,
   recurringSlotCapacityLockKey,
+  scheduledProgramCapacityLockKey,
 } from "../../shared/db/advisory-lock.js";
 import { getTestDatabase } from "../../test/db.js";
 import { createSlotHold, releaseSlotHoldById } from "../availability/slot-holds.service.js";
@@ -85,13 +87,10 @@ const seedRecurringTarget = async (input: {
 }) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(input);
-  await db.insert(availabilityRules).values({
-    offeringId: offering.id,
+  await db.insert(availabilityWindows).values({
     weekday: recurringSlot.startsAt.getDay(),
-    startTime: "10:00",
-    endTime: "12:00",
-    timezone: "Africa/Cairo",
-    slotDurationMinutes: 60,
+    startLocalTime: "10:00",
+    endLocalTime: "12:00",
     status: "published",
   });
 
@@ -111,6 +110,10 @@ const seedFixedTarget = async (input: {
 }) => {
   const { db } = getTestDatabase();
   const offering = await seedOffering(input);
+  await db
+    .update(offerings)
+    .set({ schedulingMode: "scheduled_program", durationMinutes: null })
+    .where(eq(offerings.id, offering.id));
   const [session] = await db
     .insert(offeringSessions)
     .values({
@@ -123,6 +126,26 @@ const seedFixedTarget = async (input: {
       status: "published",
     })
     .returning();
+  await db.insert(scheduledPrograms).values({
+    id: session!.id,
+    offeringId: offering.id,
+    title: offering.title,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    capacity: input.capacity ?? 1,
+    status: "published",
+  });
+  await db.insert(scheduledProgramOccurrences).values({
+    id: session!.id,
+    scheduledProgramId: session!.id,
+    startsAt: session!.startsAt,
+    endsAt: session!.endsAt,
+    timezone: session!.timezone,
+    attendanceMode: session!.attendanceMode,
+    locationId: session!.locationId,
+    status: "scheduled",
+  });
 
   return {
     offering,
@@ -249,6 +272,13 @@ it("gives customers a human reference and lets them reschedule then cancel", asy
   await expect(buildPublicBookingCalendar(created.publicToken)).resolves.toContain(
     `DESCRIPTION:Booking reference: ${created.bookingReference}`,
   );
+  await expect(getPublicBookingStatus(created.publicToken)).resolves.toMatchObject({
+    changePolicy: {
+      canCancel: true,
+      canReschedule: true,
+      changeCutoffAt: expect.any(String),
+    },
+  });
   const rescheduled = await reschedulePublicBooking(created.publicToken, {
     startsAt: new Date(`${recurringDate}T11:00:00`).toISOString(),
     endsAt: new Date(`${recurringDate}T12:00:00`).toISOString(),
@@ -264,6 +294,31 @@ it("gives customers a human reference and lets them reschedule then cancel", asy
     bookingReference: created.bookingReference,
     status: "cancelled",
     offering: { id: offering.id },
+    changePolicy: {
+      canCancel: false,
+      canReschedule: false,
+    },
+  });
+});
+
+it("closes customer change actions at the exact configured cutoff", async () => {
+  const { holdInput } = await seedRecurringTarget({ bookingMode: "free" });
+  const hold = await createSlotHold(holdInput);
+  const created = await submitFreeBooking(
+    freeServiceInput(hold.id, hold.holdToken, []),
+  );
+  const cutoff = new Date(recurringSlot.startsAt.getTime() - 24 * 60 * 60 * 1_000);
+  vi.setSystemTime(cutoff);
+
+  await expect(getPublicBookingStatus(created.publicToken)).resolves.toMatchObject({
+    changePolicy: {
+      canCancel: false,
+      canReschedule: false,
+      changeCutoffAt: cutoff.toISOString(),
+    },
+  });
+  await expect(cancelPublicBooking(created.publicToken)).rejects.toMatchObject({
+    code: "CONFLICT",
   });
 });
 
@@ -642,9 +697,9 @@ describe.sequential("owned slot holds and atomic conversion", () => {
       ]);
       if (kind === "fixed") {
         await db
-          .update(offeringSessions)
+          .update(scheduledPrograms)
           .set({ capacity: 1 })
-          .where(eq(offeringSessions.id, (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id));
+          .where(eq(scheduledPrograms.id, (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id));
       } else {
         await db
           .update(offerings)
@@ -657,7 +712,7 @@ describe.sequential("owned slot holds and atomic conversion", () => {
         .where(eq(bookingSlotHolds.id, expiringHold.id));
       const key =
         kind === "fixed"
-          ? fixedSessionCapacityLockKey(
+          ? scheduledProgramCapacityLockKey(
               (target as Awaited<ReturnType<typeof seedFixedTarget>>).session.id,
             )
           : recurringSlotCapacityLockKey({

@@ -1,0 +1,10 @@
+{
+  "hero": "HeroSection",
+  "rich_text": "RichTextSection",
+  "image_with_text": "ImageWithTextSection",
+  "standalone_image": "StandaloneImageSection",
+  "video": "VideoSection",
+  "gallery": "GallerySection",
+  "cta": "CtaSection",
+  "divider_spacer": "DividerSpacerSection"
+}

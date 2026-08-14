@@ -73,7 +73,10 @@ export type AdminOffering = {
     | "custom";
   attendanceMode: "online" | "offline" | "hybrid";
   bookingMode: "free" | "paid" | "quote_only";
-  durationMinutes: number;
+  schedulingMode: "appointment" | "scheduled_program";
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -100,51 +103,38 @@ export type AdminOfferingPrice = {
   updatedAt: string;
 };
 
-export type AdminAvailabilityRule = {
+export type AdminAvailabilityWindowStatus = "draft" | "published" | "archived";
+
+export type AdminAvailabilityWindow = {
   id: string;
-  offering: {
-    id: string;
-    title: string;
-    slug: string;
-  };
   weekday: number;
-  startTime: string;
-  endTime: string;
-  timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  status: AdminOfferingStatus;
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AdminAvailabilityWindowStatus;
+  allowedActions: {
+    edit: boolean;
+    archive: boolean;
+    delete: boolean;
+  };
   createdAt: string;
   updatedAt: string;
 };
 
-export type AdminAvailabilityOverrideType = "available" | "blocked";
+export type AdminAvailabilityOverrideType = "available" | "unavailable";
 
 export type AdminAvailabilityOverride = {
   id: string;
-  offering: {
-    id: string;
-    title: string;
-    slug: string;
-  };
-  availabilityRule: {
-    id: string;
-    weekday: number | null;
-    startTime: string | null;
-    endTime: string | null;
-  } | null;
   date: string;
-  overrideType: AdminAvailabilityOverrideType;
-  startsAt: string | null;
-  endsAt: string | null;
+  type: AdminAvailabilityOverrideType;
+  startLocalTime: string | null;
+  endLocalTime: string | null;
   reason: string | null;
   createdAt: string;
   updatedAt: string;
 };
 
 export type AdminAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
-export type AdminAvailabilitySlotSource = "rule" | "available_override";
+export type AdminAvailabilitySlotSource = "window" | "available_override";
 
 export type AdminAvailabilitySlot = {
   date: string;
@@ -153,12 +143,25 @@ export type AdminAvailabilitySlot = {
   timezone: string;
   status: AdminAvailabilitySlotStatus;
   source: AdminAvailabilitySlotSource;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   remainingCapacity: number;
   bookedCount: number;
   heldCount: number;
   blockedReason: string | null;
+  publicBookingPolicy: {
+    bookable: boolean;
+    reason: "minimum_advance_days" | null;
+    earliestBookableDate: string;
+  };
+};
+
+export type AdminBookingPolicy = {
+  bookingMinimumAdvanceDays: number;
+  bookingDefaultTimezone: string;
+  localToday: string;
+  earliestBookableDate: string;
+  updatedAt: string | null;
 };
 
 export type AdminAvailabilitySlotPreview = {
@@ -166,12 +169,22 @@ export type AdminAvailabilitySlotPreview = {
     id: string;
     title: string;
     slug: string;
+    schedulingMode: "appointment";
     capacity: number;
-    durationMinutes: number;
+    durationMinutes: number | null;
+    bufferBeforeMinutes: number;
+    bufferAfterMinutes: number;
     status: AdminOfferingStatus;
   };
+  timezone: string;
   dateFrom: string;
   dateTo: string;
+  bookingPolicy: {
+    minimumAdvanceDays: number;
+    timezone: string;
+    localToday: string;
+    earliestBookableDate: string;
+  };
   days: Array<{
     date: string;
     weekday: number;
@@ -179,10 +192,49 @@ export type AdminAvailabilitySlotPreview = {
     availableCount: number;
     totalCount: number;
   }>;
+  programBlockers: Array<{
+    occurrenceId: string;
+    programId: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    readOnly: true;
+  }>;
   availableCount: number;
   totalCount: number;
   generatedAt: string;
 };
+
+export type AdminBookingTarget =
+  | {
+      kind: "appointment";
+      scheduledProgramId: null;
+      startsAt: string;
+      endsAt: string;
+      timezone: string;
+      occurrences: [];
+    }
+  | {
+      kind: "scheduled_program";
+      scheduledProgramId: string;
+      title: string;
+      timezone: string;
+      occurrences: Array<{
+        id: string;
+        startsAt: string;
+        endsAt: string;
+        timezone: string;
+        attendanceMode: AdminOffering["attendanceMode"];
+        meetUrl: string | null;
+        location: {
+          id: string;
+          name: string;
+          city: string | null;
+          countryCode: string;
+        } | null;
+      }>;
+    };
 
 export type AdminBooking = {
   id: string;
@@ -212,6 +264,7 @@ export type AdminBooking = {
     endsAt: string | null;
     timezone: string;
   };
+  target: AdminBookingTarget;
   payment: {
     required: boolean;
     currency: string | null;
@@ -260,6 +313,7 @@ export type AdminPayment = {
       title: string;
       slug: string;
     };
+    target: AdminBookingTarget;
     calendar: AdminBooking["calendar"];
   };
 };
@@ -377,7 +431,6 @@ export type AdminSiteSettingsPayload = {
   contactEmail?: string | null;
   contactPhone?: string | null;
   socialLinks: Record<string, string>;
-  bookingDefaultTimezone: string;
 };
 
 export type AdminNavigationItem = {
@@ -509,6 +562,7 @@ export type AdminLocation = {
 
 export type AdminSession = {
   id: string;
+  scheduledProgramId: string;
   offering: {
     id: string;
     title: string;
@@ -541,7 +595,10 @@ export type AdminOfferingPayload = {
   offeringType: AdminOffering["offeringType"];
   attendanceMode: AdminOffering["attendanceMode"];
   bookingMode: AdminOffering["bookingMode"];
-  durationMinutes: number;
+  schedulingMode: AdminOffering["schedulingMode"];
+  durationMinutes: number | null;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
   capacity: number;
   requiresPayment: boolean;
   quoteOnly: boolean;
@@ -559,25 +616,64 @@ export type AdminOfferingPricePayload = {
   status: AdminOfferingStatus;
 };
 
-export type AdminAvailabilityRulePayload = {
-  offeringId: string;
+export type AdminAvailabilityWindowPayload = {
   weekday: number;
-  startTime: string;
-  endTime: string;
+  startLocalTime: string;
+  endLocalTime: string;
+  status: AdminAvailabilityWindowStatus;
+};
+
+export type AdminProgramStatus = "draft" | "published" | "archived";
+
+export type AdminProgramOccurrence = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
   timezone: string;
-  slotDurationMinutes: number;
-  bufferBeforeMinutes: number;
-  bufferAfterMinutes: number;
-  status: AdminOfferingStatus;
+  attendanceMode: AdminOffering["attendanceMode"];
+  location: { id: string; name: string | null } | null;
+  locationId: string | null;
+  sortOrder: number;
+  googleCalendarEventId: string | null;
+  meetUrl: string | null;
+  status: "scheduled" | "cancelled";
+};
+
+export type AdminProgram = {
+  id: string;
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    status: AdminOfferingStatus;
+    schedulingMode: "scheduled_program";
+    bookingMode: AdminOffering["bookingMode"];
+  };
+  title: string;
+  timezone: string;
+  attendanceMode: AdminOffering["attendanceMode"];
+  location: { id: string; name: string | null } | null;
+  capacity: { total: number; booked: number; held: number; remaining: number };
+  registrationOpensAt: string | null;
+  registrationClosesAt: string | null;
+  status: AdminProgramStatus;
+  occurrences: AdminProgramOccurrence[];
+  conflicts: Array<{
+    kind: "program" | "appointment_booking" | "appointment_hold" | "external_busy";
+    resourceId: string;
+    startsAt: string;
+    endsAt: string;
+  }>;
+  allowedActions: { edit: boolean; publish: boolean; archive: boolean; delete: boolean };
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AdminAvailabilityOverridePayload = {
-  offeringId: string;
-  availabilityRuleId?: string | null;
   date: string;
-  overrideType: AdminAvailabilityOverrideType;
-  startsAt?: string | null;
-  endsAt?: string | null;
+  type: AdminAvailabilityOverrideType;
+  startLocalTime?: string | null;
+  endLocalTime?: string | null;
   reason?: string | null;
 };
 
@@ -627,6 +723,26 @@ export type AdminSessionPayload = {
   locationId?: string | null;
   googleCalendarEventId?: string | null;
   status: AdminOfferingStatus;
+};
+
+export type AdminProgramPayload = {
+  offeringId: string;
+  title: string;
+  timezone: string;
+  attendanceMode: AdminOffering["attendanceMode"];
+  locationId?: string | null;
+  capacity: number;
+  registrationOpensAt?: string | null;
+  registrationClosesAt?: string | null;
+  occurrences: Array<{
+    id?: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    attendanceMode: AdminOffering["attendanceMode"];
+    locationId?: string | null;
+    status: "scheduled" | "cancelled";
+  }>;
 };
 
 type ApiErrorPayload = {
@@ -851,16 +967,16 @@ export const archiveAdminOffering = async (id: string) => {
   });
 };
 
-export const fetchAdminAvailabilityRules = async (
+export const fetchAdminAvailabilityWindows = async (
   filters: {
-    offeringId?: string | "all";
-    status?: AdminOfferingStatus | "all";
+    status?: AdminAvailabilityWindowStatus | "all";
+    weekday?: number | "all";
   } = {},
 ) => {
   const params = new URLSearchParams();
 
-  if (filters.offeringId && filters.offeringId !== "all") {
-    params.set("offeringId", filters.offeringId);
+  if (filters.weekday !== undefined && filters.weekday !== "all") {
+    params.set("weekday", String(filters.weekday));
   }
 
   if (filters.status && filters.status !== "all") {
@@ -868,18 +984,18 @@ export const fetchAdminAvailabilityRules = async (
   }
 
   const queryString = params.toString();
-  const payload = await adminRequest<{ data: AdminAvailabilityRule[] }>(
-    `/admin/availability-rules${queryString ? `?${queryString}` : ""}`,
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow[] }>(
+    `/admin/availability-windows${queryString ? `?${queryString}` : ""}`,
   );
 
   return payload.data;
 };
 
-export const createAdminAvailabilityRule = async (
-  input: AdminAvailabilityRulePayload,
+export const createAdminAvailabilityWindow = async (
+  input: AdminAvailabilityWindowPayload,
 ) => {
-  const payload = await adminRequest<{ data: AdminAvailabilityRule }>(
-    "/admin/availability-rules",
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow }>(
+    "/admin/availability-windows",
     {
       method: "POST",
       body: JSON.stringify(input),
@@ -889,12 +1005,12 @@ export const createAdminAvailabilityRule = async (
   return payload.data;
 };
 
-export const updateAdminAvailabilityRule = async (
+export const updateAdminAvailabilityWindow = async (
   id: string,
-  input: Partial<AdminAvailabilityRulePayload>,
+  input: Partial<AdminAvailabilityWindowPayload>,
 ) => {
-  const payload = await adminRequest<{ data: AdminAvailabilityRule }>(
-    `/admin/availability-rules/${id}`,
+  const payload = await adminRequest<{ data: AdminAvailabilityWindow }>(
+    `/admin/availability-windows/${id}`,
     {
       method: "PATCH",
       body: JSON.stringify(input),
@@ -904,33 +1020,23 @@ export const updateAdminAvailabilityRule = async (
   return payload.data;
 };
 
-export const archiveAdminAvailabilityRule = async (id: string) => {
-  await adminRequest<void>(`/admin/availability-rules/${id}`, {
+export const deleteOrArchiveAdminAvailabilityWindow = async (id: string) => {
+  await adminRequest<void>(`/admin/availability-windows/${id}`, {
     method: "DELETE",
   });
 };
 
 export const fetchAdminAvailabilityOverrides = async (
   filters: {
-    offeringId?: string | "all";
-    availabilityRuleId?: string | "all";
-    overrideType?: AdminAvailabilityOverrideType | "all";
+    type?: AdminAvailabilityOverrideType | "all";
     dateFrom?: string;
     dateTo?: string;
   } = {},
 ) => {
   const params = new URLSearchParams();
 
-  if (filters.offeringId && filters.offeringId !== "all") {
-    params.set("offeringId", filters.offeringId);
-  }
-
-  if (filters.availabilityRuleId && filters.availabilityRuleId !== "all") {
-    params.set("availabilityRuleId", filters.availabilityRuleId);
-  }
-
-  if (filters.overrideType && filters.overrideType !== "all") {
-    params.set("overrideType", filters.overrideType);
+  if (filters.type && filters.type !== "all") {
+    params.set("type", filters.type);
   }
 
   if (filters.dateFrom?.trim()) {
@@ -1611,4 +1717,82 @@ export const archiveAdminSession = async (id: string) => {
   await adminRequest<void>(`/admin/sessions/${id}`, {
     method: "DELETE",
   });
+};
+
+export const fetchAdminBookingPolicy = async () => {
+  const payload = await adminRequest<{ data: AdminBookingPolicy }>(
+    "/admin/booking-policy",
+  );
+  return payload.data;
+};
+
+export const updateAdminBookingPolicy = async (input: {
+  bookingMinimumAdvanceDays: number;
+  bookingDefaultTimezone: string;
+}) => {
+  const payload = await adminRequest<{ data: AdminBookingPolicy }>(
+    "/admin/booking-policy",
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const fetchAdminPrograms = async (
+  filters: { offeringId?: string | "all"; status?: AdminProgramStatus | "all"; search?: string } = {},
+) => {
+  const params = new URLSearchParams();
+  if (filters.offeringId && filters.offeringId !== "all") params.set("offeringId", filters.offeringId);
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
+  if (filters.search?.trim()) params.set("search", filters.search.trim());
+  const query = params.toString();
+  const payload = await adminRequest<{ data: AdminProgram[] }>(
+    `/admin/programs${query ? `?${query}` : ""}`,
+  );
+  return payload.data;
+};
+
+export const fetchAdminProgram = async (id: string) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}`);
+  return payload.data;
+};
+
+export const createAdminProgram = async (input: AdminProgramPayload) => {
+  const payload = await adminRequest<{ data: AdminProgram }>("/admin/programs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+};
+
+export const updateAdminProgram = async (id: string, input: Partial<AdminProgramPayload>) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+};
+
+export const publishAdminProgram = async (id: string) => {
+  const payload = await adminRequest<{ data: AdminProgram }>(`/admin/programs/${id}/publish`, {
+    method: "POST",
+  });
+  return payload.data;
+};
+
+export const retryAdminProgramCalendar = async (id: string) => {
+  const payload = await adminRequest<{
+    data: AdminProgram;
+    calendarSync: Array<{
+      occurrenceId: string;
+      status: "created" | "updated" | "cancelled" | "failed" | "skipped";
+      googleCalendarEventId: string | null;
+      meetUrl: string | null;
+      error: string | null;
+    }>;
+  }>(`/admin/programs/${id}/calendar/retry`, { method: "POST" });
+  return payload;
+};
+
+export const deleteOrArchiveAdminProgram = async (id: string) => {
+  await adminRequest<void>(`/admin/programs/${id}`, { method: "DELETE" });
 };

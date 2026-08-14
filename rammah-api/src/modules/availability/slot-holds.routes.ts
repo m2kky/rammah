@@ -18,12 +18,28 @@ const timestampSchema = z
     message: "Use an ISO timestamp.",
   });
 
-const slotHoldBodySchema = z.object({
-  offeringId: z.string().uuid(),
-  offeringSessionId: z.string().uuid().nullable().optional(),
-  startsAt: timestampSchema,
-  endsAt: timestampSchema,
-});
+const slotHoldBodySchema = z.union([
+  z.object({
+    offeringId: z.string().uuid(),
+    target: z.discriminatedUnion("kind", [
+      z.object({
+        kind: z.literal("appointment"),
+        startsAt: timestampSchema,
+        endsAt: timestampSchema,
+      }),
+      z.object({
+        kind: z.literal("scheduled_program"),
+        scheduledProgramId: z.string().uuid(),
+      }),
+    ]),
+  }),
+  z.object({
+    offeringId: z.string().uuid(),
+    offeringSessionId: z.string().uuid().nullable().optional(),
+    startsAt: timestampSchema,
+    endsAt: timestampSchema,
+  }),
+]);
 
 slotHoldsRouter.post(
   "/",

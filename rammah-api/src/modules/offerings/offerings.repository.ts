@@ -7,6 +7,7 @@ import {
   offeringLocations,
   offeringPrices,
   offerings,
+  siteSettings,
 } from "../../db/schema/index.js";
 
 const publishedStatus = contentStatusEnum.enumValues[1];
@@ -24,7 +25,10 @@ export const findPublishedOfferings = async () => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -53,7 +57,10 @@ export const findPublishedOfferingBySlug = async (slug: string) => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -82,7 +89,10 @@ export const findPublishedOfferingById = async (id: string) => {
       offeringType: offerings.offeringType,
       attendanceMode: offerings.attendanceMode,
       bookingMode: offerings.bookingMode,
+      schedulingMode: offerings.schedulingMode,
       durationMinutes: offerings.durationMinutes,
+      bufferBeforeMinutes: offerings.bufferBeforeMinutes,
+      bufferAfterMinutes: offerings.bufferAfterMinutes,
       capacity: offerings.capacity,
       requiresPayment: offerings.requiresPayment,
       quoteOnly: offerings.quoteOnly,
@@ -98,6 +108,16 @@ export const findPublishedOfferingById = async (id: string) => {
     .limit(1);
 
   return rows[0] ?? null;
+};
+
+export const findPublicBookingTimezone = async () => {
+  const rows = await db
+    .select({ timezone: siteSettings.bookingDefaultTimezone })
+    .from(siteSettings)
+    .orderBy(asc(siteSettings.createdAt))
+    .limit(1);
+
+  return rows[0]?.timezone ?? "Africa/Cairo";
 };
 
 export const findPublishedPricesByOfferingIds = async (offeringIds: string[]) => {

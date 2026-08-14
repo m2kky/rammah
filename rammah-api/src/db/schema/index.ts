@@ -22,6 +22,13 @@ const updatedAt = () => timestamp("updated_at", { withTimezone: true }).notNull(
 export const adminRoleEnum = pgEnum("admin_role", ["owner", "admin", "editor", "viewer"]);
 export const adminStatusEnum = pgEnum("admin_status", ["active", "invited", "suspended", "disabled"]);
 export const contentStatusEnum = pgEnum("content_status", ["draft", "published", "scheduled", "archived"]);
+export const mediaSourceEnum = pgEnum("media_source", ["r2", "external"]);
+export const mediaKindEnum = pgEnum("media_kind", ["image", "video", "animation_bundle"]);
+export const mediaProcessingStateEnum = pgEnum("media_processing_state", [
+  "pending",
+  "ready",
+  "failed",
+]);
 export const offeringTypeEnum = pgEnum("offering_type", [
   "coaching",
   "therapy_session",
@@ -33,6 +40,9 @@ export const offeringTypeEnum = pgEnum("offering_type", [
 ]);
 export const attendanceModeEnum = pgEnum("attendance_mode", ["online", "offline", "hybrid"]);
 export const bookingModeEnum = pgEnum("booking_mode", ["free", "paid", "quote_only"]);
+export const schedulingModeEnum = pgEnum("scheduling_mode", ["appointment", "scheduled_program"]);
+export const availabilityOverrideModeEnum = pgEnum("availability_override_mode", ["unavailable", "available"]);
+export const programOccurrenceStatusEnum = pgEnum("program_occurrence_status", ["scheduled", "cancelled"]);
 export const fieldTypeEnum = pgEnum("field_type", [
   "text",
   "email",
@@ -134,17 +144,30 @@ export const adminSessions = pgTable(
   }),
 );
 
-export const siteSettings = pgTable("site_settings", {
-  id: id(),
-  siteName: varchar("site_name", { length: 180 }).notNull(),
-  defaultLocale: varchar("default_locale", { length: 16 }).notNull().default("en"),
-  contactEmail: varchar("contact_email", { length: 255 }),
-  contactPhone: varchar("contact_phone", { length: 80 }),
-  socialLinks: jsonb("social_links").$type<Record<string, string>>().notNull().default({}),
-  bookingDefaultTimezone: varchar("booking_default_timezone", { length: 80 }).notNull().default("Africa/Cairo"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
+export const siteSettings = pgTable(
+  "site_settings",
+  {
+    id: id(),
+    settingsKey: varchar("settings_key", { length: 32 }).notNull().default("global"),
+    siteName: varchar("site_name", { length: 180 }).notNull(),
+    defaultLocale: varchar("default_locale", { length: 16 }).notNull().default("en"),
+    contactEmail: varchar("contact_email", { length: 255 }),
+    contactPhone: varchar("contact_phone", { length: 80 }),
+    socialLinks: jsonb("social_links").$type<Record<string, string>>().notNull().default({}),
+    bookingDefaultTimezone: varchar("booking_default_timezone", { length: 80 }).notNull().default("Africa/Cairo"),
+    bookingMinimumAdvanceDays: integer("booking_minimum_advance_days").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    settingsKeyUnique: uniqueIndex("site_settings_settings_key_unique").on(table.settingsKey),
+    settingsKeyCheck: check("site_settings_global_key", sql`${table.settingsKey} = 'global'`),
+    minimumAdvanceDaysCheck: check(
+      "site_settings_booking_minimum_advance_days_range",
+      sql`${table.bookingMinimumAdvanceDays} BETWEEN 1 AND 365`,
+    ),
+  }),
+);
 
 export const navigationItems = pgTable(
   "navigation_items",
@@ -167,19 +190,67 @@ export const mediaAssets = pgTable(
   "media_assets",
   {
     id: id(),
+    displayName: text("display_name").notNull(),
     fileName: text("file_name").notNull(),
     mimeType: varchar("mime_type", { length: 120 }).notNull(),
-    storageKey: text("storage_key").notNull(),
+    sourceType: mediaSourceEnum("source_type").notNull().default("r2"),
+    mediaKind: mediaKindEnum("media_kind").notNull().default("image"),
+    storageKey: text("storage_key"),
     publicUrl: text("public_url"),
     altText: text("alt_text"),
     sizeBytes: integer("size_bytes").notNull(),
+    width: integer("width"),
+    height: integer("height"),
+    durationMs: integer("duration_ms"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    processingState: mediaProcessingStateEnum("processing_state").notNull().default("ready"),
+    processingError: text("processing_error"),
     status: contentStatusEnum("status").notNull().default("draft"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (table) => ({
     storageKeyUnique: uniqueIndex("media_assets_storage_key_unique").on(table.storageKey),
-    statusIdx: index("media_assets_status_idx").on(table.status),
+    statusIdx: index("media_assets_status_idx").on(table.status, table.processingState),
+    sourceKindIdx: index("media_assets_source_kind_idx").on(table.sourceType, table.mediaKind),
+    sizeCheck: check("media_assets_size_nonnegative", sql`${table.sizeBytes} >= 0`),
+    widthCheck: check("media_assets_width_positive", sql`${table.width} IS NULL OR ${table.width} > 0`),
+    heightCheck: check("media_assets_height_positive", sql`${table.height} IS NULL OR ${table.height} > 0`),
+    durationCheck: check(
+      "media_assets_duration_nonnegative",
+      sql`${table.durationMs} IS NULL OR ${table.durationMs} >= 0`,
+    ),
+    sourceCheck: check(
+      "media_assets_source_fields",
+      sql`(${table.sourceType} = 'r2' AND ${table.storageKey} IS NOT NULL) OR (${table.sourceType} = 'external' AND ${table.publicUrl} ~ '^https://')`,
+    ),
+  }),
+);
+
+export const globalMediaAssignmentSets = pgTable(
+  "global_media_assignment_sets",
+  {
+    id: id(),
+    definitionKey: varchar("definition_key", { length: 120 }).notNull(),
+    version: integer("version").notNull(),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    definitionVersionUnique: uniqueIndex("global_media_assignment_sets_definition_version_unique").on(
+      table.definitionKey,
+      table.version,
+    ),
+    onePublishedVersion: uniqueIndex("global_media_assignment_sets_one_published_version")
+      .on(table.definitionKey)
+      .where(sql`${table.status} = 'published'`),
+    definitionStatusIdx: index("global_media_assignment_sets_definition_status_idx").on(
+      table.definitionKey,
+      table.status,
+    ),
+    versionCheck: check("global_media_assignment_sets_version_positive", sql`${table.version} > 0`),
   }),
 );
 
@@ -287,7 +358,10 @@ export const offerings = pgTable(
     offeringType: offeringTypeEnum("offering_type").notNull(),
     attendanceMode: attendanceModeEnum("attendance_mode").notNull().default("online"),
     bookingMode: bookingModeEnum("booking_mode").notNull().default("free"),
-    durationMinutes: integer("duration_minutes").notNull(),
+    schedulingMode: schedulingModeEnum("scheduling_mode").notNull().default("appointment"),
+    durationMinutes: integer("duration_minutes"),
+    bufferBeforeMinutes: integer("buffer_before_minutes").notNull().default(0),
+    bufferAfterMinutes: integer("buffer_after_minutes").notNull().default(0),
     capacity: integer("capacity").notNull().default(1),
     requiresPayment: boolean("requires_payment").notNull().default(false),
     quoteOnly: boolean("quote_only").notNull().default(false),
@@ -306,6 +380,66 @@ export const offerings = pgTable(
     statusIdx: index("offerings_status_idx").on(table.status),
     typeIdx: index("offerings_type_idx").on(table.offeringType),
     capacityPositive: check("offerings_capacity_positive", sql`${table.capacity} > 0`),
+    validSchedulingConfiguration: check(
+      "offerings_valid_scheduling_configuration",
+      sql`((${table.schedulingMode} = 'appointment' AND ${table.durationMinutes} IS NOT NULL AND ${table.durationMinutes} > 0) OR (${table.schedulingMode} = 'scheduled_program' AND ${table.durationMinutes} IS NULL)) AND ${table.bufferBeforeMinutes} >= 0 AND ${table.bufferAfterMinutes} >= 0`,
+    ),
+  }),
+);
+
+export const sectionMediaAssignments = pgTable(
+  "section_media_assignments",
+  {
+    id: id(),
+    pageSectionId: uuid("page_section_id")
+      .notNull()
+      .references(() => pageSections.id, { onDelete: "cascade" }),
+    slotKey: varchar("slot_key", { length: 120 }).notNull(),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    altTextOverride: text("alt_text_override"),
+    decorative: boolean("decorative").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    slotOrderUnique: uniqueIndex("section_media_assignments_slot_order_unique").on(
+      table.pageSectionId,
+      table.slotKey,
+      table.sortOrder,
+    ),
+    assetIdx: index("section_media_assignments_asset_idx").on(table.mediaAssetId),
+    orderCheck: check("section_media_assignments_order_nonnegative", sql`${table.sortOrder} >= 0`),
+  }),
+);
+
+export const globalMediaAssignments = pgTable(
+  "global_media_assignments",
+  {
+    id: id(),
+    assignmentSetId: uuid("assignment_set_id")
+      .notNull()
+      .references(() => globalMediaAssignmentSets.id, { onDelete: "cascade" }),
+    slotKey: varchar("slot_key", { length: 120 }).notNull(),
+    mediaAssetId: uuid("media_asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    altTextOverride: text("alt_text_override"),
+    decorative: boolean("decorative").notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    slotOrderUnique: uniqueIndex("global_media_assignments_slot_order_unique").on(
+      table.assignmentSetId,
+      table.slotKey,
+      table.sortOrder,
+    ),
+    assetIdx: index("global_media_assignments_asset_idx").on(table.mediaAssetId),
+    orderCheck: check("global_media_assignments_order_nonnegative", sql`${table.sortOrder} >= 0`),
   }),
 );
 
@@ -376,6 +510,121 @@ export const offeringSessions = pgTable(
     capacityPositive: check(
       "offering_sessions_capacity_positive",
       sql`${table.capacity} > 0`,
+    ),
+  }),
+);
+
+export const scheduledPrograms = pgTable(
+  "scheduled_programs",
+  {
+    id: id(),
+    offeringId: uuid("offering_id").notNull().references(() => offerings.id),
+    title: varchar("title", { length: 220 }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).notNull(),
+    attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
+    locationId: uuid("location_id").references(() => offlineLocations.id),
+    capacity: integer("capacity").notNull(),
+    registrationOpensAt: timestamp("registration_opens_at", { withTimezone: true }),
+    registrationClosesAt: timestamp("registration_closes_at", { withTimezone: true }),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    offeringStatusIdx: index("scheduled_programs_offering_status_idx").on(
+      table.offeringId,
+      table.status,
+    ),
+    capacityPositive: check("scheduled_programs_capacity_positive", sql`${table.capacity} > 0`),
+    validRegistrationWindow: check(
+      "scheduled_programs_valid_registration_window",
+      sql`${table.registrationOpensAt} IS NULL OR ${table.registrationClosesAt} IS NULL OR ${table.registrationOpensAt} < ${table.registrationClosesAt}`,
+    ),
+  }),
+);
+
+export const scheduledProgramOccurrences = pgTable(
+  "scheduled_program_occurrences",
+  {
+    id: id(),
+    scheduledProgramId: uuid("scheduled_program_id").notNull().references(() => scheduledPrograms.id),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    timezone: varchar("timezone", { length: 80 }).notNull(),
+    attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
+    locationId: uuid("location_id").references(() => offlineLocations.id),
+    sortOrder: integer("sort_order").notNull().default(0),
+    googleCalendarEventId: text("google_calendar_event_id"),
+    meetUrl: text("meet_url"),
+    status: programOccurrenceStatusEnum("status").notNull().default("scheduled"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    programStartsIdx: index("scheduled_program_occurrences_program_starts_idx").on(
+      table.scheduledProgramId,
+      table.startsAt,
+    ),
+    validInterval: check(
+      "scheduled_program_occurrences_valid_interval",
+      sql`${table.startsAt} < ${table.endsAt}`,
+    ),
+    sortOrderNonNegative: check(
+      "scheduled_program_occurrences_sort_order_non_negative",
+      sql`${table.sortOrder} >= 0`,
+    ),
+  }),
+);
+
+export const availabilityWindows = pgTable(
+  "availability_windows",
+  {
+    id: id(),
+    weekday: integer("weekday").notNull(),
+    startLocalTime: varchar("start_local_time", { length: 8 }).notNull(),
+    endLocalTime: varchar("end_local_time", { length: 8 }).notNull(),
+    status: contentStatusEnum("status").notNull().default("draft"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    weekdayStatusIdx: index("availability_windows_weekday_status_idx").on(
+      table.weekday,
+      table.status,
+    ),
+    windowUnique: uniqueIndex("availability_windows_unique").on(
+      table.weekday,
+      table.startLocalTime,
+      table.endLocalTime,
+      table.status,
+    ),
+    validWindow: check(
+      "availability_windows_valid_window",
+      sql`${table.weekday} BETWEEN 0 AND 6 AND ${table.startLocalTime} < ${table.endLocalTime}`,
+    ),
+  }),
+);
+
+export const globalAvailabilityOverrides = pgTable(
+  "global_availability_overrides",
+  {
+    id: id(),
+    date: varchar("date", { length: 10 }).notNull(),
+    overrideMode: availabilityOverrideModeEnum("override_mode").notNull(),
+    startLocalTime: varchar("start_local_time", { length: 8 }),
+    endLocalTime: varchar("end_local_time", { length: 8 }),
+    reason: text("reason"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    dateModeIdx: index("global_availability_overrides_date_mode_idx").on(
+      table.date,
+      table.overrideMode,
+    ),
+    validShape: check(
+      "global_availability_overrides_valid_shape",
+      sql`(${table.overrideMode} = 'unavailable' AND ${table.startLocalTime} IS NULL AND ${table.endLocalTime} IS NULL) OR (${table.overrideMode} = 'available' AND ${table.startLocalTime} IS NOT NULL AND ${table.endLocalTime} IS NOT NULL AND ${table.startLocalTime} < ${table.endLocalTime})`,
     ),
   }),
 );
@@ -467,6 +716,7 @@ export const bookings = pgTable(
       .default(sql`('RMM-' || lpad(nextval('booking_reference_seq')::text, 6, '0'))`),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
+    scheduledProgramId: uuid("scheduled_program_id").references(() => scheduledPrograms.id),
     locationId: uuid("location_id").references(() => offlineLocations.id),
     attendanceMode: attendanceModeEnum("attendance_mode").notNull(),
     status: bookingStatusEnum("status").notNull().default("draft"),
@@ -501,9 +751,13 @@ export const bookings = pgTable(
       table.offeringSessionId,
       table.status,
     ),
-    validSlotInterval: check(
-      "bookings_valid_slot_interval",
-      sql`(${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL) OR (${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt})`,
+    programStatusIdx: index("bookings_program_status_idx").on(
+      table.scheduledProgramId,
+      table.status,
+    ),
+    validSchedulingTarget: check(
+      "bookings_valid_scheduling_target",
+      sql`(${table.scheduledProgramId} IS NULL AND ${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt}) OR (${table.scheduledProgramId} IS NOT NULL AND ${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL)`,
     ),
     moneyNonNegative: check(
       "bookings_money_non_negative",
@@ -528,8 +782,9 @@ export const bookingSlotHolds = pgTable(
     id: id(),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
-    slotStartAt: timestamp("slot_start_at", { withTimezone: true }).notNull(),
-    slotEndAt: timestamp("slot_end_at", { withTimezone: true }).notNull(),
+    scheduledProgramId: uuid("scheduled_program_id").references(() => scheduledPrograms.id),
+    slotStartAt: timestamp("slot_start_at", { withTimezone: true }),
+    slotEndAt: timestamp("slot_end_at", { withTimezone: true }),
     bookingId: uuid("booking_id").references(() => bookings.id),
     holdSecretHash: varchar("hold_secret_hash", { length: 64 }),
     status: holdStatusEnum("status").notNull().default("active"),
@@ -544,9 +799,14 @@ export const bookingSlotHolds = pgTable(
       table.status,
       table.expiresAt,
     ),
-    validSlotInterval: check(
-      "booking_slot_holds_valid_slot_interval",
-      sql`${table.slotStartAt} < ${table.slotEndAt}`,
+    programIdx: index("booking_slot_holds_program_idx").on(
+      table.scheduledProgramId,
+      table.status,
+      table.expiresAt,
+    ),
+    validSchedulingTarget: check(
+      "booking_slot_holds_valid_scheduling_target",
+      sql`(${table.scheduledProgramId} IS NULL AND ${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt}) OR (${table.scheduledProgramId} IS NOT NULL AND ${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL)`,
     ),
   }),
 );

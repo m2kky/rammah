@@ -1,11 +1,11 @@
 import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import {
-  availabilityOverrides,
-  availabilityRules,
+  availabilityWindows,
   bookingSlotHolds,
   bookings,
   externalCalendarBusyBlocks,
+  globalAvailabilityOverrides,
   offeringSessions,
   offerings,
 } from "../../db/schema/index.js";
@@ -54,22 +54,24 @@ const insertOffering = async (capacity: number, status: "draft" | "published" = 
 const seedRecurringOffering = async (capacity: number, buffers = { before: 0, after: 0 }) => {
   const { db } = getTestDatabase();
   const offering = await insertOffering(capacity);
-  const [rule] = await db
-    .insert(availabilityRules)
-    .values({
-      offeringId: offering.id,
-      weekday: slots[0]!.startsAt.getDay(),
-      startTime: "10:00",
-      endTime: "15:00",
-      timezone: "Africa/Cairo",
-      slotDurationMinutes: 60,
+  await db
+    .update(offerings)
+    .set({
       bufferBeforeMinutes: buffers.before,
       bufferAfterMinutes: buffers.after,
+    })
+    .where(eq(offerings.id, offering.id));
+  const [window] = await db
+    .insert(availabilityWindows)
+    .values({
+      weekday: slots[0]!.startsAt.getDay(),
+      startLocalTime: "10:00",
+      endLocalTime: "15:00",
       status: "published",
     })
     .returning();
 
-  return { offering, rule: rule! };
+  return { offering, window: window! };
 };
 
 const seedFixedSession = async (
@@ -297,20 +299,16 @@ describe.sequential("atomic admin booking reschedule capacity", () => {
 
   it("rejects blocked, busy, buffered, full, unpublished and past targets without mutation", async () => {
     const { db } = getTestDatabase();
-    const { offering, rule } = await seedRecurringOffering(1, { before: 10, after: 5 });
+    const { offering } = await seedRecurringOffering(1, { before: 10, after: 5 });
     const booking = await seedBooking({ offeringId: offering.id });
     const before = {
       offeringSessionId: booking.offeringSessionId,
       slotStartAt: booking.slotStartAt,
       slotEndAt: booking.slotEndAt,
     };
-    await db.insert(availabilityOverrides).values({
-      offeringId: offering.id,
-      availabilityRuleId: rule.id,
+    await db.insert(globalAvailabilityOverrides).values({
       date: recurringDate,
-      overrideType: "blocked",
-      startsAt: new Date(`${recurringDate}T11:25:00`),
-      endsAt: new Date(`${recurringDate}T12:25:00`),
+      overrideMode: "unavailable",
     });
     await db.insert(externalCalendarBusyBlocks).values({
       startsAt: new Date(`${recurringDate}T12:40:00`),

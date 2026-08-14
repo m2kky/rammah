@@ -6,7 +6,7 @@
 
 **Architecture:** Extend the existing Express/Drizzle CMS with an authoritative section registry, normalized media assignments, an R2 storage adapter, and publication/preview services. Split the oversized Next.js CMS screen into focused editors and render generic pages from resolved public CMS contracts while adapting existing animated pages to named media slots.
 
-**Tech Stack:** Node.js 24.14.0, npm 11.9.0, TypeScript, Express 4, Zod, Drizzle/PostgreSQL, Vitest, AWS SDK v3 for Cloudflare R2, Next.js 16.2.1, React 19.2.4, Tailwind CSS 4, React Markdown, GSAP.
+**Tech Stack:** Node.js 24.14.0, npm 11.9.0, TypeScript, Express 4, Zod, Drizzle/PostgreSQL, Vitest, AWS SDK v3 for Cloudflare R2, Next.js 16.3.0, React 19.2.4, Tailwind CSS 4, React Markdown, GSAP.
 
 ## Global Constraints
 

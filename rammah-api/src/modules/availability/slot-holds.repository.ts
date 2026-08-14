@@ -4,6 +4,7 @@ import {
   bookingSlotHolds,
   offeringSessions,
   offerings,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 import { verifySlotHoldToken } from "./slot-hold-token.js";
 
@@ -21,6 +22,7 @@ export const insertSlotHold = async (
       id: bookingSlotHolds.id,
       offeringId: bookingSlotHolds.offeringId,
       offeringSessionId: bookingSlotHolds.offeringSessionId,
+      scheduledProgramId: bookingSlotHolds.scheduledProgramId,
       slotStartAt: bookingSlotHolds.slotStartAt,
       slotEndAt: bookingSlotHolds.slotEndAt,
       status: bookingSlotHolds.status,
@@ -42,6 +44,7 @@ export const lockOwnedSlotHold = async (
       bookingId: bookingSlotHolds.bookingId,
       offeringId: bookingSlotHolds.offeringId,
       offeringSessionId: bookingSlotHolds.offeringSessionId,
+      scheduledProgramId: bookingSlotHolds.scheduledProgramId,
       slotStartAt: bookingSlotHolds.slotStartAt,
       slotEndAt: bookingSlotHolds.slotEndAt,
       holdStatus: bookingSlotHolds.status,
@@ -51,12 +54,17 @@ export const lockOwnedSlotHold = async (
       offeringSlug: offerings.slug,
       offeringAttendanceMode: offerings.attendanceMode,
       sessionLocationId: offeringSessions.locationId,
+      programLocationId: scheduledPrograms.locationId,
     })
     .from(bookingSlotHolds)
     .innerJoin(offerings, eq(bookingSlotHolds.offeringId, offerings.id))
     .leftJoin(
       offeringSessions,
       eq(bookingSlotHolds.offeringSessionId, offeringSessions.id),
+    )
+    .leftJoin(
+      scheduledPrograms,
+      eq(bookingSlotHolds.scheduledProgramId, scheduledPrograms.id),
     )
     .where(eq(bookingSlotHolds.id, id))
     .limit(1)

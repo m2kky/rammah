@@ -13,6 +13,7 @@ import {
   type AdminPaymentRow,
   type PaymentStatus,
 } from "./admin-payments.repository.js";
+import { serializeCanonicalBookingTarget } from "../bookings/booking-target.repository.js";
 
 const toIsoStringOrNull = (value: Date | null) =>
   value ? value.toISOString() : null;
@@ -75,6 +76,7 @@ const toAdminPayment = (payment: AdminPaymentRow) => ({
       title: payment.offeringTitle,
       slug: payment.offeringSlug,
     },
+    target: serializeCanonicalBookingTarget(payment.target),
     calendar: payment.calendarEventId
       ? {
           id: payment.calendarEventId,

@@ -19,7 +19,10 @@ const fallbackOffering = (slug: string): PublicOffering | null => {
     offeringType: "custom",
     attendanceMode: "hybrid",
     bookingMode: service.slug === "corporate-training" ? "quote_only" : "paid",
+    schedulingMode: "appointment",
     durationMinutes: service.slug === "workshops" ? 180 : 60,
+    bufferBeforeMinutes: 0,
+    bufferAfterMinutes: 0,
     capacity: service.slug === "workshops" ? 30 : 1,
     requiresPayment: service.slug !== "corporate-training",
     quoteOnly: service.slug === "corporate-training",
@@ -54,7 +57,12 @@ export default async function ServiceDetailPage({
 
   const facts = [
     ["Mode", offering.attendanceMode],
-    ["Duration", `${offering.durationMinutes} minutes`],
+    [
+      "Duration",
+      offering.durationMinutes === null
+        ? "Defined by program dates"
+        : `${offering.durationMinutes} minutes`,
+    ],
     ["Capacity", `${offering.capacity}`],
     ["Path", offering.bookingMode.replace("_", " ")],
   ];

@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import {
-  availabilityOverrides,
-  availabilityRules,
-  offerings,
+  availabilityWindows,
+  globalAvailabilityOverrides,
 } from "../../db/schema/index.js";
 import { getTestDatabase } from "../../test/db.js";
 import {
@@ -11,37 +10,15 @@ import {
   updateAdminAvailabilityOverrideById,
 } from "./admin-availability-overrides.service.js";
 import {
-  createAdminAvailabilityRule,
-  updateAdminAvailabilityRuleById,
+  createAdminAvailabilityWindow,
+  deleteOrArchiveAdminAvailabilityWindowById,
+  updateAdminAvailabilityWindowById,
 } from "./admin-availability.service.js";
 
-const seedOffering = async () => {
-  const { db } = getTestDatabase();
-  const [offering] = await db
-    .insert(offerings)
-    .values({
-      title: "Overlap invariant",
-      slug: `overlap-${crypto.randomUUID()}`,
-      offeringType: "coaching",
-      attendanceMode: "online",
-      bookingMode: "free",
-      durationMinutes: 60,
-      capacity: 1,
-      status: "published",
-    })
-    .returning();
-  return offering!;
-};
-
-const ruleInput = (offeringId: string, overrides: Record<string, unknown> = {}) => ({
-  offeringId,
+const windowInput = (overrides: Record<string, unknown> = {}) => ({
   weekday: 1,
-  startTime: "09:00",
-  endTime: "11:00",
-  timezone: "Africa/Cairo",
-  slotDurationMinutes: 60,
-  bufferBeforeMinutes: 0,
-  bufferAfterMinutes: 0,
+  startLocalTime: "09:00",
+  endLocalTime: "11:00",
   status: "published" as const,
   ...overrides,
 });
@@ -50,161 +27,164 @@ const expectValidationError = async (promise: Promise<unknown>) => {
   await expect(promise).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
 };
 
-describe.sequential("published availability overlap invariants", () => {
-  it("rejects creating a published rule that overlaps another published rule", async () => {
-    const { db } = getTestDatabase();
-    const offering = await seedOffering();
-    await createAdminAvailabilityRule(ruleInput(offering.id));
-
-    await expectValidationError(
-      createAdminAvailabilityRule(
-        ruleInput(offering.id, { startTime: "10:00", endTime: "12:00" }),
-      ),
-    );
-
-    const rows = await db
-      .select()
-      .from(availabilityRules)
-      .where(eq(availabilityRules.offeringId, offering.id));
-    expect(rows).toHaveLength(1);
-  });
-
-  it("allows exact boundary adjacency between published rules", async () => {
-    const offering = await seedOffering();
-    await createAdminAvailabilityRule(ruleInput(offering.id));
+describe.sequential("global availability window invariants", () => {
+  it("rejects overlapping published windows and returns both conflicting IDs", async () => {
+    const existing = await createAdminAvailabilityWindow(windowInput());
 
     await expect(
-      createAdminAvailabilityRule(
-        ruleInput(offering.id, { startTime: "11:00", endTime: "13:00" }),
+      createAdminAvailabilityWindow(
+        windowInput({ startLocalTime: "10:00", endLocalTime: "12:00" }),
       ),
-    ).resolves.toMatchObject({ startTime: "11:00", endTime: "13:00" });
+    ).rejects.toMatchObject({
+      code: "VALIDATION_ERROR",
+      details: [expect.objectContaining({ message: expect.stringContaining(existing.id) })],
+    });
   });
 
-  it("rejects a conflicting timezone across published rules for one offering", async () => {
-    const offering = await seedOffering();
-    await createAdminAvailabilityRule(ruleInput(offering.id));
+  it("allows exact boundary adjacency and sorts windows deterministically", async () => {
+    await createAdminAvailabilityWindow(
+      windowInput({ startLocalTime: "11:00", endLocalTime: "13:00" }),
+    );
+    await createAdminAvailabilityWindow(windowInput());
+
+    const { listAdminAvailabilityWindows } = await import(
+      "./admin-availability.service.js"
+    );
+    const rows = await listAdminAvailabilityWindows({});
+
+    expect(rows.map((row) => row.startLocalTime)).toEqual(["09:00", "11:00"]);
+  });
+
+  it("rejects publishing a draft window whose time overlaps", async () => {
+    await createAdminAvailabilityWindow(windowInput());
+    const draft = await createAdminAvailabilityWindow(
+      windowInput({ startLocalTime: "10:00", endLocalTime: "12:00", status: "draft" }),
+    );
 
     await expectValidationError(
-      createAdminAvailabilityRule(
-        ruleInput(offering.id, {
-          weekday: 2,
-          timezone: "UTC",
-          startTime: "13:00",
-          endTime: "15:00",
-        }),
-      ),
+      updateAdminAvailabilityWindowById(draft.id, { status: "published" }),
     );
   });
 
-  it("rejects publishing a draft rule whose window overlaps", async () => {
+  it("deletes an unused draft but archives a published window", async () => {
     const { db } = getTestDatabase();
-    const offering = await seedOffering();
-    await createAdminAvailabilityRule(ruleInput(offering.id));
-    const draft = await createAdminAvailabilityRule(
-      ruleInput(offering.id, {
-        startTime: "10:00",
-        endTime: "12:00",
-        status: "draft",
-      }),
+    const draft = await createAdminAvailabilityWindow(
+      windowInput({ status: "draft" }),
+    );
+    const published = await createAdminAvailabilityWindow(
+      windowInput({ startLocalTime: "12:00", endLocalTime: "14:00" }),
     );
 
-    await expectValidationError(
-      updateAdminAvailabilityRuleById(draft.id, { status: "published" }),
-    );
+    expect(draft.allowedActions).toEqual({ edit: true, archive: false, delete: true });
+    expect(published.allowedActions).toEqual({ edit: true, archive: true, delete: false });
 
-    const [stored] = await db
-      .select({ status: availabilityRules.status })
-      .from(availabilityRules)
-      .where(eq(availabilityRules.id, draft.id));
-    expect(stored?.status).toBe("draft");
+    await expect(
+      deleteOrArchiveAdminAvailabilityWindowById(draft.id),
+    ).resolves.toMatchObject({ action: "deleted" });
+    await expect(
+      deleteOrArchiveAdminAvailabilityWindowById(published.id),
+    ).resolves.toMatchObject({ action: "archived" });
+
+    const storedDraft = await db
+      .select()
+      .from(availabilityWindows)
+      .where(eq(availabilityWindows.id, draft.id));
+    const [storedPublished] = await db
+      .select()
+      .from(availabilityWindows)
+      .where(eq(availabilityWindows.id, published.id));
+    expect(storedDraft).toHaveLength(0);
+    expect(storedPublished?.status).toBe("archived");
   });
 
-  it("rejects updating a published rule into an overlapping window", async () => {
-    const offering = await seedOffering();
-    await createAdminAvailabilityRule(ruleInput(offering.id));
-    const adjacent = await createAdminAvailabilityRule(
-      ruleInput(offering.id, { startTime: "11:00", endTime: "13:00" }),
-    );
+  it("does not let a published window become a deletable draft", async () => {
+    const published = await createAdminAvailabilityWindow(windowInput());
 
-    await expectValidationError(
-      updateAdminAvailabilityRuleById(adjacent.id, { startTime: "10:30" }),
-    );
+    await expect(
+      updateAdminAvailabilityWindowById(published.id, { status: "draft" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
 
-describe.sequential("available override overlap invariant", () => {
-  it("rejects creating an overlapping available override for the same offering and date", async () => {
+describe.sequential("global availability override invariants", () => {
+  it("rejects overlapping available windows on the same local date", async () => {
     const { db } = getTestDatabase();
-    const offering = await seedOffering();
     await createAdminAvailabilityOverride({
-      offeringId: offering.id,
       date: "2030-08-05",
-      overrideType: "available",
-      startsAt: "2030-08-05T07:00:00.000Z",
-      endsAt: "2030-08-05T08:00:00.000Z",
+      type: "available",
+      startLocalTime: "09:00",
+      endLocalTime: "11:00",
     });
 
     await expectValidationError(
       createAdminAvailabilityOverride({
-        offeringId: offering.id,
         date: "2030-08-05",
-        overrideType: "available",
-        startsAt: "2030-08-05T07:30:00.000Z",
-        endsAt: "2030-08-05T08:30:00.000Z",
+        type: "available",
+        startLocalTime: "10:30",
+        endLocalTime: "12:00",
       }),
     );
 
-    const rows = await db
-      .select()
-      .from(availabilityOverrides)
-      .where(eq(availabilityOverrides.offeringId, offering.id));
+    const rows = await db.select().from(globalAvailabilityOverrides);
     expect(rows).toHaveLength(1);
   });
 
-  it("allows exact boundary adjacency between available overrides", async () => {
-    const offering = await seedOffering();
+  it("allows adjacent available override windows and returns local times", async () => {
     await createAdminAvailabilityOverride({
-      offeringId: offering.id,
       date: "2030-08-05",
-      overrideType: "available",
-      startsAt: "2030-08-05T07:00:00.000Z",
-      endsAt: "2030-08-05T08:00:00.000Z",
+      type: "available",
+      startLocalTime: "09:00",
+      endLocalTime: "10:00",
     });
 
     await expect(
       createAdminAvailabilityOverride({
-        offeringId: offering.id,
         date: "2030-08-05",
-        overrideType: "available",
-        startsAt: "2030-08-05T08:00:00.000Z",
-        endsAt: "2030-08-05T09:00:00.000Z",
+        type: "available",
+        startLocalTime: "10:00",
+        endLocalTime: "11:00",
       }),
     ).resolves.toMatchObject({
-      startsAt: "2030-08-05T08:00:00.000Z",
-      endsAt: "2030-08-05T09:00:00.000Z",
+      type: "available",
+      startLocalTime: "10:00",
+      endLocalTime: "11:00",
     });
   });
 
-  it("rejects updating an available override into an overlapping window", async () => {
-    const offering = await seedOffering();
+  it("rejects mixing a closed date with explicit available windows", async () => {
     await createAdminAvailabilityOverride({
-      offeringId: offering.id,
       date: "2030-08-05",
-      overrideType: "available",
-      startsAt: "2030-08-05T07:00:00.000Z",
-      endsAt: "2030-08-05T08:00:00.000Z",
+      type: "unavailable",
+      reason: "Holiday",
+    });
+
+    await expectValidationError(
+      createAdminAvailabilityOverride({
+        date: "2030-08-05",
+        type: "available",
+        startLocalTime: "09:00",
+        endLocalTime: "10:00",
+      }),
+    );
+  });
+
+  it("rejects updating an available override into an overlapping window", async () => {
+    await createAdminAvailabilityOverride({
+      date: "2030-08-05",
+      type: "available",
+      startLocalTime: "09:00",
+      endLocalTime: "10:00",
     });
     const adjacent = await createAdminAvailabilityOverride({
-      offeringId: offering.id,
       date: "2030-08-05",
-      overrideType: "available",
-      startsAt: "2030-08-05T08:00:00.000Z",
-      endsAt: "2030-08-05T09:00:00.000Z",
+      type: "available",
+      startLocalTime: "10:00",
+      endLocalTime: "11:00",
     });
 
     await expectValidationError(
       updateAdminAvailabilityOverrideById(adjacent.id, {
-        startsAt: "2030-08-05T07:30:00.000Z",
+        startLocalTime: "09:30",
       }),
     );
   });

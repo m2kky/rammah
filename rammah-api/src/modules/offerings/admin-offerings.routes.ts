@@ -39,6 +39,7 @@ const offeringTypeSchema = z.enum([
 ]);
 const attendanceModeSchema = z.enum(["online", "offline", "hybrid"]);
 const bookingModeSchema = z.enum(["free", "paid", "quote_only"]);
+const schedulingModeSchema = z.enum(["appointment", "scheduled_program"]);
 
 const displayConfigSchema = z
   .object({
@@ -47,7 +48,7 @@ const displayConfigSchema = z
   })
   .strict();
 
-const adminOfferingBodySchema = z.object({
+const adminOfferingFieldsSchema = z.object({
   categoryId: z.string().uuid().nullable().optional(),
   title: z.string().trim().min(1).max(220),
   slug: z
@@ -61,7 +62,10 @@ const adminOfferingBodySchema = z.object({
   offeringType: offeringTypeSchema,
   attendanceMode: attendanceModeSchema.default("online"),
   bookingMode: bookingModeSchema.default("free"),
-  durationMinutes: z.number().int().min(1).max(1440),
+  schedulingMode: schedulingModeSchema.default("appointment"),
+  durationMinutes: z.number().int().min(1).max(1440).nullable(),
+  bufferBeforeMinutes: z.number().int().min(0).max(1440).default(0),
+  bufferAfterMinutes: z.number().int().min(0).max(1440).default(0),
   capacity: z.number().int().min(1).max(10000).default(1),
   requiresPayment: z.boolean().default(false),
   quoteOnly: z.boolean().default(false),
@@ -70,7 +74,27 @@ const adminOfferingBodySchema = z.object({
   status: contentStatusSchema.default("draft"),
 });
 
-const adminOfferingPatchSchema = adminOfferingBodySchema
+export const adminOfferingBodySchema = adminOfferingFieldsSchema.superRefine(
+  (body, context) => {
+    if (body.schedulingMode === "appointment" && body.durationMinutes === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["durationMinutes"],
+        message: "Appointment offerings require a duration.",
+      });
+    }
+
+    if (body.schedulingMode === "scheduled_program" && body.durationMinutes !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["durationMinutes"],
+        message: "Scheduled programs do not use an appointment duration.",
+      });
+    }
+  },
+);
+
+export const adminOfferingPatchSchema = adminOfferingFieldsSchema
   .partial()
   .refine((body) => Object.keys(body).length > 0, {
     message: "At least one field is required.",

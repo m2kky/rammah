@@ -4,16 +4,13 @@ import {
   attendanceModeEnum,
   contentStatusEnum,
   offlineLocations,
-  offeringSessions,
   offerings,
+  scheduledProgramOccurrences,
+  scheduledPrograms,
 } from "../../db/schema/index.js";
 
 export type AttendanceMode = (typeof attendanceModeEnum.enumValues)[number];
 export type ContentStatus = (typeof contentStatusEnum.enumValues)[number];
-export type AdminSessionInsert = typeof offeringSessions.$inferInsert;
-export type AdminSessionUpdate = Partial<
-  Omit<AdminSessionInsert, "id" | "createdAt">
->;
 
 export type AdminSessionFilters = {
   offeringId?: string;
@@ -25,24 +22,25 @@ export type AdminSessionFilters = {
 };
 
 const adminSessionSelect = {
-  id: offeringSessions.id,
-  offeringId: offeringSessions.offeringId,
+  id: scheduledProgramOccurrences.id,
+  scheduledProgramId: scheduledPrograms.id,
+  offeringId: scheduledPrograms.offeringId,
   offeringTitle: offerings.title,
   offeringSlug: offerings.slug,
   offeringAttendanceMode: offerings.attendanceMode,
-  startsAt: offeringSessions.startsAt,
-  endsAt: offeringSessions.endsAt,
-  timezone: offeringSessions.timezone,
-  capacity: offeringSessions.capacity,
-  attendanceMode: offeringSessions.attendanceMode,
-  locationId: offeringSessions.locationId,
+  startsAt: scheduledProgramOccurrences.startsAt,
+  endsAt: scheduledProgramOccurrences.endsAt,
+  timezone: scheduledProgramOccurrences.timezone,
+  capacity: scheduledPrograms.capacity,
+  attendanceMode: scheduledProgramOccurrences.attendanceMode,
+  locationId: scheduledProgramOccurrences.locationId,
   locationName: offlineLocations.name,
   locationCity: offlineLocations.city,
   locationCountryCode: offlineLocations.countryCode,
-  googleCalendarEventId: offeringSessions.googleCalendarEventId,
-  status: offeringSessions.status,
-  createdAt: offeringSessions.createdAt,
-  updatedAt: offeringSessions.updatedAt,
+  googleCalendarEventId: scheduledProgramOccurrences.googleCalendarEventId,
+  status: scheduledPrograms.status,
+  createdAt: scheduledPrograms.createdAt,
+  updatedAt: scheduledPrograms.updatedAt,
 };
 
 export const findAdminSessions = async (
@@ -51,43 +49,52 @@ export const findAdminSessions = async (
   const conditions: SQL[] = [];
 
   if (filters.offeringId) {
-    conditions.push(eq(offeringSessions.offeringId, filters.offeringId));
+    conditions.push(eq(scheduledPrograms.offeringId, filters.offeringId));
   }
 
   if (filters.locationId) {
-    conditions.push(eq(offeringSessions.locationId, filters.locationId));
+    conditions.push(eq(scheduledProgramOccurrences.locationId, filters.locationId));
   }
 
   if (filters.attendanceMode) {
-    conditions.push(eq(offeringSessions.attendanceMode, filters.attendanceMode));
+    conditions.push(eq(scheduledProgramOccurrences.attendanceMode, filters.attendanceMode));
   }
 
   if (filters.status) {
-    conditions.push(eq(offeringSessions.status, filters.status));
+    conditions.push(eq(scheduledPrograms.status, filters.status));
   }
 
   if (filters.dateFrom) {
-    conditions.push(gte(offeringSessions.startsAt, filters.dateFrom));
+    conditions.push(gte(scheduledProgramOccurrences.startsAt, filters.dateFrom));
   }
 
   if (filters.dateTo) {
-    conditions.push(lte(offeringSessions.startsAt, filters.dateTo));
+    conditions.push(lte(scheduledProgramOccurrences.startsAt, filters.dateTo));
   }
 
-  let query = db
+  const query = db
     .select(adminSessionSelect)
-    .from(offeringSessions)
-    .innerJoin(offerings, eq(offeringSessions.offeringId, offerings.id))
-    .leftJoin(offlineLocations, eq(offeringSessions.locationId, offlineLocations.id))
+    .from(scheduledPrograms)
+    .innerJoin(
+      scheduledProgramOccurrences,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .innerJoin(offerings, eq(scheduledPrograms.offeringId, offerings.id))
+    .leftJoin(
+      offlineLocations,
+      eq(scheduledProgramOccurrences.locationId, offlineLocations.id),
+    )
     .$dynamic();
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  if (where) {
-    query = query.where(where);
-  }
-
-  return query.orderBy(asc(offeringSessions.startsAt), asc(offerings.title));
+  return query
+    .where(
+      where
+        ? and(where, eq(scheduledProgramOccurrences.id, scheduledPrograms.id))
+        : eq(scheduledProgramOccurrences.id, scheduledPrograms.id),
+    )
+    .orderBy(asc(scheduledProgramOccurrences.startsAt), asc(offerings.title));
 };
 
 export type AdminSessionRow = Awaited<
@@ -97,65 +104,23 @@ export type AdminSessionRow = Awaited<
 export const findAdminSessionById = async (id: string) => {
   const rows = await db
     .select(adminSessionSelect)
-    .from(offeringSessions)
-    .innerJoin(offerings, eq(offeringSessions.offeringId, offerings.id))
-    .leftJoin(offlineLocations, eq(offeringSessions.locationId, offlineLocations.id))
-    .where(eq(offeringSessions.id, id))
+    .from(scheduledPrograms)
+    .innerJoin(
+      scheduledProgramOccurrences,
+      eq(scheduledProgramOccurrences.scheduledProgramId, scheduledPrograms.id),
+    )
+    .innerJoin(offerings, eq(scheduledPrograms.offeringId, offerings.id))
+    .leftJoin(
+      offlineLocations,
+      eq(scheduledProgramOccurrences.locationId, offlineLocations.id),
+    )
+    .where(
+      and(
+        eq(scheduledPrograms.id, id),
+        eq(scheduledProgramOccurrences.id, id),
+      ),
+    )
     .limit(1);
 
   return rows[0] ?? null;
 };
-
-export const findOfferingForSession = async (id: string) => {
-  const rows = await db
-    .select({
-      id: offerings.id,
-      attendanceMode: offerings.attendanceMode,
-    })
-    .from(offerings)
-    .where(eq(offerings.id, id))
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-export const findLocationForSession = async (id: string) => {
-  const rows = await db
-    .select({
-      id: offlineLocations.id,
-      status: offlineLocations.status,
-    })
-    .from(offlineLocations)
-    .where(eq(offlineLocations.id, id))
-    .limit(1);
-
-  return rows[0] ?? null;
-};
-
-export const insertAdminSession = async (input: AdminSessionInsert) => {
-  const rows = await db
-    .insert(offeringSessions)
-    .values(input)
-    .returning({ id: offeringSessions.id });
-
-  return rows[0] ? findAdminSessionById(rows[0].id) : null;
-};
-
-export const updateAdminSession = async (
-  id: string,
-  input: AdminSessionUpdate,
-) => {
-  const rows = await db
-    .update(offeringSessions)
-    .set({
-      ...input,
-      updatedAt: new Date(),
-    })
-    .where(eq(offeringSessions.id, id))
-    .returning({ id: offeringSessions.id });
-
-  return rows[0] ? findAdminSessionById(rows[0].id) : null;
-};
-
-export const archiveAdminSession = async (id: string) =>
-  updateAdminSession(id, { status: "archived" });

@@ -4,9 +4,24 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
+  dateKeyForInstantInTimeZone,
+  formatBookingDateKey as formatDate,
+  formatBookingDayNumber as formatDayNumber,
+  formatBookingInstantDate as formatInstantDate,
+  formatBookingMonth as formatMonth,
+  formatBookingTime as formatTime,
+  formatBookingWeekday as formatWeekday,
+} from "@/lib/booking-datetime";
+import {
+  buildBookingDateRail,
+  buildBoundedBookingRange,
+  isFirstBookableDateBeyondRail,
+  type PublicBookingPolicySummary,
+} from "@/lib/booking-policy";
+import {
   createPublicSlotHold,
   fetchPublicAvailabilitySlots,
-  fetchPublicOfferingSessions,
+  fetchPublicPrograms,
   fetchPublicPricePreview,
   PublicApiError,
   submitPublicFreeBooking,
@@ -14,7 +29,7 @@ import {
   submitPublicQuoteRequest,
   type PublicAvailabilitySlot,
   type PublicBooking,
-  type PublicOfferingSession,
+  type PublicProgram,
   type PublicPricePreview,
   type PublicQuoteRequest,
 } from "@/lib/api/bookings";
@@ -24,44 +39,10 @@ import {
   fetchPublicOfferingBookingConfig,
   filterOfferingLocationsByCountry,
   type PublicBookingFormField,
+  type PublicBookingOffering,
   type PublicOffering,
   type PublicOfferingLocation,
 } from "@/lib/api/offerings";
-
-const addDays = (date: Date, days: number) => {
-  const nextDate = new Date(date);
-  nextDate.setDate(nextDate.getDate() + days);
-  return nextDate;
-};
-
-const toDateKey = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const formatDate = (value: string) =>
-  new Intl.DateTimeFormat("en", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  }).format(new Date(`${value}T00:00:00`));
-
-const formatWeekday = (value: string) =>
-  new Intl.DateTimeFormat("en", { weekday: "short" }).format(new Date(`${value}T00:00:00`));
-
-const formatDayNumber = (value: string) =>
-  new Intl.DateTimeFormat("en", { day: "2-digit" }).format(new Date(`${value}T00:00:00`));
-
-const formatMonth = (value: string) =>
-  new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(`${value}T00:00:00`));
-
-const formatTime = (value: string) =>
-  new Intl.DateTimeFormat("en", {
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
 
 const formatMoney = (amountMinor: number, currency: string) =>
   new Intl.NumberFormat("en", {
@@ -76,7 +57,7 @@ const attendanceLabels = (mode: PublicOffering["attendanceMode"]) =>
 const formatPublicLocation = (
   location:
     | PublicOfferingLocation
-    | NonNullable<PublicOfferingSession["location"]>
+    | NonNullable<PublicProgram["location"]>
     | null
     | undefined,
 ) => {
@@ -155,15 +136,69 @@ type BookingFlowProps = {
 type BookingStep = "details" | "review";
 type DynamicAnswers = Record<string, string>;
 
+const bookingRailDays = 14;
+const scheduledProgramQueryDays = 90;
+
+type BookingWindow =
+  | {
+      mode: "appointment";
+      range: { from: string; to: string };
+      bookingPolicy: PublicBookingPolicySummary;
+      slots: PublicAvailabilitySlot[];
+    }
+  | {
+      mode: "scheduled_program";
+      range: { from: string; to: string };
+      bookingPolicy: PublicBookingPolicySummary;
+      sessions: PublicProgram[];
+    };
+
+const fetchBookingWindow = async (
+  offering: PublicBookingOffering,
+  startDate: string,
+): Promise<BookingWindow> => {
+  if (offering.schedulingMode === "scheduled_program") {
+    const range = buildBoundedBookingRange(startDate, scheduledProgramQueryDays);
+    const preview = await fetchPublicPrograms({
+      offeringId: offering.id,
+      dateFrom: range.from,
+      dateTo: range.to,
+    });
+
+    return {
+      mode: "scheduled_program",
+      range,
+      bookingPolicy: preview.bookingPolicy,
+      sessions: preview.programs.filter((program) => program.status === "available"),
+    };
+  }
+
+  const range = buildBoundedBookingRange(startDate, bookingRailDays);
+  const preview = await fetchPublicAvailabilitySlots({
+    offeringId: offering.id,
+    dateFrom: range.from,
+    dateTo: range.to,
+  });
+
+  return {
+    mode: "appointment",
+    range,
+    bookingPolicy: preview.bookingPolicy,
+    slots: preview.days
+      .flatMap((day) => day.slots)
+      .filter((slot) => slot.status === "available"),
+  };
+};
+
 export default function BookingFlow({ slug }: BookingFlowProps) {
   const router = useRouter();
-  const [offering, setOffering] = useState<PublicOffering | null>(null);
+  const [offering, setOffering] = useState<PublicBookingOffering | null>(null);
   const [fields, setFields] = useState<PublicBookingFormField[]>([]);
   const [slots, setSlots] = useState<PublicAvailabilitySlot[]>([]);
-  const [sessions, setSessions] = useState<PublicOfferingSession[]>([]);
+  const [sessions, setSessions] = useState<PublicProgram[]>([]);
   const [locations, setLocations] = useState<PublicOfferingLocation[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<PublicAvailabilitySlot | null>(null);
-  const [selectedSession, setSelectedSession] = useState<PublicOfferingSession | null>(null);
+  const [selectedSession, setSelectedSession] = useState<PublicProgram | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [attendanceCountryCode, setAttendanceCountryCode] = useState("");
@@ -182,30 +217,17 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  const dateRange = useMemo(() => {
-    const today = new Date();
-    return {
-      from: toDateKey(today),
-      to: toDateKey(addDays(today, 13)),
-    };
-  }, []);
-
-  const sessionDateRange = useMemo(() => {
-    const today = new Date();
-    return {
-      from: toDateKey(today),
-      to: toDateKey(addDays(today, 89)),
-    };
-  }, []);
+  const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [bookingPolicy, setBookingPolicy] =
+    useState<PublicBookingPolicySummary | null>(null);
 
   const isFreeBooking =
     offering?.bookingMode === "free" && !offering.requiresPayment && !offering.quoteOnly;
   const isQuoteOffering = offering?.bookingMode === "quote_only" || offering?.quoteOnly;
   const isPaidOffering = offering?.bookingMode === "paid" || offering?.requiresPayment;
   const isBookableOffering = isFreeBooking || isPaidOffering;
-  const hasSessionOptions = sessions.length > 0;
-  const selectedBookableTime = selectedSession ?? selectedSlot;
+  const usesScheduledProgram = offering?.schedulingMode === "scheduled_program";
+  const selectedBookableTime = usesScheduledProgram ? selectedSession : selectedSlot;
   const locationCountries = Array.from(
     new Set(locations.map((location) => location.countryCode.toUpperCase())),
   );
@@ -217,36 +239,46 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     locations.find((location) => location.id === selectedLocationId) ?? null;
   const selectedLocation = selectedSession?.location ?? selectedFormLocation;
   const needsLocation =
-    !hasSessionOptions && attendanceMode !== "online" && locations.length > 0;
+    !usesScheduledProgram && attendanceMode !== "online" && locations.length > 0;
   const dateOptions = useMemo(() => {
-    if (hasSessionOptions) {
-      const sessionDates = Array.from(new Set(sessions.map((session) => session.date))).sort();
-
-      return sessionDates.map((date) => ({
-        date,
-        count: sessions.filter((session) => session.date === date).length,
-      }));
+    if (!dateRange.from) return [];
+    const availableDateCounts = new Map<string, number>();
+    const availableDates = usesScheduledProgram
+      ? sessions.map((session) => session.date)
+      : slots.map((slot) => slot.date);
+    for (const date of availableDates) {
+      availableDateCounts.set(date, (availableDateCounts.get(date) ?? 0) + 1);
     }
 
-    return Array.from({ length: 14 }, (_, index) => {
-      const date = toDateKey(addDays(new Date(`${dateRange.from}T00:00:00`), index));
-
-      return {
-        date,
-        count: slots.filter((slot) => slot.date === date).length,
-      };
+    return buildBookingDateRail({
+      startDate: dateRange.from,
+      days: bookingRailDays,
+      availableDateCounts,
+      bookingPolicy,
+      includeAvailableDatesOutsideRail: usesScheduledProgram,
     });
-  }, [dateRange.from, hasSessionOptions, sessions, slots]);
+  }, [bookingPolicy, dateRange.from, sessions, slots, usesScheduledProgram]);
   const activeDate =
     selectedDate ||
     dateOptions.find((dateOption) => dateOption.count > 0)?.date ||
+    dateOptions.find((dateOption) => !dateOption.closedByPolicy)?.date ||
     dateOptions[0]?.date ||
     "";
   const activeDateSessions = sessions.filter((session) => session.date === activeDate);
   const activeDateSlots = slots.filter((slot) => slot.date === activeDate);
-  const activeDateCount = hasSessionOptions
+  const activeDateCount = usesScheduledProgram
     ? activeDateSessions.length
     : activeDateSlots.length;
+  const activeDateOption = dateOptions.find((option) => option.date === activeDate);
+  const firstBookableDateBeyondRail = Boolean(
+    bookingPolicy &&
+      dateRange.from &&
+      isFirstBookableDateBeyondRail({
+        startDate: dateRange.from,
+        days: bookingRailDays,
+        earliestBookableDate: bookingPolicy.earliestBookableDate,
+      }),
+  );
 
   const updateAnswer = (fieldKey: string, value: string) => {
     setAnswers((currentAnswers) => ({
@@ -296,6 +328,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setSelectedSession(null);
       setSelectedSlot(null);
       setSelectedDate("");
+      setDateRange({ from: "", to: "" });
+      setBookingPolicy(null);
 
       try {
         const [nextOffering, countryContext] = await Promise.all([
@@ -308,7 +342,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         ]);
         const bookingConfig = await fetchPublicOfferingBookingConfig(nextOffering.id);
         const configuredOffering = bookingConfig.offering;
-
+        const localToday = dateKeyForInstantInTimeZone(new Date(), configuredOffering.schedulingTimezone);
         if (isCancelled) return;
 
         setOffering(configuredOffering);
@@ -347,42 +381,37 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
           return;
         }
 
-        const sessionPreview = await fetchPublicOfferingSessions({
-          offeringId: configuredOffering.id,
-          dateFrom: sessionDateRange.from,
-          dateTo: sessionDateRange.to,
-        });
-
-        if (isCancelled) return;
-
-        const availableSessions = sessionPreview.sessions.filter(
-          (session) => session.status === "available",
+        setDateRange(
+          buildBoundedBookingRange(
+            localToday,
+            configuredOffering.schedulingMode === "scheduled_program"
+              ? scheduledProgramQueryDays
+              : bookingRailDays,
+          ),
         );
-
-        if (availableSessions.length > 0) {
-          setSessions(availableSessions);
-          setSelectedSession(availableSessions[0] ?? null);
-          setSelectedDate(availableSessions[0]?.date ?? "");
-          setAttendanceMode(availableSessions[0]?.attendanceMode ?? configuredOffering.attendanceMode);
-          setSelectedLocationId("");
-          return;
-        }
-
-        const preview = await fetchPublicAvailabilitySlots({
-          offeringId: configuredOffering.id,
-          dateFrom: dateRange.from,
-          dateTo: dateRange.to,
-        });
+        const bookingWindow = await fetchBookingWindow(configuredOffering, localToday);
 
         if (isCancelled) return;
 
-        const availableSlots = preview.days
-          .flatMap((day) => day.slots)
-          .filter((slot) => slot.status === "available");
-
-        setSlots(availableSlots);
-        setSelectedSlot(availableSlots[0] ?? null);
-        setSelectedDate(availableSlots[0]?.date ?? dateRange.from);
+        setDateRange(bookingWindow.range);
+        setBookingPolicy(bookingWindow.bookingPolicy);
+        if (bookingWindow.mode === "scheduled_program") {
+          setSessions(bookingWindow.sessions);
+          setSelectedSession(bookingWindow.sessions[0] ?? null);
+          setSelectedDate(
+            bookingWindow.sessions[0]?.date ?? bookingWindow.range.from,
+          );
+          setAttendanceMode(
+            bookingWindow.sessions[0]?.attendanceMode ?? configuredOffering.attendanceMode,
+          );
+          setSelectedLocationId("");
+        } else {
+          setSlots(bookingWindow.slots);
+          setSelectedSlot(bookingWindow.slots[0] ?? null);
+          setSelectedDate(
+            bookingWindow.slots[0]?.date ?? bookingWindow.range.from,
+          );
+        }
       } catch (loadError) {
         if (!isCancelled) {
           setError(loadError instanceof Error ? loadError.message : "Could not load booking.");
@@ -399,7 +428,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     return () => {
       isCancelled = true;
     };
-  }, [dateRange.from, dateRange.to, sessionDateRange.from, sessionDateRange.to, slug]);
+  }, [slug]);
 
   useEffect(() => {
     if (!needsLocation || filteredLocations.length === 0) return;
@@ -459,6 +488,50 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       window.clearTimeout(timeout);
     };
   }, [isPaidOffering, offering, priceCountryCode]);
+
+  const refreshBookingWindow = async (startDate: string) => {
+    if (!offering) return null;
+
+    setIsLoading(true);
+    setError("");
+    try {
+      const bookingWindow = await fetchBookingWindow(offering, startDate);
+      setDateRange(bookingWindow.range);
+      setBookingPolicy(bookingWindow.bookingPolicy);
+      setStep("details");
+
+      if (bookingWindow.mode === "scheduled_program") {
+        setSlots([]);
+        setSelectedSlot(null);
+        setSessions(bookingWindow.sessions);
+        setSelectedSession(bookingWindow.sessions[0] ?? null);
+        setSelectedDate(
+          bookingWindow.sessions[0]?.date ?? bookingWindow.range.from,
+        );
+        if (bookingWindow.sessions[0]) {
+          setAttendanceMode(bookingWindow.sessions[0].attendanceMode);
+          setSelectedLocationId("");
+        }
+      } else {
+        setSessions([]);
+        setSelectedSession(null);
+        setSlots(bookingWindow.slots);
+        setSelectedSlot(bookingWindow.slots[0] ?? null);
+        setSelectedDate(
+          bookingWindow.slots[0]?.date ?? bookingWindow.range.from,
+        );
+      }
+
+      return bookingWindow;
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Could not refresh available times.",
+      );
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const validateRequiredAnswers = () => {
     const missingField = fields.find((field) => {
@@ -527,9 +600,17 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     try {
       const hold = await createPublicSlotHold({
         offeringId: offering.id,
-        offeringSessionId: selectedSession?.id ?? null,
-        startsAt: selectedBookableTime.startsAt,
-        endsAt: selectedBookableTime.endsAt,
+        target:
+          usesScheduledProgram && selectedSession
+            ? {
+                kind: "scheduled_program",
+                scheduledProgramId: selectedSession.scheduledProgramId,
+              }
+            : {
+                kind: "appointment",
+                startsAt: selectedBookableTime.startsAt,
+                endsAt: selectedBookableTime.endsAt,
+              },
       });
 
       const bookingPayload = {
@@ -558,15 +639,15 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         router.push(`/booking/payment/${encodeURIComponent(nextBooking.publicToken)}`);
         return;
       }
-      if (selectedSession) {
+      if (usesScheduledProgram && selectedSession) {
         setSessions((currentSessions) =>
           currentSessions
             .map((session) => {
               if (session.id !== selectedSession.id) return session;
 
               const remainingCapacity = Math.max(session.remainingCapacity - 1, 0);
-              const status: PublicOfferingSession["status"] =
-                remainingCapacity > 0 ? "available" : "booked";
+              const status: PublicProgram["status"] =
+                remainingCapacity > 0 ? "available" : "full";
 
               return {
                 ...session,
@@ -592,7 +673,22 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setStep("details");
     } catch (submitError) {
       if (submitError instanceof PublicApiError && submitError.code === "SLOT_UNAVAILABLE") {
-        setError("That slot was just taken. Choose another time.");
+        setSelectedSlot(null);
+        setSelectedSession(null);
+        setStep("details");
+        const earliestBookableDate = submitError.meta?.earliestBookableDate;
+        const refreshed = await refreshBookingWindow(
+          dateRange.from || earliestBookableDate || "",
+        );
+        if (refreshed) {
+          setError(
+            earliestBookableDate
+              ? `That date is no longer bookable. Customers can book from ${earliestBookableDate}.`
+              : "That slot is no longer available. Choose another time.",
+          );
+        }
+      } else if (submitError instanceof PublicApiError && submitError.code === "PROGRAM_FULL") {
+        setError("That Program has just filled up. Choose another cohort.");
       } else if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
@@ -848,8 +944,11 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 <h2 className="text-3xl font-semibold tracking-normal">Your booking is confirmed.</h2>
                 <p className="font-inter text-sm leading-6 text-[#102329]/62">
                   We saved your session for{" "}
-                  {booking.slot.startsAt
-                    ? `${formatDate(toDateKey(new Date(booking.slot.startsAt)))}, ${formatTime(booking.slot.startsAt)}`
+                  {booking.target.kind === "scheduled_program" &&
+                  booking.target.occurrences[0]
+                    ? `${booking.target.occurrences.length} program date${booking.target.occurrences.length === 1 ? "" : "s"}, starting ${formatInstantDate(booking.target.occurrences[0].startsAt, booking.target.occurrences[0].timezone)}, ${formatTime(booking.target.occurrences[0].startsAt, booking.target.occurrences[0].timezone)}`
+                    : booking.slot.startsAt
+                      ? `${formatInstantDate(booking.slot.startsAt, booking.slot.timezone)}, ${formatTime(booking.slot.startsAt, booking.slot.timezone)}`
                     : "the selected time"}
                   .
                 </p>
@@ -1066,11 +1165,22 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                   </div>
                   <div>
                     <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/42">
-                      Slot
+                      {usesScheduledProgram ? "Program schedule" : "Slot"}
                     </p>
-                    <p className="mt-2 font-inter text-sm text-[#102329]/70">
-                      {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt)}
-                    </p>
+                    {usesScheduledProgram && selectedSession ? (
+                      <div className="mt-2 space-y-1">
+                        <p className="font-inter text-sm font-semibold">{selectedSession.title}</p>
+                        {selectedSession.occurrences.map((occurrence) => (
+                          <p key={occurrence.id} className="font-inter text-sm text-[#102329]/70">
+                            {formatDate(occurrence.date)}, {formatTime(occurrence.startsAt, occurrence.timezone)}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 font-inter text-sm text-[#102329]/70">
+                        {formatDate(selectedBookableTime.date)}, {formatTime(selectedBookableTime.startsAt, selectedBookableTime.timezone)}
+                      </p>
+                    )}
                     {selectedLocation && (
                       <div className="mt-1 font-inter text-xs leading-5 text-[#102329]/48">
                         <p>{formatPublicLocation(selectedLocation)}</p>
@@ -1137,9 +1247,19 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 </div>
 
                 {error && (
-                  <p className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
-                    {error}
-                  </p>
+                  <div className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
+                    <p>{error}</p>
+                    {offering && isBookableOffering && dateRange.from ? (
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => void refreshBookingWindow(dateRange.from)}
+                        className="mt-1 font-semibold underline decoration-red-700/35 underline-offset-4 disabled:opacity-50"
+                      >
+                        Refresh available times
+                      </button>
+                    ) : null}
+                  </div>
                 )}
 
                 <div className="flex flex-col gap-3 sm:flex-row">
@@ -1173,7 +1293,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                   <div className="flex items-end justify-between gap-4">
                     <div>
                       <p className="font-inter text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/42">
-                        {hasSessionOptions ? "Available sessions" : "Available times"}
+                        {usesScheduledProgram ? "Available programs" : "Available times"}
                       </p>
                       {activeDate && (
                         <p className="mt-2 font-inter text-sm font-semibold text-[#102329]/72">
@@ -1235,6 +1355,13 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                               key={day.date}
                               type="button"
                               aria-pressed={isActive}
+                              aria-disabled={day.closedByPolicy}
+                              disabled={day.closedByPolicy}
+                              title={
+                                day.closedByPolicy && bookingPolicy
+                                  ? `Bookings open from ${bookingPolicy.earliestBookableDate}`
+                                  : undefined
+                              }
                               onClick={() => {
                                 setSelectedDate(day.date);
                                 if (selectedSession?.date !== day.date) {
@@ -1247,7 +1374,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                               className={`grid min-h-[82px] min-w-[82px] content-between border px-3 py-2 text-left transition-colors ${
                                 isActive
                                   ? "border-[#0F3B46] bg-[#0F3B46] text-white"
-                                  : hasTimes
+                                  : day.closedByPolicy
+                                    ? "cursor-not-allowed border-[#102329]/10 bg-white/20 text-[#102329]/28"
+                                    : hasTimes
                                     ? "border-[#102329]/14 bg-white/45 text-[#102329] hover:border-[#0F3B46]"
                                     : "border-[#102329]/10 bg-white/25 text-[#102329]/34"
                               }`}
@@ -1274,6 +1403,27 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                         })}
                       </div>
 
+                      {bookingPolicy &&
+                      (activeDateOption?.closedByPolicy || firstBookableDateBeyondRail) ? (
+                        <div className="border-l-2 border-[#8A6F2A] bg-[#8A6F2A]/5 px-4 py-3 font-inter text-sm leading-6 text-[#102329]/72">
+                          <p>
+                            No times are available before {bookingPolicy.earliestBookableDate}.
+                          </p>
+                          {firstBookableDateBeyondRail ? (
+                            <button
+                              type="button"
+                              disabled={isLoading}
+                              onClick={() =>
+                                void refreshBookingWindow(bookingPolicy.earliestBookableDate)
+                              }
+                              className="mt-2 font-semibold text-[#0F3B46] underline decoration-[#0F3B46]/35 underline-offset-4 disabled:opacity-50"
+                            >
+                              View first bookable date
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <div className="border border-[#102329]/12 bg-white/45 p-3 sm:p-4">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                           <p className="font-inter text-sm font-semibold text-[#102329]">
@@ -1289,10 +1439,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                         </div>
 
                         <div className="mt-3">
-                          {hasSessionOptions ? (
+                          {usesScheduledProgram ? (
                             activeDateSessions.length === 0 ? (
                               <p className="border border-dashed border-[#102329]/14 px-3 py-5 text-center font-inter text-sm text-[#102329]/46">
-                                No sessions available on this day.
+                                No programs available on this day.
                               </p>
                             ) : (
                               <div className="grid gap-2 sm:grid-cols-2">
@@ -1318,7 +1468,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                       }`}
                                     >
                                       <span className="font-inter text-sm font-semibold">
-                                        {formatTime(session.startsAt)}
+                                        {session.title}
                                       </span>
                                       <span
                                         className={`mt-1 block font-inter text-[11px] leading-4 ${
@@ -1327,6 +1477,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                       >
                                         {formatPublicLocation(session.location) ||
                                           attendanceLabels(session.attendanceMode)}
+                                        {" · "}
+                                        {session.occurrences.length} date{session.occurrences.length === 1 ? "" : "s"}
                                         {" · "}
                                         {session.remainingCapacity} left
                                       </span>
@@ -1360,7 +1512,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                         : "border-[#102329]/12 bg-white/35 text-[#102329] hover:border-[#0F3B46]"
                                     }`}
                                   >
-                                    {formatTime(slot.startsAt)}
+                                    {formatTime(slot.startsAt, slot.timezone)}
                                   </button>
                                 );
                               })}
@@ -1372,7 +1524,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                   )}
                 </div>
 
-                {offering?.attendanceMode === "hybrid" && !hasSessionOptions && (
+                {offering?.attendanceMode === "hybrid" && !usesScheduledProgram && (
                   <label className="block">
                     <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
                       Attendance
@@ -1581,9 +1733,19 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                 )}
 
                 {error && (
-                  <p className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
-                    {error}
-                  </p>
+                  <div className="border-l-2 border-red-700 pl-3 font-inter text-sm leading-6 text-red-700">
+                    <p>{error}</p>
+                    {offering && isBookableOffering && dateRange.from ? (
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => void refreshBookingWindow(dateRange.from)}
+                        className="mt-1 font-semibold underline decoration-red-700/35 underline-offset-4 disabled:opacity-50"
+                      >
+                        Refresh available times
+                      </button>
+                    ) : null}
+                  </div>
                 )}
 
                 <button

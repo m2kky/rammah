@@ -20,6 +20,10 @@ import {
   sendBookingConfirmedEmails,
   sendBookingRescheduledEmails,
 } from "../emails/email.service.js";
+import {
+  projectCanonicalTargetWindow,
+  serializeCanonicalBookingTarget,
+} from "./booking-target.repository.js";
 
 export type AdminBookingStatusPatchInput = {
   status: BookingStatus;
@@ -57,7 +61,9 @@ const slotUnavailableError = () =>
     statusCode: httpStatus.conflict,
   });
 
-const toAdminBooking = (booking: AdminBookingRow) => ({
+const toAdminBooking = (booking: AdminBookingRow) => {
+  const targetWindow = projectCanonicalTargetWindow(booking.target);
+  return {
   id: booking.id,
   publicToken: booking.publicToken,
   bookingReference: booking.bookingReference,
@@ -83,10 +89,11 @@ const toAdminBooking = (booking: AdminBookingRow) => ({
       }
     : null,
   slot: {
-    startsAt: toIsoStringOrNull(booking.slotStartAt),
-    endsAt: toIsoStringOrNull(booking.slotEndAt),
-    timezone: booking.timezone,
+    startsAt: toIsoStringOrNull(targetWindow.startsAt),
+    endsAt: toIsoStringOrNull(targetWindow.endsAt),
+    timezone: targetWindow.timezone,
   },
+  target: serializeCanonicalBookingTarget(booking.target),
   payment: {
     required: booking.paymentRequired,
     currency: booking.priceCurrency,
@@ -109,7 +116,8 @@ const toAdminBooking = (booking: AdminBookingRow) => ({
   cancelledAt: toIsoStringOrNull(booking.cancelledAt),
   createdAt: booking.createdAt.toISOString(),
   updatedAt: booking.updatedAt.toISOString(),
-});
+  };
+};
 
 export const listAdminBookings = async (filters: AdminBookingFilters) => {
   const bookings = await findAdminBookings(filters);
@@ -244,6 +252,7 @@ export const rescheduleAdminBookingById = async (
   id: string,
   input: AdminBookingRescheduleInput,
   auditContext?: AuditContext,
+  policyContext: "public_reschedule" | "admin_reschedule" = "admin_reschedule",
 ) => {
   const startsAt = parseTimestamp(input.startsAt, "startsAt");
   const endsAt = parseTimestamp(input.endsAt, "endsAt");
@@ -263,6 +272,7 @@ export const rescheduleAdminBookingById = async (
     startsAt,
     endsAt,
     timezone: input.timezone?.trim() || "",
+    policyContext,
   });
 
   if (result.outcome === "not_found") {

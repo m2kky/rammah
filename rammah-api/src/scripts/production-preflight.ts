@@ -1,6 +1,11 @@
 import { sql } from "drizzle-orm";
 import { env, frontendOrigins } from "../config/env.js";
 import { db, pool } from "../db/client.js";
+import { siteSettings } from "../db/schema/index.js";
+import {
+  defaultBookingPolicySettings,
+  validateBookingPolicyInput,
+} from "../modules/availability/booking-policy.js";
 
 type CheckStatus = "pass" | "warn" | "fail";
 
@@ -214,6 +219,34 @@ const checkDatabase = async () => {
       name: "DATABASE_URL",
       status: "fail",
       message: `Database connection failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    return;
+  }
+
+  try {
+    const storedPolicies = await db
+      .select({
+        minimumAdvanceDays: siteSettings.bookingMinimumAdvanceDays,
+        timezone: siteSettings.bookingDefaultTimezone,
+      })
+      .from(siteSettings);
+    const effectivePolicy = storedPolicies[0] ?? defaultBookingPolicySettings;
+    const policyIssues = validateBookingPolicyInput(effectivePolicy);
+    addCheck({
+      name: "BOOKING_POLICY",
+      status: storedPolicies.length > 1 || policyIssues.length > 0 ? "fail" : "pass",
+      message:
+        storedPolicies.length > 1
+          ? `Expected one global site_settings row; found ${storedPolicies.length}.`
+          : policyIssues.length > 0
+            ? policyIssues.map((issue) => `${issue.field}: ${issue.message}`).join(" ")
+            : `Stored booking policy is valid (${effectivePolicy.minimumAdvanceDays} day(s), ${effectivePolicy.timezone}).`,
+    });
+  } catch (error) {
+    addCheck({
+      name: "BOOKING_POLICY",
+      status: "fail",
+      message: `Stored booking policy could not be validated: ${error instanceof Error ? error.message : String(error)}`,
     });
   }
 };

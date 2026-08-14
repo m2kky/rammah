@@ -73,7 +73,6 @@ const emptySettings = {
   defaultLocale: "en",
   contactEmail: "",
   contactPhone: "",
-  bookingDefaultTimezone: "Africa/Cairo",
 };
 
 const emptyNavigation: AdminNavigationItemPayload = {
@@ -183,9 +182,6 @@ export default function AdminCms() {
   const [defaultLocale, setDefaultLocale] = useState(emptySettings.defaultLocale);
   const [contactEmail, setContactEmail] = useState(emptySettings.contactEmail);
   const [contactPhone, setContactPhone] = useState(emptySettings.contactPhone);
-  const [bookingDefaultTimezone, setBookingDefaultTimezone] = useState(
-    emptySettings.bookingDefaultTimezone,
-  );
   const [socialLinks, setSocialLinks] = useState("{}");
 
   const [navigationItems, setNavigationItems] = useState<AdminNavigationItem[]>([]);
@@ -240,9 +236,6 @@ export default function AdminCms() {
       setDefaultLocale(settings?.defaultLocale ?? emptySettings.defaultLocale);
       setContactEmail(settings?.contactEmail ?? "");
       setContactPhone(settings?.contactPhone ?? "");
-      setBookingDefaultTimezone(
-        settings?.bookingDefaultTimezone ?? emptySettings.bookingDefaultTimezone,
-      );
       setSocialLinks(socialLinksText(settings?.socialLinks ?? {}));
     } catch (loadError) {
       setError(loadError instanceof AdminApiError ? loadError.message : "Could not load site settings.");
@@ -555,14 +548,12 @@ export default function AdminCms() {
         contactEmail: contactEmail.trim() || null,
         contactPhone: contactPhone.trim() || null,
         socialLinks: parseSocialLinks(socialLinks),
-        bookingDefaultTimezone,
       };
       const saved = await saveAdminSiteSettings(payload);
       setSiteName(saved.siteName);
       setDefaultLocale(saved.defaultLocale);
       setContactEmail(saved.contactEmail ?? "");
       setContactPhone(saved.contactPhone ?? "");
-      setBookingDefaultTimezone(saved.bookingDefaultTimezone);
       setSocialLinks(socialLinksText(saved.socialLinks));
       setMessage("Site settings saved.");
     } catch (saveError) {
@@ -771,16 +762,6 @@ export default function AdminCms() {
             <input
               value={contactPhone}
               onChange={(event) => setContactPhone(event.target.value)}
-              className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
-            />
-          </label>
-          <label className="space-y-2">
-            <span className="font-inter text-xs font-semibold uppercase tracking-[0.14em] text-[#102329]/45">
-              Booking timezone
-            </span>
-            <input
-              value={bookingDefaultTimezone}
-              onChange={(event) => setBookingDefaultTimezone(event.target.value)}
               className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
             />
           </label>

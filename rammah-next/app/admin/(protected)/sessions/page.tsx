@@ -1,5 +1,5 @@
-import AdminSessions from "@/components/admin/AdminSessions";
+import { redirect } from "next/navigation";
 
 export default function AdminSessionsPage() {
-  return <AdminSessions />;
+  redirect("/admin/programs");
 }

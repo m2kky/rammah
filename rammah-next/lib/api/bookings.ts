@@ -1,5 +1,8 @@
 import { apiBaseUrl } from "./config";
 import type { PublicOffering } from "./offerings";
+import type { PublicBookingPolicySummary } from "../booking-policy";
+
+export type PublicBookingPolicy = PublicBookingPolicySummary;
 
 type PublicBookingLocation = {
   id: string;
@@ -13,7 +16,7 @@ type PublicBookingLocation = {
 } | null;
 
 export type PublicAvailabilitySlotStatus = "available" | "blocked" | "booked" | "held";
-export type PublicAvailabilitySlotSource = "rule" | "available_override";
+export type PublicAvailabilitySlotSource = "window" | "available_override";
 
 export type PublicAvailabilitySlot = {
   date: string;
@@ -22,7 +25,7 @@ export type PublicAvailabilitySlot = {
   timezone: string;
   status: PublicAvailabilitySlotStatus;
   source: PublicAvailabilitySlotSource;
-  availabilityRuleId: string | null;
+  availabilityWindowId: string | null;
   availabilityOverrideId: string | null;
   remainingCapacity: number;
   bookedCount: number;
@@ -35,18 +38,32 @@ export type PublicAvailabilitySlotPreview = {
     id: string;
     title: string;
     slug: string;
+    schedulingMode: "appointment";
     capacity: number;
-    durationMinutes: number;
+    durationMinutes: number | null;
+    bufferBeforeMinutes: number;
+    bufferAfterMinutes: number;
     status: string;
   };
+  timezone: string;
   dateFrom: string;
   dateTo: string;
+  bookingPolicy: PublicBookingPolicy;
   days: Array<{
     date: string;
     weekday: number;
     slots: PublicAvailabilitySlot[];
     availableCount: number;
     totalCount: number;
+  }>;
+  programBlockers: Array<{
+    occurrenceId: string;
+    programId: string;
+    title: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    readOnly: true;
   }>;
   availableCount: number;
   totalCount: number;
@@ -58,8 +75,17 @@ export type PublicSlotHold = {
   holdToken: string;
   offeringId: string;
   offeringSessionId: string | null;
+  scheduledProgramId: string | null;
   startsAt: string;
   endsAt: string;
+  timezone: string;
+  target: {
+    kind: "appointment" | "scheduled_program";
+    scheduledProgramId: string | null;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+  };
   status: "active" | "expired" | "released" | "converted";
   expiresAt: string;
   createdAt: string;
@@ -67,6 +93,7 @@ export type PublicSlotHold = {
 
 export type PublicOfferingSession = {
   id: string;
+  scheduledProgramId: string;
   offering: {
     id: string;
     title: string;
@@ -98,7 +125,53 @@ export type PublicOfferingSessionPreview = {
   offeringId: string;
   dateFrom: string;
   dateTo: string;
+  bookingPolicy: PublicBookingPolicy;
   sessions: PublicOfferingSession[];
+  generatedAt: string;
+};
+
+export type PublicProgram = {
+  id: string;
+  scheduledProgramId: string;
+  title: string;
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    bookingMode: PublicOffering["bookingMode"];
+  };
+  date: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+  attendanceMode: PublicOffering["attendanceMode"];
+  location: PublicBookingLocation;
+  registrationOpensAt: string | null;
+  registrationClosesAt: string | null;
+  capacity: number;
+  remainingCapacity: number;
+  bookedCount: number;
+  heldCount: number;
+  status: "available" | "full";
+  occurrences: Array<{
+    id: string;
+    date: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
+    attendanceMode: PublicOffering["attendanceMode"];
+    location: PublicBookingLocation;
+    sortOrder: number;
+  }>;
+};
+
+export type PublicProgramPreview = {
+  offeringId: string | null;
+  dateFrom: string;
+  dateTo: string;
+  locale: "en" | "ar";
+  bookingPolicy: PublicBookingPolicy;
+  programs: PublicProgram[];
   generatedAt: string;
 };
 
@@ -125,6 +198,35 @@ export type PublicBooking = {
     endsAt: string | null;
     timezone: string;
   };
+  target:
+    | {
+        kind: "appointment";
+        scheduledProgramId: null;
+        startsAt: string;
+        endsAt: string;
+        timezone: string;
+        occurrences: [];
+      }
+    | {
+        kind: "scheduled_program";
+        scheduledProgramId: string;
+        title: string;
+        timezone: string;
+        occurrences: Array<{
+          id: string;
+          startsAt: string;
+          endsAt: string;
+          timezone: string;
+          attendanceMode: PublicOffering["attendanceMode"];
+          meetUrl: string | null;
+          location: {
+            id: string;
+            name: string;
+            city: string | null;
+            countryCode: string;
+          } | null;
+        }>;
+      };
   paymentRequired: boolean;
   calendar: {
     status: "pending" | "created" | "updated" | "cancelled" | "failed";
@@ -135,6 +237,14 @@ export type PublicBooking = {
   cancelledAt?: string | null;
   createdAt: string;
   updatedAt?: string;
+};
+
+export type PublicBookingStatus = PublicBooking & {
+  changePolicy: {
+    canCancel: boolean;
+    canReschedule: boolean;
+    changeCutoffAt: string | null;
+  };
 };
 
 export type PublicPayment = {
@@ -277,18 +387,32 @@ type ApiErrorPayload = {
   error?: {
     code?: string;
     message?: string;
+    meta?: PublicApiErrorMeta;
   };
+};
+
+export type PublicApiErrorMeta = {
+  earliestBookableDate?: string;
+  minimumAdvanceDays?: number;
+  timezone?: string;
 };
 
 export class PublicApiError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly meta?: PublicApiErrorMeta;
 
-  constructor(input: { status: number; code: string; message: string }) {
+  constructor(input: {
+    status: number;
+    code: string;
+    message: string;
+    meta?: PublicApiErrorMeta;
+  }) {
     super(input.message);
     this.name = "PublicApiError";
     this.status = input.status;
     this.code = input.code;
+    this.meta = input.meta;
   }
 }
 
@@ -318,6 +442,7 @@ const publicRequest = async <T>(path: string, init: RequestInit = {}) => {
       status: response.status,
       code: payload?.error?.code ?? "REQUEST_FAILED",
       message: payload?.error?.message ?? "Request failed.",
+      meta: payload?.error?.meta,
     });
   }
 
@@ -352,9 +477,16 @@ export const fetchPublicAvailabilitySlots = async (input: {
 
 export const createPublicSlotHold = async (input: {
   offeringId: string;
-  offeringSessionId?: string | null;
-  startsAt: string;
-  endsAt: string;
+  target:
+    | {
+        kind: "appointment";
+        startsAt: string;
+        endsAt: string;
+      }
+    | {
+        kind: "scheduled_program";
+        scheduledProgramId: string;
+      };
 }) => {
   const payload = await publicRequest<{ data: PublicSlotHold }>("/public/slot-holds", {
     method: "POST",
@@ -379,6 +511,24 @@ export const fetchPublicOfferingSessions = async (input: {
     `/public/sessions?${params.toString()}`,
   );
 
+  return payload.data;
+};
+
+export const fetchPublicPrograms = async (input: {
+  offeringId?: string;
+  dateFrom: string;
+  dateTo: string;
+  locale?: "en" | "ar";
+}) => {
+  const params = new URLSearchParams({
+    dateFrom: input.dateFrom,
+    dateTo: input.dateTo,
+    locale: input.locale ?? "en",
+  });
+  if (input.offeringId) params.set("offeringId", input.offeringId);
+  const payload = await publicRequest<{ data: PublicProgramPreview }>(
+    `/public/programs?${params.toString()}`,
+  );
   return payload.data;
 };
 
@@ -462,7 +612,7 @@ export const submitPublicPaidBooking = async (input: {
 };
 
 export const fetchPublicBookingStatus = async (publicToken: string) => {
-  const payload = await publicRequest<{ data: PublicBooking }>(
+  const payload = await publicRequest<{ data: PublicBookingStatus }>(
     `/public/bookings/${encodeURIComponent(publicToken)}/status`,
   );
 
@@ -470,7 +620,7 @@ export const fetchPublicBookingStatus = async (publicToken: string) => {
 };
 
 export const cancelPublicBooking = async (publicToken: string) => {
-  const payload = await publicRequest<{ data: PublicBooking }>(
+  const payload = await publicRequest<{ data: PublicBookingStatus }>(
     `/public/bookings/${encodeURIComponent(publicToken)}/cancel`,
     { method: "POST" },
   );
@@ -486,7 +636,7 @@ export const reschedulePublicBooking = async (
     timezone?: string | null;
   },
 ) => {
-  const payload = await publicRequest<{ data: PublicBooking }>(
+  const payload = await publicRequest<{ data: PublicBookingStatus }>(
     `/public/bookings/${encodeURIComponent(publicToken)}/reschedule`,
     { method: "POST", body: JSON.stringify(input) },
   );
