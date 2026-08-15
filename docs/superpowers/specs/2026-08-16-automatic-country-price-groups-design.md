@@ -1,194 +1,221 @@
 # Automatic Country Pricing and Price Groups — Design Specification
 
 **Date:** 2026-08-16  
-**Status:** Proposed, awaiting written review  
-**Scope:** Admin offering prices, public price preview, paid booking checkout, and server-side country detection
+**Status:** Revised after code-level review
+**Scope:** Admin offering prices, public price preview, paid booking checkout, server-side country detection, and price audit snapshots
 
 ## 1. Outcome
 
-An administrator can define one price for one country or share one price across several countries. The customer never selects or submits a country. The API detects the customer's country from trusted request context and uses only the published price group that explicitly contains that country.
+An administrator can define one price for one country or share one price across several countries. The customer never selects or submits a pricing country. The API detects the customer's country from trusted request context and uses only the published price group that explicitly contains that country.
 
-If the country cannot be detected, or the offering has no published price for that country, checkout stops before payment and displays:
+If the country cannot be detected, or the offering has no published price for that country, the normal customer flow stops before creating a paid hold and displays:
 
 > Pricing is not available in your country.
 
 There is no Egypt default, first-price fallback, customer override, or automatic currency conversion.
 
-## 2. Product Rules
+## 2. Decisions
 
-1. A price group belongs to exactly one offering.
-2. A price group has:
+1. A price group belongs to exactly one offering, not to a slot, session, or occurrence.
+2. A price group contains:
    - an administrator-facing name;
    - one currency;
    - one standard amount;
    - an optional early-booking amount and end date/time;
-   - one or more ISO 3166-1 alpha-2 country codes;
+   - one or more ISO 3166-1 alpha-2 countries;
    - `draft`, `published`, or `archived` status.
-3. A price for a single country is represented by a normal group containing one country.
-4. Within an offering, one country can belong to only one non-archived group. This stronger rule prevents a draft conflict from appearing only when publishing.
-5. Amounts are stored in minor units and must be non-negative integers.
-6. The early-booking amount and end date/time are either both set or both absent.
-7. The early-booking amount must be lower than the standard amount.
-8. Publishing a group requires at least one country and a valid three-letter currency.
-9. Editing a group's countries is atomic: either every requested country is assigned or nothing changes.
-10. Archiving a group removes it from public pricing and releases its country assignments for reuse. Existing booking/payment snapshots are unchanged.
+3. A one-country price is a normal group containing one country.
+4. One country can belong to only one non-archived group for the same offering. Draft groups reserve their countries as well as published groups.
+5. Published prices for paid offerings must be positive integers in minor units. Draft groups may temporarily contain zero while being edited.
+6. The early-booking amount and end date/time are either both present or both absent. A published early-booking amount must be positive and lower than the standard amount.
+7. Early-booking date/time is entered in the global booking timezone and stored as UTC.
+8. A group currency must be included in the server's payment-provider currency allowlist.
+9. Group country replacement is atomic: either every requested country is assigned or nothing changes.
+10. Archiving is terminal in this version. An archived group becomes read-only and releases its countries for new groups.
+11. Pricing country and attendance location are separate concepts. A customer may book an event in another country while paying the price assigned to their detected country.
+12. Existing appointment, session, scheduled-program, capacity, global booking lead-time, payment reconciliation, and media/R2 behavior must not change.
 
-## 3. Customer Experience
+## 3. Verified Current State
 
-### 3.1 Country handling
+Verified against the repository on 2026-08-16:
 
-- The booking flow contains no country input, country dropdown, or hidden customer-controlled country value.
-- Public price-preview, booking, and payment contracts do not accept `countryCode`.
-- The API resolves country independently for each relevant request.
-- A submitted legacy `countryCode` property is ignored or rejected by strict validation; it never influences price selection.
+| Area | Current behavior | Required change |
+|---|---|---|
+| Price storage | One `offering_prices` row per country/currency | Treat each row as a group header and add country memberships |
+| Admin API | `/admin/offerings/:id/prices` accepts one `countryCode` | Keep the paths and accept `name` plus `countryCodes[]` |
+| Public catalog | Returns the full published `prices` array | Remove the array from public offering payloads |
+| Price preview | Selects from `offering_prices.country_code` | Join the detected country to active group memberships |
+| Country context | Falls back to `EG` when detection fails | Return `null`; never choose Egypt automatically |
+| Forwarded headers | Accepts four country headers without provider selection | Accept only the configured provider's header |
+| Booking snapshot | Stores country/currency/amounts, not the applied price ID | Add `offering_price_id` to paid bookings |
+| Price-change protection | `PRICE_CHANGED` exists only in the error union | Compare the displayed expectation with the current server price |
+| Locations | Client may filter locations by detected/default country | Show all offering locations; detection may only affect ordering |
 
-### 3.2 Successful price resolution
+## 4. Customer Behavior
+
+### 4.1 Country handling
+
+- The booking flow contains no pricing-country input, selector, or hidden customer-controlled country field.
+- Public country, price-preview, booking, and payment request bodies do not accept `countryCode` as a pricing input.
+- Unknown properties are stripped or rejected by request validation and never influence pricing.
+- The API resolves country independently for price preview and paid booking creation.
+- `GET /public/country` returns nullable detection data and never a default:
+
+```json
+{
+  "data": {
+    "countryCode": null,
+    "detectedCountryCode": null,
+    "source": null
+  }
+}
+```
+
+For a successful detection, `countryCode` and `detectedCountryCode` contain the same uppercase ISO code and `source` is `header` or `geoip`.
+
+### 4.2 Exact price resolution
 
 For a paid offering:
 
 1. Resolve the request country on the server.
-2. Find the one published price group for the offering whose membership contains that exact country.
-3. Apply early-booking pricing when its amount/end-date rule is active; otherwise apply the standard amount.
-4. Return the resolved country, currency, amounts, discount, total, and group/price identifier.
-5. Re-resolve the price during paid booking creation; do not trust the earlier preview.
-6. Store the resolved country and monetary snapshot on the booking/payment records.
+2. Find the one active membership for that offering/country whose group is published.
+3. Apply the early-booking amount when its end time has not passed; otherwise apply the standard amount.
+4. Return the resolved country, group ID, currency, amounts, and an expectation object for checkout comparison.
+5. Re-detect country and re-resolve price during paid booking creation.
+6. Compare the current result with the submitted expectation; never use submitted money as the charged value.
+7. Store the group ID, resolved country, and monetary snapshot on the booking.
+8. Build the payment from the stored booking snapshot.
 
-### 3.3 Unavailable pricing
+### 4.3 Unavailable price
 
-For a paid offering, either of these conditions produces HTTP `422` with code `COUNTRY_PRICE_UNAVAILABLE`:
+If detection fails or no matching published group exists, price preview and paid booking creation return HTTP `422` with:
 
-- the server cannot reliably detect the country; or
-- no published price group explicitly contains the detected country.
+```json
+{
+  "error": {
+    "code": "COUNTRY_PRICE_UNAVAILABLE",
+    "message": "Pricing is not available in your country."
+  }
+}
+```
 
-The frontend must:
+The frontend must show that exact message, disable paid confirmation, and avoid creating a paid hold or payment intent. No other country's price is displayed or charged. If the country becomes unavailable only after a hold was created, the server releases that hold before returning the error.
 
-- show `Pricing is not available in your country.`;
-- disable the action that continues to payment;
-- avoid creating a paid hold or payment intent;
-- keep the user free to select another offering or leave the flow.
+### 4.4 Price changes before confirmation
 
-No other country's price may be shown as a substitute.
+Price preview returns:
 
-### 3.4 Free and quote-only offerings
+```json
+{
+  "expectedPrice": {
+    "priceId": "uuid",
+    "countryCode": "SA",
+    "currency": "SAR",
+    "totalAmountMinor": 15000
+  }
+}
+```
 
-- Free bookings do not require a price group and are not blocked by missing country pricing.
-- Quote-only offerings continue their existing lead/quote flow and do not expose public prices.
-- When a country is detected, it may be stored as booking metadata, but it must not be accepted from the customer.
+The paid-booking body returns this object unchanged. It is an expectation, not an authority. The server independently resolves the current price and compares all four fields.
 
-### 3.5 Offline locations
+If group, country, currency, or total changed, the server returns HTTP `409` with code `PRICE_CHANGED` and the new public price preview in `details.currentPrice`. The frontend replaces the displayed amount and requires a second explicit confirmation. The failed request does not convert the hold or create a booking/payment. It keeps the original hold active, stores its ID/token in client state, and reuses that same hold for the second confirmation; it must not create a competing hold for the same slot. Normal hold expiry still applies.
 
-Location eligibility uses the same server-detected country. The UI must not restore a country selector. If an offering is offline-only and no eligible location exists for the detected country, show a dedicated unavailable-location message rather than silently showing locations from other countries.
+### 4.5 Free and quote-only offerings
 
-## 4. Administrator Experience
+- Free bookings require no price group and are not blocked by missing country pricing.
+- Quote-only offerings keep their existing quote flow and expose no public prices.
+- A detected country may be stored as metadata on free/quote requests, but is never accepted from the customer.
 
-Replace the current one-row-per-country price editor with a **Price groups** section on the offering edit page.
+### 4.6 Attendance locations
 
-Each group editor contains:
+Detected pricing country must not restrict attendance locations. The customer sees every published location assigned to the offering, or the fixed location of a scheduled session/program. Matching-country locations may be sorted first, but locations in other countries remain selectable. The server validates only that the submitted location is published and assigned to the booking target; it does not require location country to equal pricing country.
 
-- Group name, for example `GCC`, `Egypt`, or `Europe EUR`;
-- Countries, as a searchable multi-select;
-- Currency;
+## 5. Administrator Behavior
+
+The existing offering pricing section becomes **Price groups** without creating a second admin subsystem.
+
+Each editor contains:
+
+- Group name, for example `Egypt`, `GCC`, or `Europe EUR`;
+- searchable country multi-select;
+- currency selected from the provider-backed allowlist;
 - Standard price;
-- Optional early-booking price;
-- Optional early-booking end date/time;
-- Status;
+- optional Early-booking price;
+- optional Early-booking end date/time in the global booking timezone;
+- status;
 - Save and Archive actions.
 
-The country control must support both workflows without separate concepts:
+The same control supports one or many countries. Archived groups are visible for audit but cannot be edited or restored in this version.
 
-- select one country to create an individual-country price;
-- select several countries to share the same price.
+If a country belongs to another non-archived group for the same offering, saving returns HTTP `409` with `PRICE_COUNTRY_CONFLICT` and identifies each conflicting country and group. The server never moves assignments silently.
 
-The list view shows group name, countries, currency, standard amount, early-booking summary, and status. Country names should be displayed to administrators, while the API stores canonical uppercase two-letter codes.
+The list shows name, full country list, currency, standard amount, early-booking summary, and status. The UI displays country names; the API stores uppercase codes.
 
-If a selected country already belongs to another non-archived group for the same offering, saving fails with HTTP `409` and identifies the conflicting country/group. The administrator can remove it from the old group or archive the old group before assigning it again. The server must never silently steal the assignment.
+## 6. Data Model
 
-## 5. Data Model
-
-The existing `offering_prices` rows become price-group headers to minimize migration and preserve stable identifiers.
-
-### 5.1 `offering_prices` changes
+### 6.1 Extend `offering_prices` as the group header
 
 Add:
 
-- `name varchar(120) not null`
+- `name varchar(120) not null` after backfill;
+- unique `(id, offering_id)` to support a composite membership foreign key.
 
-Retain:
+Retain the existing ID, offering, currency, amounts, early-booking fields, status, and timestamps.
 
-- `id`
-- `offering_id`
-- `currency`
-- `base_amount_minor`
-- `early_bird_amount_minor`
-- `early_bird_ends_at`
-- `status`
-- timestamps
+Keep legacy `country_code` as a non-authoritative compatibility column for one release. New writes set it to the alphabetically first active member country. Public/admin group reads use memberships, never this column.
 
-Keep the existing non-null `country_code` column only as a temporary compatibility field during rollout. Until it is removed, every group write must set it deterministically to the alphabetically first member country. New application reads must use the membership table; this compatibility value is never authoritative. A later cleanup migration can remove the legacy column and its old unique index after production verification.
+Drop `offering_prices_country_unique` in the initial migration after successful membership backfill. Keeping it would prevent a country from being reused after its old group is archived. The membership partial unique index replaces it.
 
-### 5.2 New `offering_price_countries` table
+### 6.2 Add `offering_price_countries`
 
-Columns:
+```sql
+create table offering_price_countries (
+  price_id uuid not null,
+  offering_id uuid not null,
+  country_code varchar(2) not null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (price_id, country_code),
+  foreign key (price_id, offering_id)
+    references offering_prices (id, offering_id)
+    on delete cascade,
+  check (country_code ~ '^[A-Z]{2}$')
+);
 
-- `price_id uuid not null` → `offering_prices.id` with cascade delete;
-- `offering_id uuid not null` → `offerings.id`;
-- `country_code varchar(2) not null`;
-- `active boolean not null default true`;
-- `created_at timestamptz not null`.
-- `updated_at timestamptz not null`.
+create unique index offering_price_countries_active_unique
+  on offering_price_countries (offering_id, country_code)
+  where active = true;
 
-Constraints and indexes:
+create index offering_price_countries_price_idx
+  on offering_price_countries (price_id);
+```
 
-- primary key `(price_id, country_code)`;
-- partial unique `(offering_id, country_code) where active = true`;
-- uppercase two-letter country-code check;
-- index on `price_id`;
-- index on `(offering_id, country_code)` for public lookup.
+The API also validates codes against a canonical ISO 3166-1 allowlist; the database regex is only a format guard.
 
-The duplicated `offering_id` exists to make the no-overlap invariant enforceable by the database. Repository transactions must verify that it matches the referenced price's offering.
+Draft and published groups have active memberships. Archiving changes group status and deactivates all memberships in one transaction. Removed memberships are deactivated, not deleted, so audit history remains. Re-adding the same country to the same group reactivates its row.
 
-### 5.3 Archive behavior
+### 6.3 Extend `bookings`
 
-Archiving a group and deactivating its country-membership rows happen in one database transaction. The inactive rows preserve the archived group's historical country list while the partial unique index releases those countries for another group. If a country is later returned to the same group, its row is reactivated instead of duplicated. The audit log stores the before/after group, including the country list. Existing bookings already hold monetary snapshots, so releasing a country does not rewrite history.
+Add:
 
-## 6. Migration and Rollout
+- `offering_price_id uuid null references offering_prices(id)`;
+- index on `offering_price_id`.
 
-### 6.1 Preflight
-
-Before backfill, detect any offering/country combination with multiple non-archived price rows, including rows that differ only by currency. The new model permits exactly one active group per offering/country, so migration must stop with the conflicting record IDs. It must not choose a winner silently.
-
-### 6.2 Backfill
-
-First add `name` as nullable (or with a safe temporary default), perform the backfill, then enforce `not null`. For every existing `offering_prices` row:
-
-1. Set `name` to the country display name or existing country code when no name is available.
-2. Insert one `offering_price_countries` membership from its legacy `country_code`; mark it active unless the source row is archived.
-3. Preserve currency, amounts, early-booking settings, status, timestamps, and ID.
-
-This converts every existing country price into a one-country group without changing public amounts.
-
-### 6.3 Deployment order
-
-1. Deploy the additive schema and successful backfill.
-2. Deploy API code that reads memberships and writes groups transactionally.
-3. Deploy the admin group editor and customer flow without country input.
-4. Verify production requests and audit logs.
-5. Remove legacy application compatibility code in a later release; do not drop the legacy column in the initial rollout.
-
-All steps must be safe for a rolling deployment. During the compatibility window, the write adapter must populate the legacy `country_code` with the alphabetically first group country solely to satisfy the old non-null schema and old-code compatibility; it is not authoritative and must never be used for public selection after the API cutover.
+Existing and free bookings remain null. Every newly created paid booking must store a non-null applied group ID plus the existing country, currency, base, discount, tax, and total snapshots. Payment retries continue using the booking snapshot and do not reprice an already-created booking.
 
 ## 7. API Contracts
 
-### 7.1 Admin
+### 7.1 Keep the existing admin paths
 
-Introduce price-group semantics while preserving the existing offering nesting:
+- `GET /admin/offerings/:id/prices`
+- `POST /admin/offerings/:id/prices`
+- `PATCH /admin/offerings/:id/prices/:priceId`
+- `DELETE /admin/offerings/:id/prices/:priceId` (archive)
 
-- `GET /admin/offerings/:id/price-groups`
-- `POST /admin/offerings/:id/price-groups`
-- `PATCH /admin/offerings/:id/price-groups/:groupId`
-- `DELETE /admin/offerings/:id/price-groups/:groupId` (archive)
+No `/price-groups` aliases are added.
 
-Create/update body:
+Create/update payload:
 
 ```json
 {
@@ -202,120 +229,215 @@ Create/update body:
 }
 ```
 
-Validation normalizes country/currency codes to uppercase, removes duplicate countries inside the payload, and rejects an empty final country list. Create, update, membership replacement, archive, conflict checking, and audit writing each run transactionally.
+For one compatibility release, create/update may accept legacy `countryCode` only when `countryCodes` is absent and transform it to a one-item array. Supplying both is a validation error. Responses always use `name` and `countryCodes[]`.
 
-The old `/prices` admin endpoints may remain as temporary compatibility aliases, but the new dashboard must use `/price-groups`. Their removal is a separate cleanup task.
+Create accepts only `draft` or `published`. Patch accepts only `draft` or `published` for a non-archived group. `DELETE` is the only way to archive, and all mutations against an archived group return `409`.
 
-### 7.2 Public price preview
+`GET /prices` returns:
 
-`POST /public/booking/price-preview` accepts offering/booking context only. It has no `countryCode` field.
+```json
+{
+  "data": [],
+  "meta": {
+    "supportedCurrencies": ["EGP"]
+  }
+}
+```
 
-The response may expose `resolvedCountryCode` so the UI can explain currency/availability, but no public request may override it. `fallbackApplied` is removed or permanently omitted; fallback is no longer a supported behavior.
+The currency list comes from `PAYMENT_SUPPORTED_CURRENCIES`, is normalized/deduplicated by the API, and is the same list used for server validation. Production must configure it to match the merchant account. The default development value is `EGP`.
 
-The current public offering payload exposes a list of published country prices. It must no longer be used as the pricing authority or sent as a complete price matrix. During rollout it should either omit `prices` or expose only the server-resolved public price for the current request. Checkout always uses the dedicated preview and server-side re-resolution.
+### 7.2 Public offerings
 
-### 7.3 Booking/payment
+Remove `prices` from public offering list, detail, and booking-config payloads and from `PublicOffering`. The frontend does not currently consume this array. The dedicated price-preview endpoint is the only public price source.
 
-Public paid booking/payment bodies have no `countryCode`. The route supplies the server-detected country to the service. The service performs an exact membership lookup again inside the booking/payment workflow and stores the resulting snapshot.
+### 7.3 Public price preview
 
-Any preview-to-checkout price change follows the existing `PRICE_CHANGED` behavior; country-group support must not weaken that protection.
+`POST /public/booking/price-preview` accepts `offeringId` and the existing optional coupon field only. It contains no country. The response removes `requestedCountryCode`, `countrySource`, and `fallbackApplied`; it returns `resolvedCountryCode`, price/group details, and `expectedPrice`.
 
-## 8. Country Detection and Trust Boundary
+### 7.4 Paid booking
 
-The existing resolver can use Cloudflare/Vercel country headers and GeoIP fallback, but forwarded headers are trustworthy only when the infrastructure establishes their source.
+`POST /public/payments/paid-bookings` adds required `expectedPrice` for paid confirmation and contains no country. The route supplies trusted detection to the service. The service resolves the current group before converting the hold, compares expectations, and writes the booking snapshot transactionally.
 
-Production requirements:
+## 8. Country Detection Trust Boundary
 
-1. Customer traffic reaches the API through Cloudflare/the configured reverse proxy.
-2. The edge or Coolify proxy strips customer-supplied country headers before forwarding.
-3. The application accepts `CF-IPCountry` or equivalent provider headers only when the request came through the configured trusted proxy path.
-4. If no trusted provider country is available, use the server-side GeoIP lookup from the effective client IP.
-5. If neither method gives a valid ISO country, pricing is unavailable; never default to `EG`.
+Add configuration:
 
-The implementation must add a configurable trusted-proxy/provider policy rather than assuming any inbound `CF-IPCountry` header is genuine. Automated tests must demonstrate that an untrusted spoofed header cannot choose a cheaper price.
+- `COUNTRY_HEADER_PROVIDER=cloudflare|vercel|none`, default `none`;
+- `TRUST_PROXY_HOPS`, integer, default `0` locally and explicitly configured in production.
 
-## 9. Concurrency and Consistency
+Behavior:
 
-- The database unique constraint is the final guard against overlapping country assignments.
-- Group create/update catches unique violations and returns a stable `PRICE_COUNTRY_CONFLICT` response with conflicting codes.
-- Membership replacement occurs in one transaction, deactivates removed rows, and upserts/reactivates requested rows while locking the group/current membership rows.
-- Public price lookup joins active `offering_price_countries` rows to a `published` group and requires exactly one result.
-- Paid booking creation rechecks availability and price; it never accepts amounts, currency, group ID, or country from the browser as authoritative.
-- Bookings and payments retain their existing monetary snapshots, so later group edits affect only new bookings.
+- `cloudflare` accepts only `CF-IPCountry`;
+- `vercel` accepts only `X-Vercel-IP-Country`;
+- `none` accepts no country header and uses GeoIP only;
+- remove support for generic `X-Geo-Country` and `X-Country-Code`;
+- invalid/unknown provider values fail application startup;
+- if the trusted provider header is missing or invalid, use GeoIP on the effective client IP;
+- if neither produces a valid ISO country, return no detection and never default to Egypt.
 
-## 10. Error Semantics
+Production infrastructure must restrict the API origin to Cloudflare/the configured reverse proxy and strip inbound provider headers before adding its trusted value. `TRUST_PROXY_HOPS` must match the actual Coolify proxy chain; it cannot remain an unconditional hardcoded `1`.
 
-| Condition | HTTP | Code | Customer/Admin behavior |
+## 9. Migration and Deployment
+
+### 9.1 Preflight
+
+The migration command reports counts and stops before writes if it finds:
+
+- more than one non-archived price for the same offering/country, including different currencies;
+- an invalid/non-ISO country code;
+- negative amounts;
+- a published paid price with standard amount `0`;
+- incomplete early-booking pairs;
+- early-booking amount greater than or equal to the standard amount;
+- a currency absent from `PAYMENT_SUPPORTED_CURRENCIES`.
+
+Existing price rows with `status = scheduled` are reported and deterministically converted to `draft`; this preserves their current non-public behavior. The audit log records each conversion.
+
+### 9.2 Backfill
+
+1. Add `name` as nullable.
+2. Add the parent composite unique key, memberships table, and nullable booking FK.
+3. For every price row, set `name` to the country display name or code.
+4. Insert one membership from legacy `country_code`, active unless the group is archived.
+5. Convert legacy `scheduled` price status to `draft` and record it.
+6. Enforce `name not null`.
+7. Verify row counts and membership uniqueness.
+8. Drop the old country/currency unique index.
+9. Create/verify the active membership partial unique index.
+
+All IDs, currency, amounts, early-booking values, and timestamps are preserved.
+
+### 9.3 Deployment sequence
+
+1. Set `ADMIN_PRICE_WRITES_ENABLED=false`; admin reads stay available and write endpoints return `503` with a maintenance message.
+2. Run preflight and database migration.
+3. Deploy API code that reads memberships and supports both new and legacy admin inputs.
+4. Run API smoke tests, then enable admin price writes.
+5. Deploy the new admin/customer frontend.
+6. Verify exact-match pricing, unsupported-country blocking, price changes, archive/reuse, and payment retries.
+7. Remove legacy input and `offering_prices.country_code` in a later cleanup release.
+
+Old and new admin writers must never run concurrently. This explicit short write pause replaces the previous unsupported claim that the migration is fully rolling-safe.
+
+### 9.4 Rollback
+
+- Before enabling writes, rollback is application rollback plus schema retention; additive tables remain harmless.
+- After multi-country groups are created, do not roll back to the original one-country application because it cannot represent all memberships.
+- Roll back only to the compatibility API from deployment step 3, disable admin writes, and keep the migrated schema.
+- Full database reversal requires a pre-migration backup and maintenance window. Recreating the old unique index is allowed only after a preflight proves there are no archived/header conflicts.
+- Existing bookings/payments are never rewritten during rollback.
+
+## 10. Concurrency and Consistency
+
+- Create/update/archive runs in a transaction.
+- Membership replacement locks the group and current memberships, deactivates removed rows, then upserts/reactivates requested rows.
+- The partial unique index is the final overlap guard; unique violations map to `PRICE_COUNTRY_CONFLICT`.
+- Public lookup joins active memberships to one published group by offering and exact detected country.
+- Paid confirmation rechecks both the slot hold and current price before conversion. A changed price preserves the owned hold for reconfirmation; an unavailable country releases it.
+- Submitted country, group, currency, and money are never charged as authoritative values.
+- An already-created booking/payment retry uses its immutable monetary snapshot.
+
+## 11. Errors
+
+| Condition | HTTP | Code | Behavior |
 |---|---:|---|---|
-| Country unknown or no matching published group | 422 | `COUNTRY_PRICE_UNAVAILABLE` | Block payment and show unavailable message |
-| Country belongs to another active group | 409 | `PRICE_COUNTRY_CONFLICT` | Show conflicting countries/group in admin |
-| Invalid country/currency/amount pair | 400 | Existing validation code | Highlight invalid fields |
-| Early-booking pair invalid | 400 | Existing validation code | Explain that amount/date are paired and discount is lower |
-| Price changes before payment | 409 | `PRICE_CHANGED` | Refresh price and require confirmation |
+| Country unknown or no published group | 422 | `COUNTRY_PRICE_UNAVAILABLE` | Block paid confirmation |
+| Country already reserved by another group | 409 | `PRICE_COUNTRY_CONFLICT` | Identify conflicting countries/groups |
+| Displayed expectation differs from current price | 409 | `PRICE_CHANGED` | Return current price and require reconfirmation |
+| Invalid ISO country, currency, amount, or early pair | 400 | `VALIDATION_ERROR` | Highlight exact admin fields |
+| Admin price writes paused for migration | 503 | `SERVICE_UNAVAILABLE` | Show maintenance message |
 
-## 11. Testing Requirements
+## 12. Implementation Slices
 
-### Unit tests
+```text
+#1 Schema + preflight
+       |
+       +--> #2 Group repository/service + admin compatibility
+       |          |
+       |          +--> #3 Admin Price groups UI
+       |
+       +--> #4 Trusted detection + strict public preview
+                  |
+                  +--> #5 Paid expectation check + booking snapshot
+                             |
+                             +--> #6 Public contract cleanup + browser QA
+```
 
-- Manual customer country input cannot affect price selection.
-- Exact detected-country membership selects the correct group.
-- Unknown detection and missing membership return `COUNTRY_PRICE_UNAVAILABLE`.
-- Egypt/first-row fallback is absent.
-- Early-booking validation and calculation remain correct.
-- Country lists normalize, deduplicate, and reject invalid codes.
+The schema must land before either API branch. Admin and public API work can then proceed independently. Checkout comparison depends on strict public preview. Browser QA comes last because it exercises all preceding contracts.
 
-### API/integration tests
+## 13. Files Expected to Change
 
-- Create one-country and multi-country groups.
-- Updating a group replaces memberships atomically.
-- Two groups cannot claim the same country for one offering.
-- The same country can be used by different offerings.
-- Archiving releases countries and excludes the group from public pricing.
-- Migration backfills every existing price without amount/ID loss.
-- Migration preflight reports legacy country/currency conflicts.
-- Paid booking re-resolves and stores the exact country/price snapshot.
-- Spoofed public body/query country values are rejected or ignored.
-- Untrusted forwarded country headers cannot select a price.
+| File/area | Change |
+|---|---|
+| `rammah-api/src/db/schema/index.ts` | Group memberships and booking price FK |
+| `rammah-api/drizzle/*` | Preflight/backfill/index migration |
+| `rammah-api/src/config/env.ts` | Provider, proxy, currency, and write-pause config |
+| `rammah-api/src/app.ts` | Configured trust-proxy hops |
+| `rammah-api/src/shared/geo/request-country.ts` | Provider-specific trusted detection, no default |
+| `rammah-api/src/modules/country/public-country.routes.ts` | Nullable country context |
+| `rammah-api/src/modules/offerings/admin-offerings.*` | Group DTOs, transactions, conflicts, audit |
+| `rammah-api/src/modules/offerings/offerings.*` | Remove public price matrix |
+| `rammah-api/src/modules/pricing/public-price-preview.*` | Membership lookup and expectation response |
+| `rammah-api/src/modules/payments/public-payments.*` | Reprice/compare and store group snapshot |
+| `rammah-api/src/shared/errors/app-error.ts` | Stable country/group/maintenance codes |
+| `rammah-api/src/modules/openapi/openapi.routes.ts` | Updated contracts without new route aliases |
+| `rammah-next/components/admin/AdminOfferingPricing.tsx` | Group editor and multi-country UI |
+| `rammah-next/components/BookingFlow.tsx` | No default/input, strict unavailable and changed-price states |
+| `rammah-next/lib/api/admin.ts` | Group DTO and response metadata |
+| `rammah-next/lib/api/bookings.ts` | Expected-price contract and nullable country context |
+| `rammah-next/lib/api/offerings.ts` | Remove public `prices`, keep location choice independent |
 
-### Frontend tests
+## 14. Testing Requirements
 
-- Customer booking flow has no country input.
-- Unavailable country pricing disables checkout and shows the approved message.
-- Admin can edit one or several countries in a group.
-- Conflict responses identify affected countries.
-- Group list and early-booking labels are understandable without internal terms.
+Minimum added coverage:
 
-### Release verification
+| Layer | Minimum | Cases |
+|---|---:|---|
+| Unit | 12 | provider headers, no EG fallback, ISO/currency/amount rules, early pricing, expectation comparison |
+| API integration | 10 | one/multi-country CRUD, overlap, archive/reuse, migration, strict preview, paid snapshot, price change |
+| Frontend component/API | 6 | no country input/default, group editor, unavailable price, changed-price reconfirmation with hold reuse, locations unaffected |
+| Browser E2E | 4 | supported paid checkout, unsupported country, mid-flow price edit, foreign-location booking |
 
-- API and Next.js type checks;
-- targeted unit/integration suites;
-- full lint/test suite;
-- production builds;
-- browser QA for admin group creation and public allowed/blocked checkout cases.
+Release verification also requires API/Next type checks, lint, full tests, production builds, migration dry-run against a database copy, and post-deploy smoke tests.
 
-## 12. Compatibility With Future Booking Types
+## 15. What Is Working and Must Not Change
 
-Price groups are attached to an offering, not to appointment slots. Therefore the same model supports appointments, courses, workshops, scheduled programs, and events. Scheduling decides what can be booked; the price group decides what a detected country pays. If a future offering needs tiered tickets, per-session overrides, taxes, or add-ons, those should be separate pricing layers and must not overload country membership.
+- Global booking advance-days rules continue to decide the earliest bookable date.
+- Capacity, holds, appointment sessions, programs, workshops, and event occurrences continue to decide availability.
+- Payment callback signature verification, reconciliation, idempotency, and retry-from-booking-snapshot remain intact.
+- Free and quote-only booking modes remain independent of country pricing.
+- Historical booking/payment monetary values remain immutable.
+- CMS/R2 media storage is unrelated and unchanged.
 
-## 13. Non-Goals
+## 16. Future Compatibility
 
-- Customer-selected billing country for price choice;
-- exchange-rate conversion or automatic currency selection;
-- tax/VAT calculation;
-- coupons, bundles, tiers, or ticket classes;
-- location selection by a manually entered country;
+Because price groups belong to an offering, the model works for appointments, courses, workshops, programs, and events. Scheduling decides what is bookable; country membership decides the detected customer's price. Future ticket tiers, add-ons, taxes, per-occurrence overrides, and coupons remain separate pricing layers.
+
+## 17. Non-Goals
+
+- customer-selected pricing/billing country;
+- exchange-rate conversion;
+- automatic currency choice outside configured groups;
+- tax/VAT implementation;
+- coupons, bundles, ticket tiers, or add-ons;
+- restricting attendance locations to pricing country;
 - changing historical booking/payment amounts;
-- R2/media-storage changes.
+- R2/media changes.
 
-## 14. Acceptance Criteria
+## 18. Acceptance Criteria
 
-The feature is complete when:
-
-1. An admin can create a group for one or many countries and manage it from the offering page.
-2. No customer-facing request or input controls country pricing.
-3. A supported detected country receives its exact published group price.
-4. An unsupported or unknown country cannot continue to payment and sees the approved message.
-5. Country overlap is prevented transactionally and by a database constraint.
-6. Existing prices are preserved as one-country groups, with conflicts reported rather than silently resolved.
-7. Paid bookings store immutable resolved-country and money snapshots.
-8. The behavior is covered by unit, integration, frontend, build, and browser QA checks.
+1. Admin can create and edit a one-country or multi-country group through existing `/prices` endpoints and UI.
+2. The database prevents two non-archived groups for one offering from claiming the same country.
+3. Archiving a group releases its countries without changing historical bookings.
+4. No public request or UI field can choose pricing country.
+5. Failed country detection returns nullable context, never Egypt.
+6. Supported detected country receives only its exact published group price.
+7. Unknown/unsupported country receives `COUNTRY_PRICE_UNAVAILABLE`, creates no paid hold/payment, and sees the approved message.
+8. A preview-to-confirmation change returns `PRICE_CHANGED`; no booking/payment is created until the customer confirms the new value using the same still-owned hold.
+9. New paid bookings store non-null group ID, resolved country, and exact monetary snapshot; retries use that snapshot.
+10. Public offering endpoints no longer expose every country's prices.
+11. A customer can book a published location in another country without changing pricing country.
+12. Existing prices migrate to one-country groups with IDs and money intact; conflicts stop preflight with record IDs.
+13. Scheduled legacy prices become audited drafts and remain non-public.
+14. Only the configured provider header is trusted; invalid detection never falls back.
+15. All minimum tests, type checks, lint, builds, migration dry-run, and browser QA pass.
