@@ -1,0 +1,2 @@
+ALTER TABLE "media_assets" DROP CONSTRAINT "media_assets_source_fields";--> statement-breakpoint
+ALTER TABLE "media_assets" ADD CONSTRAINT "media_assets_source_fields" CHECK (("media_assets"."source_type" = 'r2' AND "media_assets"."storage_key" IS NOT NULL) OR ("media_assets"."source_type" = 'external' AND ("media_assets"."public_url" ~ '^https://' OR "media_assets"."public_url" ~ '^/[A-Za-z0-9]')));

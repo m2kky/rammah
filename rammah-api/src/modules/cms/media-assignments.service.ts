@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, max, ne, sql } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   globalMediaAssignments,
@@ -36,6 +36,11 @@ type SetGlobalMediaSlotInput = {
   assignmentSetId: string;
   slotKey: string;
   assignments: MediaAssignmentInput[];
+};
+
+export type ReplaceSectionMediaInput = {
+  pageSectionId: string;
+  slots: Record<string, MediaAssignmentInput[]>;
 };
 
 const cmsError = (
@@ -140,6 +145,66 @@ export const setSectionMediaSlot = async (input: SetSectionMediaSlotInput) => {
   });
 };
 
+export const replaceSectionMedia = async (input: ReplaceSectionMediaInput) => {
+  const [owner] = await db
+    .select({ id: pageSections.id, sectionType: pageSections.sectionType })
+    .from(pageSections)
+    .where(eq(pageSections.id, input.pageSectionId))
+    .limit(1);
+  if (!owner) throw notFound("Page section was not found.");
+
+  const normalizedSlots = Object.entries(input.slots);
+  for (const [slotKey, assignments] of normalizedSlots) {
+    const slot = resolveSectionMediaSlot(owner.sectionType, slotKey);
+    if (!slot) {
+      throw cmsError(
+        "INVALID_MEDIA_SLOT",
+        `Section type ${owner.sectionType} does not define media slot ${slotKey}.`,
+      );
+    }
+    await validateAssignments(slot, assignments);
+  }
+
+  return db.transaction(async (tx) => {
+    await tx.delete(sectionMediaAssignments)
+      .where(eq(sectionMediaAssignments.pageSectionId, input.pageSectionId));
+    const values = normalizedSlots.flatMap(([slotKey, assignments]) =>
+      assignments.map((assignment, sortOrder) => ({
+        pageSectionId: input.pageSectionId,
+        slotKey,
+        mediaAssetId: assignment.mediaAssetId,
+        sortOrder,
+        altTextOverride: normalizeAltText(assignment.altTextOverride),
+        decorative: assignment.decorative ?? false,
+      })));
+    if (values.length === 0) return [];
+    return tx.insert(sectionMediaAssignments).values(values).returning();
+  });
+};
+
+export const listSectionMedia = async (pageSectionId: string) =>
+  db.select({
+    id: sectionMediaAssignments.id,
+    slotKey: sectionMediaAssignments.slotKey,
+    sortOrder: sectionMediaAssignments.sortOrder,
+    altTextOverride: sectionMediaAssignments.altTextOverride,
+    decorative: sectionMediaAssignments.decorative,
+    assetId: mediaAssets.id,
+    displayName: mediaAssets.displayName,
+    mediaKind: mediaAssets.mediaKind,
+    mimeType: mediaAssets.mimeType,
+    publicUrl: mediaAssets.publicUrl,
+    altText: mediaAssets.altText,
+    width: mediaAssets.width,
+    height: mediaAssets.height,
+    durationMs: mediaAssets.durationMs,
+    processingState: mediaAssets.processingState,
+    status: mediaAssets.status,
+  }).from(sectionMediaAssignments)
+    .innerJoin(mediaAssets, eq(mediaAssets.id, sectionMediaAssignments.mediaAssetId))
+    .where(eq(sectionMediaAssignments.pageSectionId, pageSectionId))
+    .orderBy(asc(sectionMediaAssignments.slotKey), asc(sectionMediaAssignments.sortOrder));
+
 export const createGlobalMediaAssignmentSet = async (definitionKey: string) => {
   if (!globalMediaDefinitions.some(({ key }) => key === definitionKey)) {
     throw cmsError("INVALID_MEDIA_SLOT", `Unknown global media definition ${definitionKey}.`);
@@ -224,6 +289,154 @@ export const setGlobalMediaSlot = async (input: SetGlobalMediaSlotInput) => {
       .returning();
   });
 };
+
+export const replaceGlobalMedia = async (input: {
+  assignmentSetId: string;
+  slots: Record<string, MediaAssignmentInput[]>;
+}) => {
+  const [owner] = await db.select().from(globalMediaAssignmentSets)
+    .where(eq(globalMediaAssignmentSets.id, input.assignmentSetId)).limit(1);
+  if (!owner) throw notFound("Global media assignment set was not found.");
+  if (owner.status === "published") {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "Published global media versions are immutable; create a new draft version.",
+      statusCode: httpStatus.conflict,
+    });
+  }
+  const normalizedSlots = Object.entries(input.slots);
+  for (const [slotKey, assignments] of normalizedSlots) {
+    const slot = resolveGlobalMediaSlot(owner.definitionKey, slotKey);
+    if (!slot) {
+      throw cmsError(
+        "INVALID_MEDIA_SLOT",
+        `Global definition ${owner.definitionKey} does not define media slot ${slotKey}.`,
+      );
+    }
+    await validateAssignments(slot, assignments);
+  }
+  return db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(globalMediaAssignmentSets)
+      .where(eq(globalMediaAssignmentSets.id, owner.id)).limit(1).for("update");
+    if (!locked) throw notFound("Global media assignment set was not found.");
+    if (locked.status === "published") {
+      throw new AppError({
+        code: "CONFLICT",
+        message: "Published global media versions are immutable; create a new draft version.",
+        statusCode: httpStatus.conflict,
+      });
+    }
+    await tx.delete(globalMediaAssignments)
+      .where(eq(globalMediaAssignments.assignmentSetId, owner.id));
+    const values = normalizedSlots.flatMap(([slotKey, assignments]) =>
+      assignments.map((assignment, sortOrder) => ({
+        assignmentSetId: owner.id,
+        slotKey,
+        mediaAssetId: assignment.mediaAssetId,
+        sortOrder,
+        altTextOverride: normalizeAltText(assignment.altTextOverride),
+        decorative: assignment.decorative ?? false,
+      })));
+    if (values.length === 0) return [];
+    return tx.insert(globalMediaAssignments).values(values).returning();
+  });
+};
+
+export const listGlobalMediaVersions = async () => {
+  const sets = await db.select().from(globalMediaAssignmentSets)
+    .orderBy(asc(globalMediaAssignmentSets.definitionKey), desc(globalMediaAssignmentSets.version));
+  if (sets.length === 0) return [];
+  const assignments = await db.select({
+    assignmentSetId: globalMediaAssignments.assignmentSetId,
+    slotKey: globalMediaAssignments.slotKey,
+    sortOrder: globalMediaAssignments.sortOrder,
+    altTextOverride: globalMediaAssignments.altTextOverride,
+    decorative: globalMediaAssignments.decorative,
+    assetId: mediaAssets.id,
+    displayName: mediaAssets.displayName,
+    mediaKind: mediaAssets.mediaKind,
+    mimeType: mediaAssets.mimeType,
+    publicUrl: mediaAssets.publicUrl,
+    altText: mediaAssets.altText,
+    width: mediaAssets.width,
+    height: mediaAssets.height,
+    durationMs: mediaAssets.durationMs,
+    processingState: mediaAssets.processingState,
+    status: mediaAssets.status,
+  }).from(globalMediaAssignments)
+    .innerJoin(mediaAssets, eq(mediaAssets.id, globalMediaAssignments.mediaAssetId))
+    .where(inArray(globalMediaAssignments.assignmentSetId, sets.map(({ id }) => id)))
+    .orderBy(asc(globalMediaAssignments.slotKey), asc(globalMediaAssignments.sortOrder));
+  return sets.map((set) => ({
+    ...set,
+    assignments: assignments.filter(({ assignmentSetId }) => assignmentSetId === set.id),
+  }));
+};
+
+export const publishGlobalMediaVersion = async (assignmentSetId: string) =>
+  db.transaction(async (tx) => {
+    const [owner] = await tx.select().from(globalMediaAssignmentSets)
+      .where(eq(globalMediaAssignmentSets.id, assignmentSetId)).limit(1).for("update");
+    if (!owner) throw notFound("Global media assignment set was not found.");
+    if (owner.status === "published") return owner;
+    const definition = globalMediaDefinitions.find(({ key }) => key === owner.definitionKey);
+    if (!definition) throw cmsError("INVALID_MEDIA_SLOT", "Global media definition is unavailable.");
+    const assignments = await tx.select({
+      slotKey: globalMediaAssignments.slotKey,
+      decorative: globalMediaAssignments.decorative,
+      altTextOverride: globalMediaAssignments.altTextOverride,
+      mediaKind: mediaAssets.mediaKind,
+      processingState: mediaAssets.processingState,
+      status: mediaAssets.status,
+      altText: mediaAssets.altText,
+    }).from(globalMediaAssignments)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, globalMediaAssignments.mediaAssetId))
+      .where(eq(globalMediaAssignments.assignmentSetId, owner.id));
+    const errors: Array<{ field: string; message: string }> = [];
+    for (const slot of definition.slots) {
+      const selected = assignments.filter(({ slotKey }) => slotKey === slot.key);
+      if (slot.required && selected.length === 0) {
+        errors.push({ field: `slots.${slot.key}`, message: `${slot.label} is required.` });
+      }
+      for (const assignment of selected) {
+        if (!slot.accepts.includes(assignment.mediaKind)) {
+          errors.push({ field: `slots.${slot.key}`, message: "Selected media has the wrong kind." });
+        }
+        if (assignment.processingState !== "ready" || assignment.status === "archived") {
+          errors.push({ field: `slots.${slot.key}`, message: "Selected media must be ready and active." });
+        }
+        if (
+          assignment.mediaKind === "image"
+          && !assignment.decorative
+          && !(assignment.altTextOverride?.trim() || assignment.altText?.trim())
+        ) {
+          errors.push({ field: `slots.${slot.key}.altText`, message: "Alternative text is required." });
+        }
+      }
+    }
+    if (errors.length > 0) {
+      throw new AppError({
+        code: "CMS_PUBLICATION_INVALID",
+        message: "Global media is not ready to publish.",
+        statusCode: httpStatus.unprocessableEntity,
+        details: errors,
+      });
+    }
+    await tx.update(globalMediaAssignmentSets).set({
+      status: "archived",
+      updatedAt: new Date(),
+    }).where(and(
+      eq(globalMediaAssignmentSets.definitionKey, owner.definitionKey),
+      eq(globalMediaAssignmentSets.status, "published"),
+      ne(globalMediaAssignmentSets.id, owner.id),
+    ));
+    const [published] = await tx.update(globalMediaAssignmentSets).set({
+      status: "published",
+      publishedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(globalMediaAssignmentSets.id, owner.id)).returning();
+    return published!;
+  });
 
 export const listMediaAssetUsages = async (mediaAssetId: string) => {
   const [

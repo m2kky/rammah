@@ -222,7 +222,7 @@ export const mediaAssets = pgTable(
     ),
     sourceCheck: check(
       "media_assets_source_fields",
-      sql`(${table.sourceType} = 'r2' AND ${table.storageKey} IS NOT NULL) OR (${table.sourceType} = 'external' AND ${table.publicUrl} ~ '^https://')`,
+      sql`(${table.sourceType} = 'r2' AND ${table.storageKey} IS NOT NULL) OR (${table.sourceType} = 'external' AND (${table.publicUrl} ~ '^https://' OR ${table.publicUrl} ~ '^/[A-Za-z0-9]'))`,
     ),
   }),
 );
@@ -263,6 +263,7 @@ export const pages = pgTable(
     status: contentStatusEnum("status").notNull().default("draft"),
     template: varchar("template", { length: 80 }).notNull().default("default"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    publicationError: text("publication_error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -302,6 +303,7 @@ export const legalPages = pgTable(
     version: varchar("version", { length: 40 }).notNull().default("1.0"),
     status: contentStatusEnum("status").notNull().default("draft"),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    publicationError: text("publication_error"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

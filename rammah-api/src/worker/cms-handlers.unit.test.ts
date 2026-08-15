@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutboxEvent } from "../modules/outbox/outbox.repository.js";
 import { PermanentJobError } from "./handler-registry.js";
 
-const mocks = vi.hoisted(() => ({ processAnimationBundle: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  processAnimationBundle: vi.fn(),
+  publishDueCms: vi.fn(),
+}));
 
 vi.mock("../modules/cms/animation-bundle.service.js", () => ({
   processAnimationBundle: mocks.processAnimationBundle,
+}));
+vi.mock("../modules/cms/page-publication.service.js", () => ({
+  publishDueCms: mocks.publishDueCms,
 }));
 
 import { productHandlers } from "./product-handlers.js";
@@ -44,5 +50,13 @@ describe("CMS worker handlers", () => {
       event({}),
       { signal: new AbortController().signal },
     )).rejects.toBeInstanceOf(PermanentJobError);
+  });
+
+  it("publishes due CMS records through the minutely handler", async () => {
+    const signal = new AbortController().signal;
+
+    await productHandlers["cms.publish-due"]!(event({}), { signal });
+
+    expect(mocks.publishDueCms).toHaveBeenCalledWith(signal);
   });
 });

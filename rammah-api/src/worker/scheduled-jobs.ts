@@ -23,4 +23,9 @@ export const scheduledJobs: readonly ScheduleDefinition[] = [
     intervalMs: 5 * 60_000,
     buildEvent: () => scheduledEvent("calendar.busy.sync"),
   },
+  {
+    name: "publish-due-cms",
+    intervalMs: 60_000,
+    buildEvent: () => scheduledEvent("cms.publish-due"),
+  },
 ];

@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, pool } from "./client.js";
 import {
   adminUsers,
@@ -7,6 +7,9 @@ import {
   siteSettings,
   pages,
   pageSections,
+  mediaAssets,
+  globalMediaAssignmentSets,
+  globalMediaAssignments,
 } from "./schema/index.js";
 import { env } from "../config/env.js";
 import { hashPassword } from "../shared/crypto/password.js";
@@ -115,6 +118,234 @@ const offeringSeeds = [
     },
   },
 ] as const;
+
+const mediaSeeds = [
+  {
+    key: "homepageHero",
+    displayName: "Homepage hero portrait",
+    fileName: "hero.png",
+    publicUrl: "/hero.png",
+    mimeType: "image/png",
+    mediaKind: "image",
+    altText: "Ahmed Rammah",
+    metadata: {},
+  },
+  {
+    key: "loadingVideo",
+    displayName: "Loading intro video",
+    fileName: "intro-loading.mp4",
+    publicUrl: "/videos/intro-loading.mp4",
+    mimeType: "video/mp4",
+    mediaKind: "video",
+    altText: null,
+    metadata: {},
+  },
+  {
+    key: "loadingPoster",
+    displayName: "Loading intro poster",
+    fileName: "intro-loading-poster.jpg",
+    publicUrl: "/videos/intro-loading-poster.jpg",
+    mimeType: "image/jpeg",
+    mediaKind: "image",
+    altText: "Ahmed Rammah intro",
+    metadata: {},
+  },
+  {
+    key: "aboutHero",
+    displayName: "About hero portrait",
+    fileName: "about_hero.png",
+    publicUrl: "/about_hero.png",
+    mimeType: "image/png",
+    mediaKind: "image",
+    altText: "Ahmed Rammah",
+    metadata: {},
+  },
+  {
+    key: "fastCutMobile",
+    displayName: "Fast-cut video (mobile)",
+    fileName: "about-fastcut-mobile.webm",
+    publicUrl: "/videos/about-fastcut-mobile.webm",
+    mimeType: "video/webm",
+    mediaKind: "video",
+    altText: null,
+    metadata: {},
+  },
+  {
+    key: "fastCutDesktop",
+    displayName: "Fast-cut video (desktop)",
+    fileName: "about-fastcut-desktop.webm",
+    publicUrl: "/videos/about-fastcut-desktop.webm",
+    mimeType: "video/webm",
+    mediaKind: "video",
+    altText: null,
+    metadata: {},
+  },
+  {
+    key: "aboutSupporting",
+    displayName: "Systems meet people",
+    fileName: "Systems meet people.png",
+    publicUrl: "/Systems meet people.png",
+    mimeType: "image/png",
+    mediaKind: "image",
+    altText: "Ahmed Rammah working with people",
+    metadata: {},
+  },
+  {
+    key: "rammahPortrait",
+    displayName: "Ahmed Rammah portrait",
+    fileName: "RammahPortrait1.png",
+    publicUrl: "/RammahPortrait1.png",
+    mimeType: "image/png",
+    mediaKind: "image",
+    altText: "Ahmed Rammah",
+    metadata: {},
+  },
+  {
+    key: "corporateParallax",
+    displayName: "Corporate training parallax",
+    fileName: "hero-final-frame.png",
+    publicUrl: "/hero-final-frame.png",
+    mimeType: "image/png",
+    mediaKind: "image",
+    altText: "Ahmed Rammah corporate training",
+    metadata: {},
+  },
+  {
+    key: "servicesAnimation",
+    displayName: "Services frame animation",
+    fileName: "services-frames",
+    publicUrl: "/services-frames/frame0001.webp?v=services_v1",
+    mimeType: "application/vnd.rammah.animation+json",
+    mediaKind: "animation_bundle",
+    altText: null,
+    metadata: {
+      frameCount: 168,
+      fileExtension: "webp",
+      urlPattern: "/services-frames/frame{frame}.webp?v=services_v1",
+    },
+  },
+] as const;
+
+const globalMediaSeeds = [
+  {
+    definitionKey: "loadingMatchCut",
+    slots: [
+      { slotKey: "video", assetKey: "loadingVideo", decorative: true },
+      { slotKey: "poster", assetKey: "loadingPoster", decorative: true },
+      { slotKey: "matchedHeroFrame", assetKey: "homepageHero", decorative: true },
+    ],
+  },
+  {
+    definitionKey: "navigation",
+    slots: [
+      { slotKey: "desktopMenuVideo", assetKey: "fastCutDesktop", decorative: true },
+      { slotKey: "mobileMenuVideo", assetKey: "fastCutMobile", decorative: true },
+    ],
+  },
+  {
+    definitionKey: "seo",
+    slots: [{ slotKey: "defaultOgImage", assetKey: "homepageHero", decorative: false }],
+  },
+  {
+    definitionKey: "homepage",
+    slots: [
+      { slotKey: "heroPortrait", assetKey: "homepageHero", decorative: false },
+      { slotKey: "servicesAnimation", assetKey: "servicesAnimation", decorative: true },
+    ],
+  },
+  {
+    definitionKey: "about",
+    slots: [
+      { slotKey: "heroImage", assetKey: "aboutHero", decorative: false },
+      { slotKey: "desktopFastCutVideo", assetKey: "fastCutDesktop", decorative: true },
+      { slotKey: "mobileFastCutVideo", assetKey: "fastCutMobile", decorative: true },
+      { slotKey: "supportingImage", assetKey: "aboutSupporting", decorative: false },
+    ],
+  },
+  {
+    definitionKey: "corporateTraining",
+    slots: [
+      { slotKey: "portrait", assetKey: "rammahPortrait", decorative: false },
+      { slotKey: "parallaxImage", assetKey: "corporateParallax", decorative: false },
+    ],
+  },
+  {
+    definitionKey: "serviceDetail",
+    slots: [{ slotKey: "portrait", assetKey: "rammahPortrait", decorative: false }],
+  },
+] as const;
+
+const seedManagedMedia = async () => {
+  const assetIds = new Map<string, string>();
+  for (const asset of mediaSeeds) {
+    const [existing] = await db.select({ id: mediaAssets.id })
+      .from(mediaAssets)
+      .where(and(eq(mediaAssets.sourceType, "external"), eq(mediaAssets.publicUrl, asset.publicUrl)))
+      .limit(1);
+    const values = {
+      displayName: asset.displayName,
+      fileName: asset.fileName,
+      publicUrl: asset.publicUrl,
+      mimeType: asset.mimeType,
+      mediaKind: asset.mediaKind,
+      sourceType: "external" as const,
+      storageKey: null,
+      altText: asset.altText,
+      sizeBytes: 0,
+      metadata: asset.metadata,
+      processingState: "ready" as const,
+      processingError: null,
+      status: "published" as const,
+      updatedAt: new Date(),
+    };
+    const [saved] = existing
+      ? await db.update(mediaAssets).set(values).where(eq(mediaAssets.id, existing.id)).returning({ id: mediaAssets.id })
+      : await db.insert(mediaAssets).values(values).returning({ id: mediaAssets.id });
+    assetIds.set(asset.key, saved.id);
+  }
+
+  for (const group of globalMediaSeeds) {
+    let [assignmentSet] = await db.select({ id: globalMediaAssignmentSets.id })
+      .from(globalMediaAssignmentSets)
+      .where(and(
+        eq(globalMediaAssignmentSets.definitionKey, group.definitionKey),
+        eq(globalMediaAssignmentSets.status, "published"),
+      ))
+      .limit(1);
+    if (!assignmentSet) {
+      const [latest] = await db.select({ version: globalMediaAssignmentSets.version })
+        .from(globalMediaAssignmentSets)
+        .where(eq(globalMediaAssignmentSets.definitionKey, group.definitionKey))
+        .orderBy(desc(globalMediaAssignmentSets.version))
+        .limit(1);
+      [assignmentSet] = await db.insert(globalMediaAssignmentSets).values({
+        definitionKey: group.definitionKey,
+        version: (latest?.version ?? 0) + 1,
+        status: "published",
+        publishedAt: new Date(),
+      }).returning({ id: globalMediaAssignmentSets.id });
+    }
+
+    for (const slot of group.slots) {
+      const mediaAssetId = assetIds.get(slot.assetKey);
+      if (!mediaAssetId) throw new Error(`Missing seeded media asset ${slot.assetKey}`);
+      await db.insert(globalMediaAssignments).values({
+        assignmentSetId: assignmentSet.id,
+        slotKey: slot.slotKey,
+        mediaAssetId,
+        sortOrder: 0,
+        decorative: slot.decorative,
+      }).onConflictDoUpdate({
+        target: [
+          globalMediaAssignments.assignmentSetId,
+          globalMediaAssignments.slotKey,
+          globalMediaAssignments.sortOrder,
+        ],
+        set: { mediaAssetId, decorative: slot.decorative, updatedAt: new Date() },
+      });
+    }
+  }
+};
 
 const seed = async () => {
   logger.info("Seeding base data");
@@ -234,7 +465,7 @@ const seed = async () => {
     {
       slug: "home",
       title: "Home",
-      template: "default",
+      template: "home",
       sections: [
         { sectionType: "hero", title: "Ahmed Rammah", body: "I don't just coach. I map your psychological system, find the bugs and rewrite the code", config: { roles: ["Engineer", "Systematizer", "Trainer", "Coach"] }, sortOrder: 10 },
         { sectionType: "statement", title: "REWRITE YOUR MIND", body: null, config: {}, sortOrder: 20 },
@@ -247,7 +478,7 @@ const seed = async () => {
     {
       slug: "about",
       title: "About Ahmed Rammah",
-      template: "default",
+      template: "about",
       sections: [
         { sectionType: "hero", title: "Ahmed Rammah", body: "I spent years understanding technical systems. Then I turned to the most complex system of all: human behavior.", config: { kicker: "Engineer / Systematizer / Trainer / Coach", aside: "Based in Cairo\nWorking globally" }, sortOrder: 10 },
         { sectionType: "marquee", title: null, body: null, config: { row1: "Engineer | Systematizer | Trainer | Coach |", row2: "First & Only aCRL Master Trainer in the Middle East |" }, sortOrder: 20 },
@@ -261,7 +492,7 @@ const seed = async () => {
     {
       slug: "corporate-training",
       title: "Corporate Training & Consultancy",
-      template: "default",
+      template: "corporate",
       sections: [
         { sectionType: "hero", title: "Change the operating system.", body: "Stop giving your teams motivational speeches. Give them a robust behavioral framework they can execute under pressure.", config: { kicker: "Corporate Training & Consultancy" }, sortOrder: 10 },
         { sectionType: "marquee", title: null, body: null, config: { row1: "Performance | Systems | Culture | Alignment |", row2: "Decision-making | Leadership | Communication | Strategy |" }, sortOrder: 20 },
@@ -276,7 +507,7 @@ const seed = async () => {
     {
       slug: "services",
       title: "Services",
-      template: "default",
+      template: "services",
       sections: [
         { sectionType: "hero", title: "Services", body: null, config: {}, sortOrder: 10 },
         { sectionType: "marquee", title: null, body: null, config: {}, sortOrder: 20 },
@@ -286,7 +517,7 @@ const seed = async () => {
     {
       slug: "contact",
       title: "Contact",
-      template: "default",
+      template: "contact",
       sections: [
         { sectionType: "hero", title: "Start with context.", body: "Send the problem, the pattern, or the program you want to build. The reply can route you to a session, quote, or the right next step.", config: {}, sortOrder: 10 },
         { sectionType: "details", title: null, body: null, config: {}, sortOrder: 20 },
@@ -351,6 +582,8 @@ const seed = async () => {
       }
     }
   }
+
+  await seedManagedMedia();
 
   const publishedOfferings = await db
     .select({ slug: offerings.slug, title: offerings.title })

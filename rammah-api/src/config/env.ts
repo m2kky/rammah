@@ -98,6 +98,8 @@ const envSchema = z.object({
   R2_TEMP_PREFIX: storagePrefix.default("tmp"),
   R2_MEDIA_PREFIX: storagePrefix.default("media"),
   R2_TEMP_RETENTION_DAYS: positiveInteger.default(1),
+  CMS_PREVIEW_SECRET: optionalTrimmedString,
+  CMS_PREVIEW_MAX_AGE_SECONDS: positiveInteger.max(3_600).default(300),
   WORKER_POLL_INTERVAL_MS: positiveInteger.default(1000),
   WORKER_BATCH_SIZE: positiveInteger.default(10),
   WORKER_CONCURRENCY: positiveInteger.default(4),

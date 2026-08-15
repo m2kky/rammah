@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { scheduledJobs } from "./scheduled-jobs.js";
 
 describe("scheduled worker jobs", () => {
-  it("schedules holds, payment reconciliation, and calendar busy sync", () => {
+  it("schedules holds, payment reconciliation, calendar busy sync, and CMS publishing", () => {
     expect(
       scheduledJobs.map((definition) => ({
         name: definition.name,
@@ -17,6 +17,7 @@ describe("scheduled worker jobs", () => {
         topic: "maintenance.payments.reconcile",
       },
       { name: "sync-calendar-busy", intervalMs: 5 * 60_000, topic: "calendar.busy.sync" },
+      { name: "publish-due-cms", intervalMs: 60_000, topic: "cms.publish-due" },
     ]);
   });
 });
