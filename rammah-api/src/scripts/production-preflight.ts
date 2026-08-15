@@ -1,4 +1,6 @@
 import { sql } from "drizzle-orm";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { env, frontendOrigins } from "../config/env.js";
 import { db, pool } from "../db/client.js";
 import { siteSettings } from "../db/schema/index.js";
@@ -9,7 +11,7 @@ import {
 
 type CheckStatus = "pass" | "warn" | "fail";
 
-type Check = {
+export type Check = {
   name: string;
   status: CheckStatus;
   message: string;
@@ -251,6 +253,116 @@ const checkDatabase = async () => {
   }
 };
 
+export type CmsPreflightConfig = Pick<typeof env,
+  | "R2_UPLOADS_ENABLED"
+  | "R2_ENDPOINT"
+  | "R2_BUCKET"
+  | "R2_ACCESS_KEY_ID"
+  | "R2_SECRET_ACCESS_KEY"
+  | "R2_PUBLIC_BASE_URL"
+  | "R2_MAX_IMAGE_BYTES"
+  | "R2_MAX_VIDEO_BYTES"
+  | "R2_MAX_ANIMATION_ZIP_BYTES"
+  | "R2_MAX_ANIMATION_EXPANDED_BYTES"
+  | "R2_MAX_ANIMATION_FRAMES"
+  | "CMS_PREVIEW_SECRET"
+  | "ADMIN_SESSION_SECRET"
+  | "WORKER_POLL_INTERVAL_MS"
+  | "WORKER_BATCH_SIZE"
+  | "WORKER_CONCURRENCY"
+  | "JOB_LEASE_SECONDS"
+  | "JOB_TIMEOUT_SECONDS"
+  | "WORKER_DRAIN_TIMEOUT_MS"
+>;
+
+export const collectCmsMediaChecks = (
+  config: CmsPreflightConfig,
+  production: boolean,
+): Check[] => {
+  const result: Check[] = [];
+  const check = (name: string, valid: boolean, message: string) => result.push({
+    name,
+    status: valid ? "pass" : production ? "fail" : "warn",
+    message,
+  });
+
+  check(
+    "R2_UPLOADS_ENABLED",
+    config.R2_UPLOADS_ENABLED,
+    config.R2_UPLOADS_ENABLED
+      ? "Direct R2 uploads are enabled."
+      : "Enable direct R2 uploads before deploying the CMS.",
+  );
+  for (const [name, value] of [
+    ["R2_BUCKET", config.R2_BUCKET],
+    ["R2_ACCESS_KEY_ID", config.R2_ACCESS_KEY_ID],
+    ["R2_SECRET_ACCESS_KEY", config.R2_SECRET_ACCESS_KEY],
+  ] as const) {
+    check(name, present(value), `${name} is ${redacted(value)}.`);
+  }
+  for (const [name, value] of [
+    ["R2_ENDPOINT", config.R2_ENDPOINT],
+    ["R2_PUBLIC_BASE_URL", config.R2_PUBLIC_BASE_URL],
+  ] as const) {
+    check(
+      name,
+      production ? isProductionUrl(value) : Boolean(parseUrl(value)),
+      `${name} must be an ${production ? "external HTTPS" : "valid"} URL.`,
+    );
+  }
+
+  const previewSecret = config.CMS_PREVIEW_SECRET?.trim();
+  const previewSecretValid = Boolean(
+    previewSecret
+    && previewSecret.length >= 32
+    && previewSecret !== config.ADMIN_SESSION_SECRET
+    && !previewSecret.toLowerCase().includes("change-me"),
+  );
+  check(
+    "CMS_PREVIEW_SECRET",
+    previewSecretValid,
+    previewSecretValid
+      ? "Preview tokens use a strong dedicated secret."
+      : "Configure a dedicated random preview secret of at least 32 characters; do not reuse the admin session secret.",
+  );
+
+  const limitsValid = [
+    config.R2_MAX_IMAGE_BYTES,
+    config.R2_MAX_VIDEO_BYTES,
+    config.R2_MAX_ANIMATION_ZIP_BYTES,
+    config.R2_MAX_ANIMATION_EXPANDED_BYTES,
+    config.R2_MAX_ANIMATION_FRAMES,
+  ].every((value) => Number.isInteger(value) && value > 0)
+    && config.R2_MAX_ANIMATION_EXPANDED_BYTES >= config.R2_MAX_ANIMATION_ZIP_BYTES;
+  check(
+    "R2_MEDIA_LIMITS",
+    limitsValid,
+    limitsValid
+      ? "Image, video, animation archive, expanded-size and frame-count limits are coherent."
+      : "Media limits must be positive and the expanded animation limit must not be smaller than the ZIP limit.",
+  );
+
+  const workerValid = [
+    config.WORKER_POLL_INTERVAL_MS,
+    config.WORKER_BATCH_SIZE,
+    config.WORKER_CONCURRENCY,
+    config.WORKER_DRAIN_TIMEOUT_MS,
+  ].every((value) => Number.isInteger(value) && value > 0)
+    && config.JOB_LEASE_SECONDS > config.JOB_TIMEOUT_SECONDS;
+  check(
+    "CMS_WORKER",
+    workerValid,
+    workerValid
+      ? "Worker polling, concurrency, drain timeout and job lease settings are coherent."
+      : "Worker values must be positive and JOB_LEASE_SECONDS must exceed JOB_TIMEOUT_SECONDS.",
+  );
+  return result;
+};
+
+const checkCmsMedia = () => {
+  checks.push(...collectCmsMediaChecks(env, target === "production"));
+};
+
 const checkKnownOperationalWarnings = () => {
   addCheck({
     name: "RATE_LIMITER_STORAGE",
@@ -260,11 +372,12 @@ const checkKnownOperationalWarnings = () => {
   });
 };
 
-const run = async () => {
+export const runProductionPreflight = async () => {
   checkEnvironment();
   checkPayments();
   checkGoogleCalendar();
   checkEmail();
+  checkCmsMedia();
   await checkDatabase();
   checkKnownOperationalWarnings();
 
@@ -293,11 +406,17 @@ const run = async () => {
   }
 };
 
-run()
-  .catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await pool.end();
-  });
+const isMain = process.argv[1]
+  ? fileURLToPath(import.meta.url).toLowerCase() === resolve(process.argv[1]).toLowerCase()
+  : false;
+
+if (isMain) {
+  runProductionPreflight()
+    .catch((error) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await pool.end();
+    });
+}
