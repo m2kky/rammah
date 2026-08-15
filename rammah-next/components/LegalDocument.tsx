@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import PublicFrame from "./PublicFrame";
 import { fetchPublicLegalPage } from "@/lib/api/cms";
+import { SafeMarkdown } from "./cms/SafeMarkdown";
 
 const fallbacks: Record<string, { title: string; body: string }> = {
   "privacy-policy": {
@@ -15,11 +17,12 @@ const fallbacks: Record<string, { title: string; body: string }> = {
   },
 };
 
-export default async function LegalDocument({ slug }: { slug: string }) {
+export default async function LegalDocument({ slug, requirePublished = false }: { slug: string; requirePublished?: boolean }) {
   const fallback = fallbacks[slug];
   const page = await fetchPublicLegalPage(slug).catch(() => null);
-  const title = page?.title ?? fallback.title;
-  const body = page?.body ?? fallback.body;
+  if (!page && (requirePublished || !fallback)) notFound();
+  const title = page?.title ?? fallback!.title;
+  const body = page?.body ?? fallback!.body;
 
   return (
     <PublicFrame>
@@ -34,9 +37,7 @@ export default async function LegalDocument({ slug }: { slug: string }) {
           <h1 className="mt-5 text-[clamp(3.8rem,11vw,10rem)] font-extrabold leading-[0.84] tracking-normal">
             {title}
           </h1>
-          <div className="mt-12 whitespace-pre-wrap border-t border-[#102329]/14 pt-8 font-inter text-base leading-8 text-[#102329]/76">
-            {body}
-          </div>
+          <SafeMarkdown className="mt-12 space-y-5 border-t border-[#102329]/14 pt-8 font-inter text-base leading-8 text-[#102329]/76">{body}</SafeMarkdown>
         </div>
       </section>
     </PublicFrame>

@@ -186,7 +186,7 @@ export function CmsPagesEditor() {
     if (!selectedPage) return;
     try {
       const issued = await createAdminPagePreviewToken(selectedPage.id);
-      const url = `/cms-preview?token=${encodeURIComponent(issued.token)}&pageId=${encodeURIComponent(issued.pageId)}&slug=${encodeURIComponent(issued.slug)}`;
+      const url = `/cms-preview?token=${encodeURIComponent(issued.token)}&pageId=${encodeURIComponent(issued.pageId)}&expiresAt=${encodeURIComponent(issued.expiresAt)}`;
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (previewError) { setError(previewError instanceof Error ? previewError.message : "Could not create preview."); }
   };

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, max, ne, or, type SQL } from "drizzle-orm";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { db } from "../../db/client.js";
+import { env } from "../../config/env.js";
 import {
   blogCategories,
   blogPosts,
@@ -832,7 +833,7 @@ adminCmsRouter.post(
       if (!page) throw notFound("Page was not found.");
       const expiresInSeconds = req.body.expiresInSeconds;
       const token = issuePreviewToken({ pageId: page.id, expiresInSeconds });
-      const lifetime = expiresInSeconds ?? 300;
+      const lifetime = expiresInSeconds ?? env.CMS_PREVIEW_MAX_AGE_SECONDS;
       res.status(httpStatus.created).json({
         data: {
           token,
