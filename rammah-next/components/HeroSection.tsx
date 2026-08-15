@@ -19,16 +19,13 @@ export default function HeroSection({ entryReady, content, portrait }: HeroSecti
         }`}
       />
 
-      {/* White background with elliptical top */}
-      <div className={`absolute inset-x-0 top-[48%] sm:top-[46%] md:top-[43%] bottom-0 bg-white transition-[opacity,transform] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1/4"
-      }`} />
       <div
-        className={`absolute left-1/2 top-[28%] sm:top-[26%] md:top-[20%] w-[170%] sm:w-[150%] md:w-[120%] h-[42%] md:h-[52%] rounded-[50%] transition-[opacity,transform] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          entryReady ? "opacity-100 -translate-x-1/2 translate-y-0" : "opacity-0 -translate-x-1/2 translate-y-1/2"
+        className={`absolute inset-0 transition-opacity duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          entryReady ? "opacity-100" : "opacity-0"
         }`}
         style={{
-          background: "radial-gradient(ellipse at center, #fff 0%, #fff 52%, rgba(255,255,255,0) 100%)",
+          background:
+            "linear-gradient(to bottom, #0F3B46 0%, #0F3B46 28%, #FFFFFF 48%, #FFFFFF 100%)",
         }}
       />
 

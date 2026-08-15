@@ -72,9 +72,12 @@ describe("LoadingScreen mobile video", () => {
     expect(heroSource).toContain(synchronizedGeometry);
   });
 
-  it("renders the hero glow without an animated blur filter", () => {
-    expect(heroSource).toContain("radial-gradient(ellipse at center");
-    expect(heroSource).toContain("transition-[opacity,transform]");
+  it("renders the approved vertical two-color hero gradient", () => {
+    expect(heroSource).toContain(
+      "linear-gradient(to bottom, #0F3B46 0%, #0F3B46 28%, #FFFFFF 48%, #FFFFFF 100%)",
+    );
+    expect(heroSource).not.toContain("radial-gradient");
+    expect(heroSource).not.toContain("rounded-[50%]");
     expect(heroSource).not.toContain("blur-[30px] md:blur-[60px]");
   });
 });
