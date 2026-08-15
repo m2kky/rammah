@@ -21,6 +21,16 @@ describe("LoadingScreen mobile video", () => {
     expect(componentSource).toContain("poster={poster.publicUrl}");
   });
 
+  it("keeps the intro video visible to Safari while fading it in", () => {
+    expect(componentSource).toContain(
+      "gsap.set(videoWrapRef.current, { opacity: 0 })"
+    );
+    expect(componentSource).not.toContain(
+      "gsap.set(videoWrapRef.current, { autoAlpha: 0 })"
+    );
+    expect(componentSource).toContain("onStart: startPlayback");
+  });
+
   it("ships both the optimized video and its poster", () => {
     expect(
       existsSync(resolve(projectRoot, "public", "videos", "intro-loading.mp4"))
@@ -53,12 +63,18 @@ describe("LoadingScreen mobile video", () => {
 
   it("uses the video's final frame with matching loader geometry in the hero", () => {
     const synchronizedGeometry =
-      'className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"';
+      'className="h-[100dvh] w-auto max-w-none object-contain object-bottom"';
 
     expect(heroSource).toContain("src={portrait.publicUrl}");
     expect(heroSource).toContain("width={portrait.width ?? 720}");
     expect(heroSource).toContain("height={portrait.height ?? 1280}");
     expect(componentSource).toContain(synchronizedGeometry);
     expect(heroSource).toContain(synchronizedGeometry);
+  });
+
+  it("renders the hero glow without an animated blur filter", () => {
+    expect(heroSource).toContain("radial-gradient(ellipse at center");
+    expect(heroSource).toContain("transition-[opacity,transform]");
+    expect(heroSource).not.toContain("blur-[30px] md:blur-[60px]");
   });
 });

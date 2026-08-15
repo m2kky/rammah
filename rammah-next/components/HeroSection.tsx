@@ -19,13 +19,18 @@ export default function HeroSection({ entryReady, content, portrait }: HeroSecti
         }`}
       />
 
-      {/* White background with blurred elliptical top */}
-      <div className={`absolute inset-x-0 top-[48%] sm:top-[46%] md:top-[43%] bottom-0 bg-white transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+      {/* White background with elliptical top */}
+      <div className={`absolute inset-x-0 top-[48%] sm:top-[46%] md:top-[43%] bottom-0 bg-white transition-[opacity,transform] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
         entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1/4"
       }`} />
-      <div className={`absolute left-1/2 top-[28%] sm:top-[26%] md:top-[20%] w-[170%] sm:w-[150%] md:w-[120%] h-[42%] md:h-[52%] bg-white rounded-[50%] blur-[30px] md:blur-[60px] transition-all duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-        entryReady ? "opacity-100 -translate-x-1/2 translate-y-0" : "opacity-0 -translate-x-1/2 translate-y-1/2"
-      }`} />
+      <div
+        className={`absolute left-1/2 top-[28%] sm:top-[26%] md:top-[20%] w-[170%] sm:w-[150%] md:w-[120%] h-[42%] md:h-[52%] rounded-[50%] transition-[opacity,transform] duration-[1200ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          entryReady ? "opacity-100 -translate-x-1/2 translate-y-0" : "opacity-0 -translate-x-1/2 translate-y-1/2"
+        }`}
+        style={{
+          background: "radial-gradient(ellipse at center, #fff 0%, #fff 52%, rgba(255,255,255,0) 100%)",
+        }}
+      />
 
       {/* Top bar — roles left, tagline right */}
       <div
@@ -86,7 +91,7 @@ export default function HeroSection({ entryReady, content, portrait }: HeroSecti
           alt={portrait.decorative ? "" : portrait.altText || content.section?.title || "Ahmed Rammah"}
           width={portrait.width ?? 720}
           height={portrait.height ?? 1280}
-          className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
+          className="h-[100dvh] w-auto max-w-none object-contain object-bottom"
         />
       </div>
 

@@ -83,7 +83,7 @@ export default function LoadingScreen({ onComplete, video, poster }: LoadingScre
 
     const ctx = gsap.context(() => {
       gsap.set(wordsRef.current, { autoAlpha: 0, y: 22, filter: "blur(8px)" });
-      gsap.set(videoWrapRef.current, { autoAlpha: 0 });
+      gsap.set(videoWrapRef.current, { opacity: 0 });
 
       const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
 
@@ -103,15 +103,13 @@ export default function LoadingScreen({ onComplete, video, poster }: LoadingScre
       tl.to(
         videoWrapRef.current,
         {
-          autoAlpha: 1,
+          opacity: 1,
           duration: 0.45,
           ease: "sine.out",
+          onStart: startPlayback,
         },
         ">-0.02"
       );
-      tl.add(() => {
-        startPlayback();
-      }, "<");
 
       tl.to(
         wordsRef.current,
@@ -223,7 +221,7 @@ export default function LoadingScreen({ onComplete, video, poster }: LoadingScre
             muted
             playsInline
             preload="auto"
-            className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
+            className="h-[100dvh] w-auto max-w-none object-contain object-bottom"
           />
         </div>
 

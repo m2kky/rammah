@@ -359,21 +359,6 @@ export default function ServicesSection({
           }
         });
 
-        /* fade last service before exit */
-        const last = services.length - 1;
-        if (servicePanelContentRefs.current[last]) {
-          tl.to(
-            servicePanelContentRefs.current[last],
-            { autoAlpha: 0, y: -38, duration: 0.08, ease: "power1.in" },
-            0.94
-          );
-        }
-        if (servicePanelRefs.current[last]) {
-          tl.set(servicePanelRefs.current[last], { pointerEvents: "none" }, 0.94);
-        }
-
-        /* section exits left */
-        tl.to(container, { xPercent: -100, duration: 0.07, ease: "power2.in" }, 0.94);
       });
 
       /* mobile: roles top + frame-sequence middle + cards stack, then service-by-service reveal */
