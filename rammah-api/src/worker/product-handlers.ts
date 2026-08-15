@@ -3,6 +3,7 @@ import { syncGoogleCalendarBusyBlocks } from "../modules/calendar/google-calenda
 import { sendBookingConfirmedEmails } from "../modules/emails/email.service.js";
 import { expireStaleBookingHolds } from "../modules/availability/booking-maintenance.service.js";
 import { reconcilePendingPayments } from "../modules/payments/payment-maintenance.service.js";
+import { processAnimationBundle } from "../modules/cms/animation-bundle.service.js";
 import { PermanentJobError, type JobHandler } from "./handler-registry.js";
 
 const bookingIdFrom = (payload: Record<string, unknown>) => {
@@ -13,7 +14,18 @@ const bookingIdFrom = (payload: Record<string, unknown>) => {
   return bookingId;
 };
 
+const mediaAssetIdFrom = (payload: Record<string, unknown>) => {
+  const assetId = payload.assetId;
+  if (typeof assetId !== "string" || !assetId.trim()) {
+    throw new PermanentJobError("Invalid CMS animation bundle job payload");
+  }
+  return assetId;
+};
+
 export const productHandlers: Readonly<Record<string, JobHandler>> = {
+  "cms.media.animation_bundle.process": async (event, { signal }) => {
+    await processAnimationBundle(mediaAssetIdFrom(event.payload), signal);
+  },
   "calendar.booking.create": async (event) => {
     await ensureGoogleCalendarEventForBooking(bookingIdFrom(event.payload));
   },

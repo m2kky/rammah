@@ -71,6 +71,10 @@ const makeRepository = (): MediaRepository => ({
   })),
   findById: vi.fn().mockResolvedValue(baseAsset()),
   markReady: vi.fn().mockResolvedValue(baseAsset({ processingState: "ready" })),
+  queueAnimationProcessing: vi.fn().mockResolvedValue(baseAsset({
+    mediaKind: "animation_bundle",
+    mimeType: "application/zip",
+  })),
   markFailed: vi.fn().mockResolvedValue(baseAsset({ processingState: "failed" })),
   createExternal: vi.fn(async (input) => baseAsset({
     ...input,
@@ -151,6 +155,33 @@ describe("CMS media service", () => {
       assetId,
       expect.stringMatching(/signature/i),
     );
+  });
+
+  it("queues verified animation ZIPs for worker processing instead of marking them ready", async () => {
+    const zipBytes = Buffer.alloc(30);
+    zipBytes.writeUInt32LE(0x04034b50, 0);
+    const storage = makeStorage();
+    vi.mocked(storage.headObject).mockResolvedValue({
+      sizeBytes: zipBytes.length,
+      contentType: "application/zip",
+    });
+    vi.mocked(storage.readRange).mockResolvedValue(zipBytes);
+    const repository = makeRepository();
+    vi.mocked(repository.findById).mockResolvedValue(baseAsset({
+      mimeType: "application/zip",
+      mediaKind: "animation_bundle",
+      sizeBytes: zipBytes.length,
+    }));
+    const service = createMediaService({ storage, repository });
+
+    await expect(service.finalizeUpload({ assetId })).resolves.toMatchObject({
+      id: assetId,
+      mediaKind: "animation_bundle",
+      processingState: "pending",
+    });
+
+    expect(repository.queueAnimationProcessing).toHaveBeenCalledWith(assetId);
+    expect(repository.markReady).not.toHaveBeenCalled();
   });
 
   it("registers only HTTPS external image or video URLs", async () => {

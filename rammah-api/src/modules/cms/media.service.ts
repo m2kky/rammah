@@ -1,6 +1,6 @@
 import { and, desc, eq, ilike, or, type SQL } from "drizzle-orm";
 import { db } from "../../db/client.js";
-import { mediaAssets } from "../../db/schema/index.js";
+import { mediaAssets, outboxEvents } from "../../db/schema/index.js";
 import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
@@ -88,6 +88,7 @@ export interface MediaRepository {
     id: string,
     input: { mimeType: string; mediaKind: MediaKind; metadata?: Record<string, unknown> },
   ): Promise<MediaAssetRecord>;
+  queueAnimationProcessing(id: string): Promise<MediaAssetRecord>;
   markFailed(id: string, processingError: string): Promise<MediaAssetRecord>;
   createExternal(input: CreateExternalMediaInput): Promise<MediaAssetRecord>;
   list(input: MediaListInput): Promise<MediaAssetRecord[]>;
@@ -129,6 +130,19 @@ export const databaseMediaRepository: MediaRepository = {
     }).where(eq(mediaAssets.id, id)).returning();
     if (!row) throw mediaNotFound();
     return toRecord(row);
+  },
+
+  async queueAnimationProcessing(id) {
+    const asset = await this.findById(id);
+    if (!asset) throw mediaNotFound();
+    await db.insert(outboxEvents).values({
+      topic: "cms.media.animation_bundle.process",
+      aggregateType: "media_asset",
+      aggregateId: id,
+      payload: { assetId: id },
+      idempotencyKey: `cms.media.animation_bundle.process:${id}`,
+    }).onConflictDoNothing({ target: outboxEvents.idempotencyKey });
+    return asset;
   },
 
   async markFailed(id, processingError) {
@@ -375,10 +389,12 @@ export const createMediaService = (dependencies: MediaServiceDependencies = {}) 
         const detected = await detectAllowedMedia(signatureBytes, asset.mimeType);
         await storage.copyObject(temporaryStorageKey, finalStorageKey);
         await storage.deleteObjects([temporaryStorageKey]);
-        ready = await repository.markReady(asset.id, {
-          mimeType: detected.mimeType,
-          mediaKind: detected.mediaKind,
-        });
+        ready = detected.mediaKind === "animation_bundle"
+          ? await repository.queueAnimationProcessing(asset.id)
+          : await repository.markReady(asset.id, {
+            mimeType: detected.mimeType,
+            mediaKind: detected.mediaKind,
+          });
       } catch (error) {
         const message = safeFailureMessage(error);
         await repository.markFailed(asset.id, message);
