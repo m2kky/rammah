@@ -14,7 +14,7 @@ const applyMigration = async (client: PoolClient, migration: MigrationMeta) => {
 
 const preparePrePolicySchema = async (client: PoolClient) => {
   const migrations = readMigrationFiles({ migrationsFolder });
-  expect(migrations).toHaveLength(11);
+  expect(migrations.length).toBeGreaterThanOrEqual(11);
   await client.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public");
   for (const migration of migrations.slice(0, 10)) await applyMigration(client, migration);
   return migrations[10]!;

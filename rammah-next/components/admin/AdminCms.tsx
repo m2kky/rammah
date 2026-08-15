@@ -43,7 +43,21 @@ function NavigationEditor() {
   const [form, setForm] = useState<AdminNavigationItemPayload>(emptyNavigation);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => { try { setItems(await fetchAdminNavigationItems()); setError(null); } catch (loadError) { setError(loadError instanceof Error ? loadError.message : "Could not load navigation."); } }, []);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchAdminNavigationItems()
+      .then((navigationItems) => {
+        if (cancelled) return;
+        setItems(navigationItems);
+        setError(null);
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setError(loadError instanceof Error ? loadError.message : "Could not load navigation.");
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
   const choose = (item: AdminNavigationItem) => { setSelected(item); setForm({ label: item.label, url: item.url, location: item.location, sortOrder: item.sortOrder, status: item.status }); };
   const save = async () => { try { if (selected) await updateAdminNavigationItem(selected.id, form); else await createAdminNavigationItem(form); setSelected(null); setForm(emptyNavigation); await load(); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Could not save navigation."); } };
   return <section className="space-y-5"><div className="flex items-end justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#102329]/45">CMS</p><h2 className="mt-2 text-3xl font-semibold">Navigation</h2></div><button type="button" onClick={() => { setSelected(null); setForm(emptyNavigation); }} className="border border-[#102329]/18 px-4 py-2 text-sm font-semibold">New link</button></div>{error ? <p className="border border-red-700/20 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}<div className="grid gap-6 xl:grid-cols-[1fr_360px]"><div className="space-y-2">{items.map((item) => <div key={item.id} className="flex items-center gap-2 border border-[#102329]/10 bg-white p-3"><button type="button" onClick={() => choose(item)} className="min-w-0 flex-1 text-left"><strong className="block truncate text-sm">{item.label}</strong><span className="text-xs text-[#102329]/48">{item.url} · {item.location} · {item.status}</span></button><button type="button" onClick={() => { if (window.confirm(`Archive “${item.label}”?`)) void archiveAdminNavigationItem(item.id).then(load); }} className="text-xs font-semibold text-red-700">Archive</button></div>)}</div><aside className="space-y-3 border border-[#102329]/12 bg-white p-5"><h3 className="font-semibold">{selected ? "Edit link" : "New link"}</h3><input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Label" className="h-10 w-full border border-[#102329]/18 px-3 text-sm" /><input value={form.url} onChange={(event) => setForm({ ...form, url: event.target.value })} placeholder="/booking" className="h-10 w-full border border-[#102329]/18 px-3 text-sm" /><div className="grid grid-cols-2 gap-2"><input value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="header" className="h-10 border border-[#102329]/18 px-3 text-sm" /><input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} className="h-10 border border-[#102329]/18 px-3 text-sm" /></div><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as AdminNavigationItemPayload["status"] })} className="h-10 w-full border border-[#102329]/18 px-3 text-sm"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select><button type="button" onClick={() => void save()} className="h-10 w-full bg-[#0F3B46] text-sm font-semibold text-white">Save link</button></aside></div></section>;

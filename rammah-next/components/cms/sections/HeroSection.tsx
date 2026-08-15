@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { PublicPageSection } from "../../../lib/api/cms";
 import { SafeMarkdown } from "../SafeMarkdown";
-import { CmsImage, CmsVideo, firstMedia } from "../media";
+import { CmsImage, firstMedia } from "../media";
 
 const link = (value: unknown) => typeof value === "object" && value ? value as { label?: string; url?: string } : null;
 

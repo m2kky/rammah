@@ -1,9 +1,12 @@
 import { eq } from "drizzle-orm";
+import { readMigrationFiles } from "drizzle-orm/migrator";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { contactInquiries } from "../db/schema/index.js";
 import { getTestDatabase, getTestDatabaseName, seedTestDatabase } from "./db.js";
 
 const markerEmail = "database-harness-marker@example.test";
+const migrationsFolder = fileURLToPath(new URL("../../drizzle", import.meta.url));
 
 describe.sequential("real PostgreSQL integration harness", () => {
   it("connects, applies every migration, and writes and reads with Drizzle", async () => {
@@ -18,7 +21,9 @@ describe.sequential("real PostgreSQL integration harness", () => {
     expect(databaseResult.rows[0]?.current_database).toBe(
       getTestDatabaseName(context.connectionString, process.env.NODE_ENV),
     );
-    expect(Number(migrationResult.rows[0]?.count)).toBe(11);
+    expect(Number(migrationResult.rows[0]?.count)).toBe(
+      readMigrationFiles({ migrationsFolder }).length,
+    );
 
     await seedTestDatabase(context, async (db) => {
       await db.insert(contactInquiries).values({

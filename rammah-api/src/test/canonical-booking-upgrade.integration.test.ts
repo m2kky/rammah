@@ -21,7 +21,7 @@ async function applyMigration(client: PoolClient, migration: MigrationMeta): Pro
 
 async function prepareLegacySchema(client: PoolClient): Promise<MigrationMeta[]> {
   const migrations = readMigrationFiles({ migrationsFolder });
-  expect(migrations).toHaveLength(11);
+  expect(migrations.length).toBeGreaterThanOrEqual(9);
 
   await client.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public");
   for (const migration of migrations.slice(0, 8)) {
