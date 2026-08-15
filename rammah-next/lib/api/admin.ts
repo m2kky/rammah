@@ -460,6 +460,7 @@ export type AdminLegalPage = {
   version: string;
   status: AdminContentStatus;
   publishedAt: string | null;
+  publicationError: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -480,6 +481,7 @@ export type AdminCmsPage = {
   template: string;
   status: AdminContentStatus;
   publishedAt: string | null;
+  publicationError: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -499,7 +501,9 @@ export type AdminCmsPageSection = {
   title: string | null;
   body: string | null;
   config: Record<string, unknown>;
-  mediaAssetId: string | null;
+  media: Record<string, AdminMediaAssignment[]>;
+  /** @deprecated Compatibility only; new API responses omit this field. */
+  mediaAssetId?: string | null;
   sortOrder: number;
   status: AdminContentStatus;
   createdAt: string;
@@ -511,9 +515,124 @@ export type AdminCmsPageSectionPayload = {
   title?: string | null;
   body?: string | null;
   config: Record<string, unknown>;
+  /** @deprecated Use replaceAdminCmsSectionMedia after saving the section. */
   mediaAssetId?: string | null;
-  sortOrder: number;
+  sortOrder?: number;
   status: AdminContentStatus;
+};
+
+export type AdminMediaKind = "image" | "video" | "animation_bundle";
+export type AdminMediaSource = "r2" | "external";
+export type AdminMediaProcessingState = "pending" | "ready" | "failed";
+
+export type AdminMediaAsset = {
+  id: string;
+  displayName: string;
+  fileName: string;
+  mimeType: string;
+  sourceType: AdminMediaSource;
+  mediaKind: AdminMediaKind;
+  publicUrl: string | null;
+  altText: string | null;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  metadata: Record<string, unknown>;
+  processingState: AdminMediaProcessingState;
+  processingError: string | null;
+  status: AdminContentStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminMediaAssignment = {
+  id: string;
+  slotKey: string;
+  sortOrder: number;
+  altTextOverride: string | null;
+  decorative: boolean;
+  assetId: string;
+  displayName: string;
+  mediaKind: AdminMediaKind;
+  mimeType: string;
+  publicUrl: string | null;
+  altText: string | null;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  processingState: AdminMediaProcessingState;
+  status: AdminContentStatus;
+};
+
+export type AdminMediaAssignmentInput = {
+  mediaAssetId: string;
+  altTextOverride?: string | null;
+  decorative?: boolean;
+};
+
+export type AdminCmsFieldDefinition = {
+  key: string;
+  label: string;
+  type: "text" | "markdown" | "boolean" | "choice" | "link" | "media";
+  required?: boolean;
+  helpText?: string;
+  defaultValue?: boolean;
+  options?: ReadonlyArray<{ value: string; label: string }>;
+  accepts?: ReadonlyArray<AdminMediaKind>;
+  cardinality?: "single" | "multiple";
+};
+
+export type AdminCmsSectionDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  fields: AdminCmsFieldDefinition[];
+};
+
+export type AdminGlobalMediaDefinition = {
+  key: string;
+  label: string;
+  description: string;
+  atomic: boolean;
+  slots: AdminCmsFieldDefinition[];
+};
+
+export type AdminGlobalMediaVersion = {
+  id: string;
+  definitionKey: string;
+  version: number;
+  status: AdminContentStatus;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assignments: Array<AdminMediaAssignment & { assignmentSetId: string }>;
+};
+
+export type AdminSeoMetadata = {
+  id?: string;
+  resourceType: string;
+  resourceId: string;
+  metaTitle: string | null;
+  metaDescription: string | null;
+  canonicalUrl: string | null;
+  ogImageAssetId: string | null;
+  noindex: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type MediaUploadIntent = {
+  assetId: string;
+  uploadUrl: string;
+  expiresAt: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+export type AdminMediaUsage = Record<string, unknown> & {
+  ownerType: string;
+  slotKey?: string;
 };
 
 export type GoogleCalendarIntegrationStatus = {
@@ -1502,6 +1621,247 @@ export const updateAdminCmsPageSection = async (
     },
   );
 
+  return payload.data;
+};
+
+export const createAdminCmsPage = async (input: AdminCmsPagePayload) => {
+  const payload = await adminRequest<{ data: AdminCmsPage }>("/admin/cms/pages", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+  return payload.data;
+};
+
+export const archiveAdminCmsPage = async (id: string) => {
+  await adminRequest<void>(`/admin/cms/pages/${id}`, { method: "DELETE" });
+};
+
+export const createAdminCmsPageSection = async (
+  pageId: string,
+  input: AdminCmsPageSectionPayload,
+) => {
+  const payload = await adminRequest<{ data: AdminCmsPageSection }>(
+    `/admin/cms/pages/${pageId}/sections`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const archiveAdminCmsPageSection = async (pageId: string, sectionId: string) => {
+  await adminRequest<void>(`/admin/cms/pages/${pageId}/sections/${sectionId}`, {
+    method: "DELETE",
+  });
+};
+
+export const duplicateAdminCmsPageSection = async (pageId: string, sectionId: string) => {
+  const payload = await adminRequest<{ data: AdminCmsPageSection }>(
+    `/admin/cms/pages/${pageId}/sections/${sectionId}/duplicate`,
+    { method: "POST" },
+  );
+  return payload.data;
+};
+
+export const reorderAdminCmsPageSections = async (pageId: string, sectionIds: string[]) => {
+  const payload = await adminRequest<{ data: AdminCmsPageSection[] }>(
+    `/admin/cms/pages/${pageId}/sections/order`,
+    { method: "PUT", body: JSON.stringify({ sectionIds }) },
+  );
+  return payload.data;
+};
+
+export const replaceAdminCmsSectionMedia = async (
+  pageId: string,
+  sectionId: string,
+  slots: Record<string, AdminMediaAssignmentInput[]>,
+) => {
+  const payload = await adminRequest<{ data: AdminMediaAssignment[] }>(
+    `/admin/cms/pages/${pageId}/sections/${sectionId}/media`,
+    { method: "PUT", body: JSON.stringify({ slots }) },
+  );
+  return payload.data;
+};
+
+export const fetchAdminCmsSectionDefinitions = async () => {
+  const payload = await adminRequest<{ data: AdminCmsSectionDefinition[] }>(
+    "/admin/cms/definitions/sections",
+  );
+  return payload.data;
+};
+
+export const fetchAdminGlobalMediaDefinitions = async () => {
+  const payload = await adminRequest<{ data: AdminGlobalMediaDefinition[] }>(
+    "/admin/cms/definitions/global-media",
+  );
+  return payload.data;
+};
+
+export const fetchAdminMediaAssets = async (filters: {
+  search?: string;
+  status?: AdminContentStatus | "all";
+  sourceType?: AdminMediaSource | "all";
+  mediaKind?: AdminMediaKind | "all";
+  processingState?: AdminMediaProcessingState | "all";
+} = {}) => {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value && value !== "all") params.set(key, value);
+  }
+  const query = params.toString();
+  const payload = await adminRequest<{ data: AdminMediaAsset[] }>(
+    `/admin/cms/media-assets${query ? `?${query}` : ""}`,
+  );
+  return payload.data;
+};
+
+export const createAdminMediaUploadIntent = async (input: {
+  displayName?: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  altText?: string | null;
+}) => {
+  const payload = await adminRequest<{ data: MediaUploadIntent }>(
+    "/admin/cms/media-assets/upload-intents",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const uploadAdminMediaFile = (
+  uploadUrl: string,
+  file: File,
+  onProgress: (percentage: number) => void = () => undefined,
+) => new Promise<void>((resolve, reject) => {
+  const request = new XMLHttpRequest();
+  request.open("PUT", uploadUrl);
+  request.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+  request.upload.addEventListener("progress", (event) => {
+    if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+  });
+  request.addEventListener("load", () => {
+    if (request.status >= 200 && request.status < 300) {
+      onProgress(100);
+      resolve();
+    } else {
+      reject(new Error(`Direct upload failed with status ${request.status}.`));
+    }
+  });
+  request.addEventListener("error", () => reject(new Error("Direct upload failed.")));
+  request.addEventListener("abort", () => reject(new Error("Direct upload was cancelled.")));
+  request.send(file);
+});
+
+export const finalizeAdminMediaUpload = async (assetId: string) => {
+  const payload = await adminRequest<{ data: AdminMediaAsset }>(
+    "/admin/cms/media-assets/finalize",
+    { method: "POST", body: JSON.stringify({ assetId }) },
+  );
+  return payload.data;
+};
+
+export const createAdminExternalMedia = async (input: {
+  displayName: string;
+  fileName: string;
+  mimeType: string;
+  mediaKind: "image" | "video";
+  publicUrl: string;
+  altText: string | null;
+}) => {
+  const payload = await adminRequest<{ data: AdminMediaAsset }>(
+    "/admin/cms/media-assets/external",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const updateAdminMediaAsset = async (
+  id: string,
+  input: { displayName?: string; altText?: string | null },
+) => {
+  const payload = await adminRequest<{ data: AdminMediaAsset }>(
+    `/admin/cms/media-assets/${id}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const fetchAdminMediaUsages = async (id: string) => {
+  const payload = await adminRequest<{ data: AdminMediaUsage[] }>(
+    `/admin/cms/media-assets/${id}/usages`,
+  );
+  return payload.data;
+};
+
+export const archiveAdminMediaAsset = async (id: string) => {
+  await adminRequest<void>(`/admin/cms/media-assets/${id}`, { method: "DELETE" });
+};
+
+export const permanentlyDeleteAdminMediaAsset = async (id: string) => {
+  await adminRequest<void>(`/admin/cms/media-assets/${id}/permanent`, { method: "DELETE" });
+};
+
+export const fetchAdminGlobalMediaVersions = async () => {
+  const payload = await adminRequest<{ data: AdminGlobalMediaVersion[] }>(
+    "/admin/cms/global-media",
+  );
+  return payload.data;
+};
+
+export const createAdminGlobalMediaVersion = async (definitionKey: string) => {
+  const payload = await adminRequest<{ data: AdminGlobalMediaVersion }>(
+    `/admin/cms/global-media/${encodeURIComponent(definitionKey)}/versions`,
+    { method: "POST" },
+  );
+  return payload.data;
+};
+
+export const replaceAdminGlobalMedia = async (
+  definitionKey: string,
+  assignmentSetId: string,
+  slots: Record<string, AdminMediaAssignmentInput[]>,
+) => {
+  const payload = await adminRequest<{ data: AdminMediaAssignment[] }>(
+    `/admin/cms/global-media/${encodeURIComponent(definitionKey)}/versions/${assignmentSetId}`,
+    { method: "PUT", body: JSON.stringify({ slots }) },
+  );
+  return payload.data;
+};
+
+export const publishAdminGlobalMediaVersion = async (
+  definitionKey: string,
+  assignmentSetId: string,
+) => {
+  const payload = await adminRequest<{ data: AdminGlobalMediaVersion }>(
+    `/admin/cms/global-media/${encodeURIComponent(definitionKey)}/versions/${assignmentSetId}/publish`,
+    { method: "POST" },
+  );
+  return payload.data;
+};
+
+export const fetchAdminSeoMetadata = async (resourceType: string, resourceId: string) => {
+  const payload = await adminRequest<{ data: AdminSeoMetadata | null }>(
+    `/admin/cms/seo-metadata/${encodeURIComponent(resourceType)}/${resourceId}`,
+  );
+  return payload.data;
+};
+
+export const saveAdminSeoMetadata = async (
+  input: Omit<AdminSeoMetadata, "id" | "createdAt" | "updatedAt">,
+) => {
+  const payload = await adminRequest<{ data: AdminSeoMetadata }>(
+    "/admin/cms/seo-metadata",
+    { method: "PUT", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const createAdminPagePreviewToken = async (pageId: string, expiresInSeconds?: number) => {
+  const payload = await adminRequest<{
+    data: { token: string; pageId: string; slug: string; expiresAt: string };
+  }>(`/admin/cms/pages/${pageId}/preview-token`, {
+    method: "POST",
+    body: JSON.stringify(expiresInSeconds ? { expiresInSeconds } : {}),
+  });
   return payload.data;
 };
 

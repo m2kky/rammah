@@ -19,7 +19,7 @@ const section = (
   title: null,
   body: null,
   config: {},
-  mediaAssetId: null,
+  media: {},
   sortOrder: 10,
   ...overrides,
 });
@@ -161,6 +161,7 @@ describe("CMS page content contracts", () => {
       metaDescription: "SEO description",
       canonicalUrl: "https://example.com/page",
       noindex: true,
+      ogImage: null,
     };
 
     expect(getPageMetadata(contentPage, "Fallback", "Fallback description")).toEqual({

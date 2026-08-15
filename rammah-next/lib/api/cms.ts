@@ -29,7 +29,33 @@ export type PublicLegalPage = {
     metaDescription: string | null;
     canonicalUrl: string | null;
     noindex: boolean;
+    ogImage: CmsMedia | null;
   } | null;
+};
+
+export type CmsMedia = {
+  id: string;
+  kind: "image" | "video" | "animation_bundle";
+  mimeType: string;
+  publicUrl: string;
+  altText: string | null;
+  decorative: boolean;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  metadata: Record<string, unknown>;
+};
+
+export type CmsSectionMedia = Record<string, CmsMedia | CmsMedia[]>;
+
+export type PublicGlobalMedia = {
+  groups: Record<string, Record<string, CmsMedia | CmsMedia[]>>;
+  loadingVideo: CmsMedia | null;
+  loadingPoster: CmsMedia | null;
+  matchedHeroFrame: CmsMedia | null;
+  desktopMenuVideo: CmsMedia | null;
+  mobileMenuVideo: CmsMedia | null;
+  defaultOgImage: CmsMedia | null;
 };
 
 export type PublicBlogPost = {
@@ -115,8 +141,9 @@ export type PublicPageSection = {
   title: string | null;
   body: string | null;
   config: Record<string, unknown>;
-  mediaAssetId: string | null;
   sortOrder: number;
+  status?: string;
+  media: CmsSectionMedia;
 };
 
 export type PublicPage = {
@@ -130,6 +157,7 @@ export type PublicPage = {
     metaDescription: string | null;
     canonicalUrl: string | null;
     noindex: boolean;
+    ogImage: CmsMedia | null;
   } | null;
   sections: PublicPageSection[];
 };
@@ -139,6 +167,26 @@ export const fetchPublicPage = async (slug: string) => {
     `/public/cms/pages/${encodeURIComponent(slug)}`,
   );
 
+  return payload.data;
+};
+
+export const fetchPublicGlobalMedia = async () => {
+  const payload = await publicCmsRequest<{ data: PublicGlobalMedia }>(
+    "/public/cms/media/globals",
+  );
+  return payload.data;
+};
+
+export const fetchPreviewPage = async (pageId: string, token: string) => {
+  const response = await fetch(
+    `${apiBaseUrl}/public/cms/preview/pages/${encodeURIComponent(pageId)}`,
+    {
+      headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+  );
+  if (!response.ok) throw new Error(`CMS preview request failed: ${response.status}`);
+  const payload = await response.json() as { data: PublicPage & { preview: true } };
   return payload.data;
 };
 
