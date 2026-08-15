@@ -80,7 +80,7 @@ export default function AboutSection({ section }: { section?: PublicPageSection 
                 className="btn-fill-hover btn-fill-light inline-flex items-center gap-4 px-6 md:px-8 py-3.5 md:py-4 rounded-full border-4 border-[#0F3B46] bg-white shadow-[0_8px_20px_rgba(15,59,70,0.15)]"
               >
                 <span
-                  className="text-[#0F3B46] font-bold leading-[0.8]"
+                  className="font-bold leading-[0.8]"
                   style={{ fontSize: "clamp(1.1rem, 2.5vw, 3.1rem)" }}
                 >
                   Read Full Story

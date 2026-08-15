@@ -54,7 +54,7 @@ export default function CTASection({ section }: { section?: PublicPageSection | 
             style={{ transitionDelay: inView ? "560ms" : "0ms" }}
           >
             <span
-              className="text-[#0F3B46] font-bold leading-[0.8]"
+              className="font-bold leading-[0.8]"
               style={{ fontSize: "clamp(1rem, 2.2vw, 2.8rem)" }}
             >
               {ctaText}
