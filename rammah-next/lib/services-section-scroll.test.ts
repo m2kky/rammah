@@ -7,6 +7,15 @@ const servicesSectionSource = readFileSync(
 );
 
 describe("services section scroll", () => {
+  it("returns the first panel fully off-screen when scrolling back before its phase", () => {
+    expect(servicesSectionSource).not.toContain(
+      "yPercent: i === 0 ? 22 : 105",
+    );
+    expect(servicesSectionSource).toMatch(
+      /tl\.fromTo\(\s*panel,\s*\{\s*yPercent:\s*105/,
+    );
+  });
+
   it("keeps the pinned container on-screen until the section unpins", () => {
     expect(servicesSectionSource).not.toMatch(
       /tl\.to\(\s*container,\s*\{\s*xPercent:\s*-100/,

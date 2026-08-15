@@ -335,7 +335,7 @@ export default function ServicesSection({
             tl.fromTo(
               panel,
               {
-                yPercent: i === 0 ? 22 : 105,
+                yPercent: 105,
                 scale: i === 0 ? 1.01 : 1.025,
               },
               {
