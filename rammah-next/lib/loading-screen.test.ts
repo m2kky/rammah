@@ -14,11 +14,11 @@ const heroSource = readFileSync(
 
 describe("LoadingScreen mobile video", () => {
   it("uses the optimized intro asset with mobile autoplay attributes", () => {
-    expect(componentSource).toContain("/videos/intro-loading.mp4");
+    expect(componentSource).toContain("src={video.publicUrl}");
     expect(componentSource).toContain("autoPlay");
     expect(componentSource).toContain("muted");
     expect(componentSource).toContain("playsInline");
-    expect(componentSource).toContain('poster="/videos/intro-loading-poster.jpg"');
+    expect(componentSource).toContain("poster={poster.publicUrl}");
   });
 
   it("ships both the optimized video and its poster", () => {
@@ -55,9 +55,9 @@ describe("LoadingScreen mobile video", () => {
     const synchronizedGeometry =
       'className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"';
 
-    expect(heroSource).toContain('src="/hero.png"');
-    expect(heroSource).toContain("width={720}");
-    expect(heroSource).toContain("height={1280}");
+    expect(heroSource).toContain("src={portrait.publicUrl}");
+    expect(heroSource).toContain("width={portrait.width ?? 720}");
+    expect(heroSource).toContain("height={portrait.height ?? 1280}");
     expect(componentSource).toContain(synchronizedGeometry);
     expect(heroSource).toContain(synchronizedGeometry);
   });

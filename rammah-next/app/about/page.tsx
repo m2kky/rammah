@@ -1,8 +1,8 @@
 import PublicFrame from "@/components/PublicFrame";
 import AboutExperience from "@/components/about/AboutExperience";
 
-import { fetchPublicPage } from "@/lib/api/cms";
-import { getPageMetadata } from "@/lib/api/cms-content";
+import { fetchPublicGlobalMedia, fetchPublicPage } from "@/lib/api/cms";
+import { getAboutMedia, getPageMetadata } from "@/lib/api/cms-content";
 
 export async function generateMetadata() {
   const page = await fetchPublicPage("about").catch(() => null);
@@ -14,11 +14,14 @@ export async function generateMetadata() {
 }
 
 export default async function AboutPage() {
-  const page = await fetchPublicPage("about").catch(() => null);
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("about").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
 
   return (
     <PublicFrame>
-      <AboutExperience page={page} />
+      <AboutExperience page={page} media={getAboutMedia(globals)} />
     </PublicFrame>
   );
 }

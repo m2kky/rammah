@@ -3,9 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { gsap } from "@/lib/gsap-init";
 import { ShapeGreen, ShapeOrange, ShapeBlue, ShapeRed } from "./aCRLShapes";
+import type { CmsMedia } from "@/lib/api/cms";
 
 type LoadingScreenProps = {
   onComplete: () => void;
+  video: CmsMedia;
+  poster: CmsMedia;
 };
 
 const roles = [
@@ -19,7 +22,7 @@ const INTRO_DURATION_SECONDS = 7.2;
 const INTRO_START_TIMEOUT_MS = 6000;
 const INTRO_PLAYBACK_TIMEOUT_MS = 9000;
 
-export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
+export default function LoadingScreen({ onComplete, video, poster }: LoadingScreenProps) {
   const [progress, setProgress] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const wordsRef = useRef<(HTMLDivElement | null)[]>([]);
@@ -214,8 +217,8 @@ export default function LoadingScreen({ onComplete }: LoadingScreenProps) {
         <div ref={videoWrapRef} className="absolute inset-0 z-10 flex items-end justify-center">
           <video
             ref={videoRef}
-            src="/videos/intro-loading.mp4"
-            poster="/videos/intro-loading-poster.jpg"
+            src={video.publicUrl}
+            poster={poster.publicUrl}
             autoPlay
             muted
             playsInline

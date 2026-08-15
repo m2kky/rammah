@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import Link from "next/link";
@@ -8,21 +8,35 @@ import { useRouter } from "next/navigation";
 import { fetchPublicOfferings } from "@/lib/api/offerings";
 import { servicesFallback } from "@/data/servicesFallback";
 import type { getHomePageContent } from "@/lib/api/cms-content";
+import type { CmsMedia } from "@/lib/api/cms";
 
-/* ─── config ─── */
-const TOTAL_FRAMES = 168;   // 7s clip at 24fps; stops before the closing blink
-const FRAME_VERSION = "services_v1";
-const FRAME_PATH   = (n: number) =>
-  `/services-frames/frame${String(n).padStart(4, "0")}.webp?v=${FRAME_VERSION}`;
+const patternFrames = (animation: CmsMedia) => {
+  const frameCount = Number(animation.metadata.frameCount);
+  const pattern = animation.metadata.urlPattern;
+  if (!Number.isInteger(frameCount) || frameCount < 1 || typeof pattern !== "string") return [];
+  return Array.from({ length: frameCount }, (_, index) =>
+    pattern.replace("{frame}", String(index + 1).padStart(4, "0")));
+};
 
 export default function ServicesSection({
   content,
+  animation,
 }: {
   content: ReturnType<typeof getHomePageContent>["services"];
+  animation: CmsMedia;
 }) {
   const [services, setServices] = useState(servicesFallback);
   const { title, body, roles, programLabel, bookingCta } = content;
   const router = useRouter();
+  const patternUrls = useMemo(() => patternFrames(animation), [animation]);
+  const manifestUrl = typeof animation.metadata.manifestUrl === "string"
+    ? animation.metadata.manifestUrl
+    : null;
+  const [manifest, setManifest] = useState<{ url: string; frames: string[] } | null>(null);
+  const frameUrls = useMemo(() => patternUrls.length > 0
+    ? patternUrls
+    : manifest?.url === manifestUrl ? manifest.frames : [], [manifest, manifestUrl, patternUrls]);
+  const totalFrames = Math.max(frameUrls.length, 1);
 
   const sectionRef     = useRef<HTMLDivElement>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
@@ -83,6 +97,27 @@ export default function ServicesSection({
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (patternUrls.length > 0 || !manifestUrl) return;
+    const controller = new AbortController();
+    void fetch(manifestUrl, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Animation manifest failed: ${response.status}`);
+        return response.json() as Promise<{ frames?: Array<{ url?: string }> }>;
+      })
+      .then((payload) => setManifest({
+        url: manifestUrl,
+        frames: (payload.frames ?? []).flatMap((frame) =>
+          typeof frame.url === "string" ? [frame.url] : []),
+      }))
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.warn("Could not load the CMS animation manifest.", error);
+        }
+      });
+    return () => controller.abort();
+  }, [manifestUrl, patternUrls]);
+
   /* draw the portrait on a full black stage without stretching or cropping it */
   const drawPortraitFrame = (
     img: HTMLImageElement,
@@ -131,14 +166,15 @@ export default function ServicesSection({
   /* ─── Preload all frames ─── */
   useEffect(() => {
     const imgs: HTMLImageElement[] = [];
+    loadedRef.current = 0;
 
-    for (let i = 1; i <= TOTAL_FRAMES; i++) {
+    for (const [index, url] of frameUrls.entries()) {
       const img = new Image();
-      img.src = FRAME_PATH(i);
+      img.src = url;
       img.onload = () => {
         loadedRef.current += 1;
         /* draw first frame as soon as it arrives */
-        if (i === 1) {
+        if (index === 0) {
           drawPortraitFrame(img, canvasRef.current, 0.75);
           drawPortraitFrame(img, mobileCanvasRef.current, 0.5);
         }
@@ -147,7 +183,7 @@ export default function ServicesSection({
     }
 
     framesRef.current = imgs;
-  }, []);
+  }, [frameUrls]);
 
   /* ─── GSAP ─── */
   useGSAP(
@@ -190,7 +226,7 @@ export default function ServicesSection({
           onUpdate: (self) => {
             /* only run during the video phase (0 → 35%) */
             const raw    = Math.min(self.progress / 0.35, 1);
-            const idx    = Math.round(raw * (TOTAL_FRAMES - 1));
+            const idx    = Math.round(raw * (totalFrames - 1));
             if (idx !== frameProxy.frame) {
               frameProxy.frame = idx;
               drawFrame(idx, canvasRef.current, 0.75);
@@ -372,7 +408,7 @@ export default function ServicesSection({
           scrub: 0.9,
           onUpdate: (self) => {
             const raw = Math.min(self.progress / 0.42, 1);
-            const idx = Math.round(raw * (TOTAL_FRAMES - 1));
+            const idx = Math.round(raw * (totalFrames - 1));
             if (idx !== mobileFrameProxy.frame) {
               mobileFrameProxy.frame = idx;
               drawFrame(idx, mobileCanvasRef.current, 0.5);
@@ -503,7 +539,7 @@ export default function ServicesSection({
 
       return () => mm.revert();
     },
-    { scope: sectionRef, dependencies: [services], revertOnUpdate: true }
+    { scope: sectionRef, dependencies: [services, frameUrls], revertOnUpdate: true }
   );
 
   /* ─── JSX ─── */

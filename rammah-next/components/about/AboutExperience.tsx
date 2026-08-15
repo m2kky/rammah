@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
@@ -9,7 +8,7 @@ import AboutGlobe from "./AboutGlobe";
 import { ShapeBlue } from "../aCRLShapes";
 import styles from "./AboutExperience.module.css";
 import { findPublicSection, type PublicPage } from "@/lib/api/cms";
-import { getMarqueeContent } from "@/lib/api/cms-content";
+import { getMarqueeContent, type getAboutMedia } from "@/lib/api/cms-content";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -42,7 +41,7 @@ const proof = [
   ["22+", "countries reached through training"],
 ];
 
-export default function AboutExperience({ page }: { page?: PublicPage | null }) {
+export default function AboutExperience({ page, media }: { page?: PublicPage | null; media: ReturnType<typeof getAboutMedia> }) {
   const rootRef = useRef<HTMLElement>(null);
   const cinematicVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -335,13 +334,11 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
           </div>
 
           <div className={styles.heroPortrait} data-hero-image>
-            <Image
-              src="/about_hero.png"
-              alt="Ahmed Rammah"
-              fill
-              priority
-              sizes="(min-width: 900px) 48vw, 100vw"
-              className={styles.portraitImage}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={media.heroImage.publicUrl}
+              alt={media.heroImage.decorative ? "" : media.heroImage.altText ?? ""}
+              className={`${styles.portraitImage} absolute inset-0 h-full w-full`}
             />
           </div>
 
@@ -363,8 +360,8 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
             tabIndex={-1}
             data-cinematic-video
           >
-            <source src="/videos/about-fastcut-mobile.webm" type="video/webm" media="(max-width: 899px)" />
-            <source src="/videos/about-fastcut-desktop.webm" type="video/webm" />
+            <source src={media.mobileFastCutVideo.publicUrl} type={media.mobileFastCutVideo.mimeType} media="(max-width: 899px)" />
+            <source src={media.desktopFastCutVideo.publicUrl} type={media.desktopFastCutVideo.mimeType} />
           </video>
           <div className={styles.cinematicShade} />
 
@@ -448,12 +445,11 @@ export default function AboutExperience({ page }: { page?: PublicPage | null }) 
 
       <section className={styles.story} data-parallax-section>
         <div className={styles.storyImageFrame}>
-          <Image
-            src="/Systems meet people.png"
-            alt="Ahmed Rammah during a training session"
-            fill
-            sizes="(min-width: 900px) 46vw, 100vw"
-            className={styles.storyImage}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={media.supportingImage.publicUrl}
+            alt={media.supportingImage.decorative ? "" : media.supportingImage.altText ?? ""}
+            className={`${styles.storyImage} absolute inset-0 h-full w-full`}
             data-parallax-image
           />
         </div>

@@ -1,8 +1,8 @@
 import PublicFrame from "@/components/PublicFrame";
 import CorporateExperience from "@/components/corporate/CorporateExperience";
 
-import { fetchPublicPage } from "@/lib/api/cms";
-import { getPageMetadata } from "@/lib/api/cms-content";
+import { fetchPublicGlobalMedia, fetchPublicPage } from "@/lib/api/cms";
+import { getCorporateMedia, getPageMetadata } from "@/lib/api/cms-content";
 
 export async function generateMetadata() {
   const page = await fetchPublicPage("corporate-training").catch(() => null);
@@ -14,11 +14,14 @@ export async function generateMetadata() {
 }
 
 export default async function CorporateTrainingPage() {
-  const page = await fetchPublicPage("corporate-training").catch(() => null);
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("corporate-training").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
 
   return (
     <PublicFrame>
-      <CorporateExperience page={page} />
+      <CorporateExperience page={page} media={getCorporateMedia(globals)} />
     </PublicFrame>
   );
 }

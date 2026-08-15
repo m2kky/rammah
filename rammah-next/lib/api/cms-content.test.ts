@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { PublicPage, PublicPageSection } from "./cms";
 import {
   getContactPageContent,
+  getAboutMedia,
+  getGlobalMedia,
   getHomePageContent,
   getMarqueeContent,
   getPageMetadata,
@@ -35,6 +37,23 @@ const page = (sections: PublicPageSection[]): PublicPage => ({
 });
 
 describe("CMS page content contracts", () => {
+  it("uses CMS media and preserves the seeded fallback", () => {
+    const globals = getGlobalMedia(null);
+    expect(globals.loadingVideo.publicUrl).toBe("/videos/intro-loading.mp4");
+    expect(getAboutMedia(null).heroImage.publicUrl).toBe("/about_hero.png");
+
+    const edited = getGlobalMedia({
+      groups: {},
+      loadingVideo: { ...globals.loadingVideo, publicUrl: "https://media.example.test/loading.mp4" },
+      loadingPoster: null,
+      matchedHeroFrame: null,
+      desktopMenuVideo: null,
+      mobileMenuVideo: null,
+      defaultOgImage: null,
+    });
+    expect(edited.loadingVideo.publicUrl).toBe("https://media.example.test/loading.mp4");
+  });
+
   it("uses the home hero title as the visible display word", () => {
     const content = getHomePageContent(
       page([

@@ -1,14 +1,15 @@
 "use client";
 
-import Image from "next/image";
 import type { getHomePageContent } from "@/lib/api/cms-content";
+import type { CmsMedia } from "@/lib/api/cms";
 
 type HeroSectionProps = {
   entryReady: boolean;
   content: ReturnType<typeof getHomePageContent>["hero"];
+  portrait: CmsMedia;
 };
 
-export default function HeroSection({ entryReady, content }: HeroSectionProps) {
+export default function HeroSection({ entryReady, content, portrait }: HeroSectionProps) {
   const { roles, body: bodyText, displayWord } = content;
   return (
     <section className="relative w-full min-h-[100dvh] bg-black overflow-hidden">
@@ -78,13 +79,13 @@ export default function HeroSection({ entryReady, content }: HeroSectionProps) {
 
       {/* Portrait — centered, fills height */}
       <div className="absolute inset-0 flex justify-center items-end z-10 pointer-events-none">
-        <Image
-          src="/hero.png"
-          alt={content.section?.title || "Ahmed Ramah"}
-          width={720}
-          height={1280}
-          sizes="(min-width: 768px) 54vh, 57vh"
-          preload
+        {/* Native image supports both seeded local files and arbitrary CMS/R2 origins. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={portrait.publicUrl}
+          alt={portrait.decorative ? "" : portrait.altText || content.section?.title || "Ahmed Rammah"}
+          width={portrait.width ?? 720}
+          height={portrait.height ?? 1280}
           className="h-[86dvh] w-auto max-w-none object-contain object-bottom md:h-[96dvh]"
         />
       </div>

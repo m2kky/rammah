@@ -2,9 +2,83 @@ import {
   findPublicSection,
   type PublicPage,
   type PublicPageSection,
+  type PublicGlobalMedia,
   type PublicSiteSettings,
+  type CmsMedia,
 } from "./cms";
 import type { Metadata } from "next";
+
+const fallbackMedia = (
+  id: string,
+  kind: CmsMedia["kind"],
+  mimeType: string,
+  publicUrl: string,
+  altText: string | null,
+  metadata: Record<string, unknown> = {},
+): CmsMedia => ({
+  id: `fallback:${id}`,
+  kind,
+  mimeType,
+  publicUrl,
+  altText,
+  decorative: altText === null,
+  width: null,
+  height: null,
+  durationMs: null,
+  metadata,
+});
+
+const groupSlot = (
+  globals: PublicGlobalMedia | null | undefined,
+  definitionKey: string,
+  slotKey: string,
+) => {
+  const value = globals?.groups[definitionKey]?.[slotKey];
+  return Array.isArray(value) ? value[0] : value;
+};
+
+export const getGlobalMedia = (globals: PublicGlobalMedia | null | undefined) => ({
+  loadingVideo: globals?.loadingVideo ?? fallbackMedia("loading-video", "video", "video/mp4", "/videos/intro-loading.mp4", null),
+  loadingPoster: globals?.loadingPoster ?? fallbackMedia("loading-poster", "image", "image/jpeg", "/videos/intro-loading-poster.jpg", "Ahmed Rammah intro"),
+  matchedHeroFrame: globals?.matchedHeroFrame ?? fallbackMedia("matched-hero", "image", "image/png", "/hero.png", "Ahmed Rammah"),
+  desktopMenuVideo: globals?.desktopMenuVideo ?? fallbackMedia("menu-desktop", "video", "video/webm", "/videos/about-fastcut-desktop.webm", null),
+  mobileMenuVideo: globals?.mobileMenuVideo ?? fallbackMedia("menu-mobile", "video", "video/webm", "/videos/about-fastcut-mobile.webm", null),
+  defaultOgImage: globals?.defaultOgImage ?? fallbackMedia("default-og", "image", "image/png", "/hero.png", "Ahmed Rammah"),
+});
+
+export const getHomepageMedia = (globals: PublicGlobalMedia | null | undefined) => ({
+  heroPortrait: groupSlot(globals, "homepage", "heroPortrait")
+    ?? fallbackMedia("home-hero", "image", "image/png", "/hero.png", "Ahmed Rammah"),
+  servicesAnimation: groupSlot(globals, "homepage", "servicesAnimation")
+    ?? fallbackMedia("services-animation", "animation_bundle", "application/vnd.rammah.animation+json", "/services-frames/frame0001.webp?v=services_v1", null, {
+      frameCount: 168,
+      fileExtension: "webp",
+      urlPattern: "/services-frames/frame{frame}.webp?v=services_v1",
+    }),
+});
+
+export const getAboutMedia = (globals: PublicGlobalMedia | null | undefined) => ({
+  heroImage: groupSlot(globals, "about", "heroImage")
+    ?? fallbackMedia("about-hero", "image", "image/png", "/about_hero.png", "Ahmed Rammah"),
+  desktopFastCutVideo: groupSlot(globals, "about", "desktopFastCutVideo")
+    ?? fallbackMedia("about-video-desktop", "video", "video/webm", "/videos/about-fastcut-desktop.webm", null),
+  mobileFastCutVideo: groupSlot(globals, "about", "mobileFastCutVideo")
+    ?? fallbackMedia("about-video-mobile", "video", "video/webm", "/videos/about-fastcut-mobile.webm", null),
+  supportingImage: groupSlot(globals, "about", "supportingImage")
+    ?? fallbackMedia("about-supporting", "image", "image/png", "/Systems meet people.png", "Ahmed Rammah during a training session"),
+});
+
+export const getCorporateMedia = (globals: PublicGlobalMedia | null | undefined) => ({
+  portrait: groupSlot(globals, "corporateTraining", "portrait")
+    ?? fallbackMedia("corporate-portrait", "image", "image/png", "/RammahPortrait1.png", "Corporate training with Ahmed Rammah"),
+  parallaxImage: groupSlot(globals, "corporateTraining", "parallaxImage")
+    ?? fallbackMedia("corporate-parallax", "image", "image/png", "/hero-final-frame.png", "Corporate leadership training"),
+});
+
+export const getServiceDetailMedia = (globals: PublicGlobalMedia | null | undefined) => ({
+  portrait: groupSlot(globals, "serviceDetail", "portrait")
+    ?? fallbackMedia("service-portrait", "image", "image/png", "/RammahPortrait1.png", "Ahmed Rammah"),
+});
 
 const textField = (
   section: PublicPageSection | null,

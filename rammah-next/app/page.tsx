@@ -4,6 +4,7 @@ import {
   fetchPublicNavigation,
   fetchPublicPage,
   fetchPublicSiteSettings,
+  fetchPublicGlobalMedia,
 } from "@/lib/api/cms";
 import { getPageMetadata, getSiteBrand } from "@/lib/api/cms-content";
 
@@ -17,10 +18,11 @@ export async function generateMetadata() {
 }
 
 export default async function Home() {
-  const [page, navigation, settings] = await Promise.all([
+  const [page, navigation, settings, globalMedia] = await Promise.all([
     fetchPublicPage("home").catch(() => null),
     fetchPublicNavigation("header").catch(() => []),
     fetchPublicSiteSettings().catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
   ]);
 
   return (
@@ -29,6 +31,7 @@ export default async function Home() {
       navigation={navigation}
       siteName={getSiteBrand(settings)}
       footer={<Footer />}
+      globalMedia={globalMedia}
     />
   );
 }

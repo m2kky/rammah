@@ -1,9 +1,10 @@
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import PublicFrame from "@/components/PublicFrame";
 import { servicesFallback } from "@/data/servicesFallback";
 import { fetchPublicOffering, type PublicOffering } from "@/lib/api/offerings";
+import { fetchPublicGlobalMedia } from "@/lib/api/cms";
+import { getServiceDetailMedia } from "@/lib/api/cms-content";
 
 const fallbackOffering = (slug: string): PublicOffering | null => {
   const service = servicesFallback.find((item) => item.slug === slug);
@@ -51,9 +52,13 @@ export default async function ServiceDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const offering = await getOffering(decodeURIComponent(slug));
+  const [offering, globals] = await Promise.all([
+    getOffering(decodeURIComponent(slug)),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
 
   if (!offering) notFound();
+  const media = getServiceDetailMedia(globals);
 
   const facts = [
     ["Mode", offering.attendanceMode],
@@ -99,13 +104,11 @@ export default async function ServiceDetailPage({
           </div>
 
           <div className="relative min-h-[420px] lg:min-h-[620px]">
-            <Image
-              src="/RammahPortrait1.png"
-              alt="Ahmed Rammah"
-              fill
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              className="object-contain object-bottom"
-              priority
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={media.portrait.publicUrl}
+              alt={media.portrait.decorative ? "" : media.portrait.altText ?? ""}
+              className="absolute inset-0 h-full w-full object-contain object-bottom"
             />
           </div>
         </div>

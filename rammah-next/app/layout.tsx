@@ -4,15 +4,19 @@ import "@fontsource-variable/dancing-script/wght.css";
 import "@fontsource-variable/inter/wght.css";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Ahmed Rammah — Engineer · Systematizer · Trainer · Coach",
-  description:
-    "I map your psychological system, find the bugs, and rewrite the code.",
-};
-
 import FloatingCTA from "@/components/FloatingCTA";
-import { fetchPublicSiteSettings } from "@/lib/api/cms";
-import { getSiteLocale } from "@/lib/api/cms-content";
+import { fetchPublicGlobalMedia, fetchPublicSiteSettings } from "@/lib/api/cms";
+import { getGlobalMedia, getSiteLocale } from "@/lib/api/cms-content";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const globals = await fetchPublicGlobalMedia().catch(() => null);
+  const defaultOgImage = getGlobalMedia(globals).defaultOgImage;
+  return {
+    title: "Ahmed Rammah — Engineer · Systematizer · Trainer · Coach",
+    description: "I map your psychological system, find the bugs, and rewrite the code.",
+    openGraph: { images: [defaultOgImage.publicUrl] },
+  };
+}
 
 export default async function RootLayout({
   children,

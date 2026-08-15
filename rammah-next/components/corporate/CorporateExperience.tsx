@@ -1,13 +1,12 @@
 "use client";
 
 import { useRef } from "react";
-import Image from "next/image";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import CorporateQuoteForm from "./CorporateQuoteForm";
 import styles from "./CorporateExperience.module.css";
 import { findPublicSection, type PublicPage } from "@/lib/api/cms";
-import { getMarqueeContent } from "@/lib/api/cms-content";
+import { getMarqueeContent, type getCorporateMedia } from "@/lib/api/cms-content";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -40,7 +39,7 @@ const metrics = [
   ["Decisions", "Faster, systemic problem solving"],
 ];
 
-export default function CorporateExperience({ page }: { page?: PublicPage | null }) {
+export default function CorporateExperience({ page, media }: { page?: PublicPage | null; media: ReturnType<typeof getCorporateMedia> }) {
   const rootRef = useRef<HTMLElement>(null);
 
   const heroSec = findPublicSection(page, "hero");
@@ -321,13 +320,11 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
           </div>
 
           <div className={styles.heroImageWrap} data-hero-image>
-            <Image
-              src="/RammahPortrait1.png"
-              alt="Corporate Training with Ahmed Rammah"
-              fill
-              priority
-              sizes="(min-width: 900px) 45vw, 100vw"
-              className={styles.heroImage}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={media.portrait.publicUrl}
+              alt={media.portrait.decorative ? "" : media.portrait.altText ?? ""}
+              className={`${styles.heroImage} absolute inset-0 h-full w-full`}
             />
           </div>
         </div>
@@ -422,12 +419,11 @@ export default function CorporateExperience({ page }: { page?: PublicPage | null
       {/* 4.5 Parallax Story / Proof */}
       <section className={styles.parallaxSection} data-parallax-section>
         <div className={styles.parallaxImageFrame}>
-          <Image
-            src="/hero-final-frame.png"
-            alt="Corporate Leadership Training"
-            fill
-            sizes="(min-width: 900px) 46vw, 100vw"
-            className={styles.parallaxImage}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={media.parallaxImage.publicUrl}
+            alt={media.parallaxImage.decorative ? "" : media.parallaxImage.altText ?? ""}
+            className={`${styles.parallaxImage} absolute inset-0 h-full w-full`}
             data-parallax-image
           />
         </div>
