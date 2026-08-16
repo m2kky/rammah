@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PublicFrame from "@/components/PublicFrame";
+import { privateMetadata } from "@/lib/seo/metadata";
 
 const copy = {
   contact: {
@@ -16,9 +17,7 @@ const copy = {
   },
 };
 
-export const metadata = {
-  title: "Thank You | Ahmed Rammah",
-};
+export const metadata = privateMetadata("Thank you");
 
 export default async function ThankYouPage({
   searchParams,

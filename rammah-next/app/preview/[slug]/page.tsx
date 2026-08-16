@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { GenericPage } from "../../../components/cms/GenericPage";
 import { PreviewToolbar } from "../../../components/cms/PreviewToolbar";
 import { fetchPreviewPage } from "../../../lib/api/cms";
+import { privateMetadata } from "../../../lib/seo/metadata";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { robots: { index: false, follow: false } };
+export const metadata: Metadata = privateMetadata("CMS preview");
 const cookieName = "rammah_cms_preview";
 
 type PreviewCookie = { token: string; pageId: string; slug: string };
