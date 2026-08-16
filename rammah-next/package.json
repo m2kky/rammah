@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "assets:seo": "node scripts/generate-seo-assets.mjs",
     "lint": "eslint",
     "test:unit": "vitest run lib",
     "test:components": "vitest run --config vitest.components.config.ts",
@@ -45,6 +46,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "jsdom": "^27.4.0",
+    "sharp": "0.35.3",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.10"
