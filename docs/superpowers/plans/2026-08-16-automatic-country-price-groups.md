@@ -169,11 +169,11 @@
 - Consumes: Tasks 4-5 nullable country/preview/paid contracts.
 - Produces: no country input/default, strict 422 blocking, seven-field expectation, and explicit 409 reconfirmation reusing the same hold ID/token.
 
-- [ ] Add failing component/regression tests for no default/input, preview-before-hold, unavailable blocking, same-hold price reconfirmation, expired hold recovery, and foreign location selection.
-- [ ] Run focused tests; expect failures against current fallback/request contract.
-- [ ] Implement API types and BookingFlow state transitions; do not create a second hold after `PRICE_CHANGED`.
-- [ ] Run frontend tests, typecheck, lint, and build; expect PASS.
-- [ ] Commit Task 7 files with `feat(booking): enforce automatic country pricing`.
+- [x] Add failing component/regression tests for no default/input, preview-before-hold, unavailable blocking, same-hold price reconfirmation, expired hold recovery, and foreign location selection.
+- [x] Run focused tests; failures reproduced against the previous fallback/request contract.
+- [x] Implement API types and BookingFlow state transitions; no second hold is created after `PRICE_CHANGED`.
+- [x] Run frontend tests, typecheck, lint, and build; PASS.
+- [x] Commit Task 7 files with `feat(booking): enforce automatic country pricing`.
 
 ### Task 8: Browser E2E and Release Verification
 

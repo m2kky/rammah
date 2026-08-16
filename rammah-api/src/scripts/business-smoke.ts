@@ -9,6 +9,7 @@ import {
   calendarEvents,
   emailDeliveries,
   offeringPrices,
+  offeringPriceCountries,
   offeringSessions,
   offerings,
   payments,
@@ -24,6 +25,7 @@ type SmokeState = {
   offeringId?: string;
   sessionId?: string;
   holdId?: string;
+  holdToken?: string;
   bookingId?: string;
   publicToken?: string;
   paymentId?: string;
@@ -98,6 +100,7 @@ const cleanup = async () => {
   }
 
   if (state.offeringId) {
+    await db.delete(offeringPriceCountries).where(eq(offeringPriceCountries.offeringId, state.offeringId));
     await db.delete(offeringPrices).where(eq(offeringPrices.offeringId, state.offeringId));
     await db.delete(offeringSessions).where(eq(offeringSessions.offeringId, state.offeringId));
     await db.delete(offerings).where(eq(offerings.id, state.offeringId));
@@ -147,13 +150,22 @@ const createTemporaryPaidSessionOffering = async () => {
   ensure(offeringId, "Temporary offering was not created.");
   state.offeringId = offeringId;
 
-  await db.insert(offeringPrices).values({
+  const [price] = await db
+    .insert(offeringPrices)
+    .values({
+      offeringId,
+      name: "Egypt",
+      countryCode: "EG",
+      currency,
+      baseAmountMinor: amountMinor,
+      status: "published",
+    })
+    .returning({ id: offeringPrices.id });
+  ensure(price, "Temporary price group was not created.");
+  await db.insert(offeringPriceCountries).values({
     offeringId,
-    name: "Egypt",
+    priceId: price.id,
     countryCode: "EG",
-    currency,
-    baseAmountMinor: amountMinor,
-    status: "published",
   });
 
   const sessionRows = await db
@@ -172,7 +184,7 @@ const createTemporaryPaidSessionOffering = async () => {
   ensure(sessionId, "Temporary offering session was not created.");
   state.sessionId = sessionId;
 
-  return { offeringId, sessionId, startsAt, endsAt };
+  return { offeringId, sessionId, priceId: price.id, startsAt, endsAt };
 };
 
 const countPaymentsForBooking = async (bookingId: string) =>
@@ -297,18 +309,29 @@ const run = async () => {
     }),
   });
   state.holdId = hold.payload?.data?.id;
+  state.holdToken = hold.payload?.data?.holdToken;
   const holdId = requireValue(state.holdId, "Slot hold was not created.");
+  const holdToken = requireValue(state.holdToken, "Slot hold ownership token was not returned.");
   results.push({ name: "slot hold create", ok: true });
 
   const paidBookingBody = {
     holdId,
+    holdToken,
     attendanceMode: "online",
     customer: {
       fullName: "Business Smoke Customer",
       email: `${runId}@example.com`,
       phone: "01000000000",
     },
-    countryCode: "EG",
+    expectedPrice: {
+      priceId: session.priceId,
+      countryCode: "EG",
+      currency,
+      baseAmountMinor: amountMinor,
+      discountAmountMinor: 0,
+      taxAmountMinor: 0,
+      totalAmountMinor: amountMinor,
+    },
     timezone: "Africa/Cairo",
     answers: [],
   };

@@ -91,9 +91,9 @@ export const filterOfferingLocationsByCountry = (
 };
 
 export type PublicCountryContext = {
-  countryCode: string;
+  countryCode: string | null;
   detectedCountryCode: string | null;
-  source: "header" | "geoip" | "default";
+  source: "header" | "geoip" | null;
 };
 
 type CountryContextResponse = {
@@ -148,14 +148,22 @@ export const fetchPublicCountryContext = async (signal?: AbortSignal) => {
 
   const payload = (await response.json()) as CountryContextResponse;
 
-  if (
-    !payload.data?.countryCode ||
-    !["header", "geoip", "default"].includes(payload.data.source)
-  ) {
+  const data = payload.data;
+  const isResolved =
+    typeof data?.countryCode === "string" &&
+    data.countryCode.length === 2 &&
+    data.detectedCountryCode === data.countryCode &&
+    (data.source === "header" || data.source === "geoip");
+  const isUnresolved =
+    data?.countryCode === null &&
+    data.detectedCountryCode === null &&
+    data.source === null;
+
+  if (!isResolved && !isUnresolved) {
     throw new Error("Invalid country context response.");
   }
 
-  return payload.data;
+  return data;
 };
 
 export const fetchPublicOffering = async (slug: string, signal?: AbortSignal) => {

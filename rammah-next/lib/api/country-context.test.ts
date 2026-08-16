@@ -3,9 +3,9 @@ import { apiBaseUrl } from "./config";
 import * as offeringsApi from "./offerings";
 
 type CountryContext = {
-  countryCode: string;
+  countryCode: string | null;
   detectedCountryCode: string | null;
-  source: "header" | "geoip" | "default";
+  source: "header" | "geoip" | null;
 };
 
 type CountryContextFetcher = (signal?: AbortSignal) => Promise<CountryContext>;
@@ -48,6 +48,29 @@ describe("public country context API", () => {
       method: "GET",
       signal: undefined,
       cache: "no-store",
+    });
+  });
+
+  it("preserves an unresolved country instead of inventing a default", async () => {
+    const fetcher = getFetcher();
+    expect(fetcher).toBeTypeOf("function");
+    if (!fetcher) return;
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          countryCode: null,
+          detectedCountryCode: null,
+          source: null,
+        },
+      }),
+    }));
+
+    await expect(fetcher()).resolves.toEqual({
+      countryCode: null,
+      detectedCountryCode: null,
+      source: null,
     });
   });
 });

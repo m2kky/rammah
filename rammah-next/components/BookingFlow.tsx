@@ -24,6 +24,7 @@ import {
   fetchPublicPrograms,
   fetchPublicPricePreview,
   PublicApiError,
+  releasePublicSlotHold,
   submitPublicFreeBooking,
   submitPublicPaidBooking,
   submitPublicQuoteRequest,
@@ -32,12 +33,11 @@ import {
   type PublicProgram,
   type PublicPricePreview,
   type PublicQuoteRequest,
+  type PublicSlotHold,
 } from "@/lib/api/bookings";
 import {
-  fetchPublicCountryContext,
   fetchPublicOffering,
   fetchPublicOfferingBookingConfig,
-  filterOfferingLocationsByCountry,
   type PublicBookingFormField,
   type PublicBookingOffering,
   type PublicOffering,
@@ -70,7 +70,6 @@ const initialForm = {
   fullName: "",
   email: "",
   phone: "",
-  countryCode: "EG",
 };
 
 const initialQuoteForm = {
@@ -201,7 +200,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [selectedSession, setSelectedSession] = useState<PublicProgram | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
-  const [attendanceCountryCode, setAttendanceCountryCode] = useState("");
   const [attendanceMode, setAttendanceMode] =
     useState<PublicOffering["attendanceMode"]>("online");
   const [form, setForm] = useState(initialForm);
@@ -211,7 +209,8 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const [quoteForm, setQuoteForm] = useState(initialQuoteForm);
   const [quoteRequest, setQuoteRequest] = useState<PublicQuoteRequest | null>(null);
   const [pricePreview, setPricePreview] = useState<PublicPricePreview | null>(null);
-  const [priceCountryCode, setPriceCountryCode] = useState("");
+  const [activeHold, setActiveHold] = useState<PublicSlotHold | null>(null);
+  const [requiresPriceConfirmation, setRequiresPriceConfirmation] = useState(false);
   const [priceError, setPriceError] = useState("");
   const [isPriceLoading, setIsPriceLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -228,13 +227,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
   const isBookableOffering = isFreeBooking || isPaidOffering;
   const usesScheduledProgram = offering?.schedulingMode === "scheduled_program";
   const selectedBookableTime = usesScheduledProgram ? selectedSession : selectedSlot;
-  const locationCountries = Array.from(
-    new Set(locations.map((location) => location.countryCode.toUpperCase())),
-  );
-  const filteredLocations = filterOfferingLocationsByCountry(
-    locations,
-    attendanceCountryCode,
-  );
+  const filteredLocations = locations;
   const selectedFormLocation =
     locations.find((location) => location.id === selectedLocationId) ?? null;
   const selectedLocation = selectedSession?.location ?? selectedFormLocation;
@@ -287,6 +280,14 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     }));
   };
 
+  const discardActiveHold = () => {
+    if (activeHold) {
+      void releasePublicSlotHold(activeHold).catch(() => undefined);
+    }
+    setActiveHold(null);
+    setRequiresPriceConfirmation(false);
+  };
+
   const toggleCheckboxOption = (field: PublicBookingFormField, optionValue: string) => {
     setAnswers((currentAnswers) => {
       const values = new Set(
@@ -317,11 +318,11 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setBooking(null);
       setQuoteRequest(null);
       setPricePreview(null);
+      setActiveHold(null);
+      setRequiresPriceConfirmation(false);
       setPriceError("");
-      setPriceCountryCode("");
       setLocations([]);
       setSelectedLocationId("");
-      setAttendanceCountryCode("");
       setStep("details");
       setSessions([]);
       setSlots([]);
@@ -332,14 +333,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       setBookingPolicy(null);
 
       try {
-        const [nextOffering, countryContext] = await Promise.all([
-          fetchPublicOffering(slug),
-          fetchPublicCountryContext().catch(() => ({
-            countryCode: "EG",
-            detectedCountryCode: null,
-            source: "default" as const,
-          })),
-        ]);
+        const nextOffering = await fetchPublicOffering(slug);
         const bookingConfig = await fetchPublicOfferingBookingConfig(nextOffering.id);
         const configuredOffering = bookingConfig.offering;
         const localToday = dateKeyForInstantInTimeZone(new Date(), configuredOffering.schedulingTimezone);
@@ -349,22 +343,10 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
         setFields(bookingConfig.fields);
         setLocations(bookingConfig.locations);
         setAnswers({});
-        setForm({
-          ...initialForm,
-          countryCode: countryContext.countryCode,
-        });
-        const detectedLocationCountry = bookingConfig.locations.some(
-          (location) => location.countryCode === countryContext.countryCode,
-        )
-          ? countryContext.countryCode
-          : bookingConfig.locations[0]?.countryCode ?? "";
-        const firstCountryLocation = bookingConfig.locations.find(
-          (location) => location.countryCode === detectedLocationCountry,
-        );
-        setAttendanceCountryCode(detectedLocationCountry);
+        setForm(initialForm);
         setSelectedLocationId(
           configuredOffering.attendanceMode === "offline"
-            ? firstCountryLocation?.id ?? ""
+            ? bookingConfig.locations[0]?.id ?? ""
             : "",
         );
         setAttendanceMode(
@@ -442,14 +424,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       return;
     }
 
-    const normalizedCountryCode = priceCountryCode.trim().toUpperCase();
-
-    if (normalizedCountryCode && normalizedCountryCode.length !== 2) {
-      setPricePreview(null);
-      setPriceError("Use a two-letter country code.");
-      return;
-    }
-
     let isCancelled = false;
 
     const loadPricePreview = async () => {
@@ -459,11 +433,11 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       try {
         const nextPricePreview = await fetchPublicPricePreview({
           offeringId: offering.id,
-          countryCode: normalizedCountryCode || null,
         });
 
         if (!isCancelled) {
           setPricePreview(nextPricePreview);
+          setRequiresPriceConfirmation(false);
         }
       } catch (loadError) {
         if (!isCancelled) {
@@ -479,19 +453,17 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       }
     };
 
-    const timeout = window.setTimeout(() => {
-      void loadPricePreview();
-    }, normalizedCountryCode ? 250 : 0);
+    void loadPricePreview();
 
     return () => {
       isCancelled = true;
-      window.clearTimeout(timeout);
     };
-  }, [isPaidOffering, offering, priceCountryCode]);
+  }, [isPaidOffering, offering]);
 
   const refreshBookingWindow = async (startDate: string) => {
     if (!offering) return null;
 
+    discardActiveHold();
     setIsLoading(true);
     setError("");
     try {
@@ -598,20 +570,26 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
     setError("");
 
     try {
-      const hold = await createPublicSlotHold({
-        offeringId: offering.id,
-        target:
-          usesScheduledProgram && selectedSession
-            ? {
-                kind: "scheduled_program",
-                scheduledProgramId: selectedSession.scheduledProgramId,
-              }
-            : {
-                kind: "appointment",
-                startsAt: selectedBookableTime.startsAt,
-                endsAt: selectedBookableTime.endsAt,
-              },
-      });
+      let hold = isPaidOffering ? activeHold : null;
+      if (!hold || Date.parse(hold.expiresAt) <= Date.now()) {
+        hold = await createPublicSlotHold({
+          offeringId: offering.id,
+          target:
+            usesScheduledProgram && selectedSession
+              ? {
+                  kind: "scheduled_program",
+                  scheduledProgramId: selectedSession.scheduledProgramId,
+                }
+              : {
+                  kind: "appointment",
+                  startsAt: selectedBookableTime.startsAt,
+                  endsAt: selectedBookableTime.endsAt,
+                },
+        });
+        if (isPaidOffering) {
+          setActiveHold(hold);
+        }
+      }
 
       const bookingPayload = {
         holdId: hold.id,
@@ -625,17 +603,21 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
           email: form.email,
           phone: form.phone || null,
         },
-        countryCode: form.countryCode || null,
         timezone: selectedBookableTime.timezone,
         answers: buildAnswerPayload(fields, answers),
       };
       const nextBooking = isPaidOffering
-        ? (await submitPublicPaidBooking(bookingPayload)).booking
+        ? (await submitPublicPaidBooking({
+            ...bookingPayload,
+            expectedPrice: pricePreview!.expectedPrice,
+          })).booking
         : await submitPublicFreeBooking(bookingPayload);
 
       setBooking(nextBooking);
 
       if (isPaidOffering) {
+        setActiveHold(null);
+        setRequiresPriceConfirmation(false);
         router.push(`/booking/payment/${encodeURIComponent(nextBooking.publicToken)}`);
         return;
       }
@@ -665,14 +647,32 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
       }
       setSelectedSlot(null);
       setSelectedSession(null);
-      setForm((currentForm) => ({
-        ...initialForm,
-        countryCode: currentForm.countryCode,
-      }));
+      setForm(initialForm);
       setAnswers({});
       setStep("details");
     } catch (submitError) {
-      if (submitError instanceof PublicApiError && submitError.code === "SLOT_UNAVAILABLE") {
+      if (
+        submitError instanceof PublicApiError &&
+        submitError.code === "PRICE_CHANGED" &&
+        submitError.meta?.currentPrice &&
+        pricePreview
+      ) {
+        const nextPrice = submitError.meta.currentPrice;
+        setPricePreview({
+          ...pricePreview,
+          ...nextPrice,
+          generatedAt: new Date().toISOString(),
+        });
+        setRequiresPriceConfirmation(true);
+        setError(
+          `The price changed to ${formatMoney(
+            nextPrice.price.totalAmountMinor,
+            nextPrice.price.currency,
+          )}. Confirm the new amount to continue.`,
+        );
+      } else if (submitError instanceof PublicApiError && submitError.code === "SLOT_UNAVAILABLE") {
+        setActiveHold(null);
+        setRequiresPriceConfirmation(false);
         setSelectedSlot(null);
         setSelectedSession(null);
         setStep("details");
@@ -688,7 +688,19 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
           );
         }
       } else if (submitError instanceof PublicApiError && submitError.code === "PROGRAM_FULL") {
+        setActiveHold(null);
+        setRequiresPriceConfirmation(false);
         setError("That Program has just filled up. Choose another cohort.");
+      } else if (
+        submitError instanceof PublicApiError &&
+        submitError.code === "COUNTRY_PRICE_UNAVAILABLE"
+      ) {
+        setActiveHold(null);
+        setRequiresPriceConfirmation(false);
+        setPricePreview(null);
+        setPriceError("Pricing is not available in your country.");
+        setError("Pricing is not available in your country.");
+        setStep("details");
       } else if (submitError instanceof Error) {
         setError(submitError.message);
       } else {
@@ -1237,9 +1249,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                       </p>
                       <p className="mt-1 font-inter text-xs text-[#102329]/48">
                         Country: {pricePreview.resolvedCountryCode}
-                        {pricePreview.fallbackApplied
-                          ? `, fallback from ${pricePreview.requestedCountryCode}`
-                          : ""}
                         {pricePreview.price.earlyBirdApplied ? ", early bird applied" : ""}
                       </p>
                     </div>
@@ -1274,7 +1283,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                         ? "Preparing payment"
                         : "Confirming"
                       : isPaidOffering
-                        ? "Continue to payment"
+                        ? requiresPriceConfirmation
+                          ? "Confirm updated price"
+                          : "Continue to payment"
                         : "Confirm booking"}
                   </button>
                   <button
@@ -1363,6 +1374,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                   : undefined
                               }
                               onClick={() => {
+                                if (day.date !== activeDate) {
+                                  discardActiveHold();
+                                }
                                 setSelectedDate(day.date);
                                 if (selectedSession?.date !== day.date) {
                                   setSelectedSession(null);
@@ -1455,6 +1469,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                       type="button"
                                       aria-pressed={isSelected}
                                       onClick={() => {
+                                        if (!isSelected) {
+                                          discardActiveHold();
+                                        }
                                         setSelectedSession(session);
                                         setSelectedSlot(null);
                                         setSelectedDate(session.date);
@@ -1502,6 +1519,9 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                                     type="button"
                                     aria-pressed={isSelected}
                                     onClick={() => {
+                                      if (!isSelected) {
+                                        discardActiveHold();
+                                      }
                                       setSelectedSlot(slot);
                                       setSelectedSession(null);
                                       setSelectedDate(slot.date);
@@ -1553,19 +1573,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                     <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
                       Location
                     </span>
-                    {locationCountries.length > 1 && (
-                      <select
-                        value={attendanceCountryCode}
-                        onChange={(event) => setAttendanceCountryCode(event.target.value)}
-                        className="h-11 w-full border border-[#102329]/18 bg-white px-3 font-inter text-sm outline-none focus:border-[#0F3B46]"
-                      >
-                        {locationCountries.map((countryCode) => (
-                          <option key={countryCode} value={countryCode}>
-                            {countryCode}
-                          </option>
-                        ))}
-                      </select>
-                    )}
                     <div className="grid gap-2 sm:grid-cols-2">
                       {filteredLocations.map((location) => {
                         const selected = location.id === selectedLocationId;
@@ -1651,7 +1658,7 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                     />
                   </label>
 
-                  <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
+                  <div className="grid gap-4">
                     <label className="block">
                       <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
                         Phone
@@ -1668,24 +1675,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                       />
                     </label>
 
-                    <label className="block">
-                      <span className="font-inter text-xs font-semibold uppercase tracking-[0.16em] text-[#102329]/42">
-                        Country
-                      </span>
-                      <input
-                        value={form.countryCode}
-                        maxLength={2}
-                        onChange={(event) => {
-                          const nextCountryCode = event.target.value.toUpperCase();
-                          setForm((currentForm) => ({
-                            ...currentForm,
-                            countryCode: nextCountryCode,
-                          }));
-                          setPriceCountryCode(nextCountryCode);
-                        }}
-                        className="mt-2 h-12 w-full border border-[#102329]/18 px-4 font-inter text-sm uppercase outline-none focus:border-[#0F3B46]"
-                      />
-                    </label>
                   </div>
                 </div>
 
@@ -1718,9 +1707,6 @@ export default function BookingFlow({ slug }: BookingFlowProps) {
                         </p>
                         <p className="font-inter text-xs leading-5 text-[#102329]/55">
                           Country: {pricePreview.resolvedCountryCode}
-                          {pricePreview.fallbackApplied
-                            ? `, fallback from ${pricePreview.requestedCountryCode}`
-                            : ""}
                           {pricePreview.price.earlyBirdApplied ? ", early bird applied" : ""}.
                         </p>
                       </div>

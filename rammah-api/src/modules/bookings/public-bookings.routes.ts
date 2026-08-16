@@ -33,12 +33,6 @@ const createBookingBodySchema = z.object({
     email: z.string().trim().email().max(255),
     phone: z.string().trim().min(5).max(80).nullable().optional(),
   }),
-  countryCode: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z]{2}$/, "Use a two-letter country code.")
-    .nullable()
-    .optional(),
   timezone: z.string().trim().min(1).max(80).default("Africa/Cairo"),
   answers: z.array(bookingAnswerSchema).max(50).default([]),
 });
@@ -61,7 +55,7 @@ publicBookingsRouter.post(
     try {
       const booking = await submitFreeBooking({
         ...req.body,
-        countryCode: req.body.countryCode ?? detectCountryFromRequest(req).countryCode,
+        countryCode: detectCountryFromRequest(req).countryCode,
       });
 
       res.status(httpStatus.created).json({

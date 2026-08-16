@@ -350,18 +350,22 @@ export type PublicQuoteRequest = {
   createdAt: string;
 };
 
-export type PublicPricePreview = {
-  offering: {
-    id: string;
-    title: string;
-    slug: string;
-    bookingMode: PublicOffering["bookingMode"];
-  };
-  requestedCountryCode: string;
-  detectedCountryCode: string | null;
+export type PublicExpectedPrice = {
+  priceId: string;
+  countryCode: string;
+  currency: string;
+  baseAmountMinor: number;
+  discountAmountMinor: number;
+  taxAmountMinor: number;
+  totalAmountMinor: number;
+};
+
+export type PublicPriceDetails = {
   resolvedCountryCode: string;
-  countrySource: "manual" | "detected" | "default";
-  fallbackApplied: boolean;
+  priceGroup: {
+    id: string;
+    name: string;
+  };
   price: {
     priceId: string;
     countryCode: string;
@@ -374,6 +378,16 @@ export type PublicPricePreview = {
     discountAmountMinor: number;
     taxAmountMinor: number;
     totalAmountMinor: number;
+  };
+  expectedPrice: PublicExpectedPrice;
+};
+
+export type PublicPricePreview = PublicPriceDetails & {
+  offering: {
+    id: string;
+    title: string;
+    slug: string;
+    bookingMode: PublicOffering["bookingMode"];
   };
   coupon: {
     code: string;
@@ -395,6 +409,7 @@ export type PublicApiErrorMeta = {
   earliestBookableDate?: string;
   minimumAdvanceDays?: number;
   timezone?: string;
+  currentPrice?: PublicPriceDetails;
 };
 
 export class PublicApiError extends Error {
@@ -532,9 +547,32 @@ export const fetchPublicPrograms = async (input: {
   return payload.data;
 };
 
+export const releasePublicSlotHold = async (hold: Pick<PublicSlotHold, "id" | "holdToken">) => {
+  const response = await fetch(
+    `${apiBaseUrl}/public/slot-holds/${encodeURIComponent(hold.id)}`,
+    {
+      method: "DELETE",
+      headers: {
+        Accept: "application/json",
+        "X-Booking-Hold-Token": hold.holdToken,
+      },
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok && response.status !== 404 && response.status !== 409) {
+    const payload = await readJson<ApiErrorPayload>(response);
+    throw new PublicApiError({
+      status: response.status,
+      code: payload?.error?.code ?? "REQUEST_FAILED",
+      message: payload?.error?.message ?? "Could not release the held time.",
+      meta: payload?.error?.meta,
+    });
+  }
+};
+
 export const fetchPublicPricePreview = async (input: {
   offeringId: string;
-  countryCode?: string | null;
   couponCode?: string | null;
 }) => {
   const payload = await publicRequest<{ data: PublicPricePreview }>(
@@ -558,7 +596,6 @@ export const submitPublicFreeBooking = async (input: {
     email: string;
     phone?: string | null;
   };
-  countryCode?: string | null;
   timezone: string;
   answers?: Array<{
     fieldId?: string | null;
@@ -588,7 +625,7 @@ export const submitPublicPaidBooking = async (input: {
     email: string;
     phone?: string | null;
   };
-  countryCode?: string | null;
+  expectedPrice: PublicExpectedPrice;
   timezone: string;
   answers?: Array<{
     fieldId?: string | null;
