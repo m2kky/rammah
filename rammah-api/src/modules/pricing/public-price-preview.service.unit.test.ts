@@ -85,4 +85,17 @@ describe("public price country enforcement", () => {
     ).rejects.toMatchObject({ code: "COUNTRY_PRICE_UNAVAILABLE", statusCode: 422 });
     expect(repositoryMocks.findPublishedPriceGroupForCountry).not.toHaveBeenCalled();
   });
+
+  it("rejects inconsistent offerings that are not explicitly configured as paid", async () => {
+    repositoryMocks.findPublishedOfferingForPricingById.mockResolvedValue({
+      ...offering,
+      bookingMode: "free",
+      requiresPayment: true,
+    });
+
+    await expect(
+      previewPublicOfferingPrice({ offeringId: offering.id, detectedCountryCode: "EG" }),
+    ).rejects.toMatchObject({ code: "VALIDATION_ERROR", statusCode: 400 });
+    expect(repositoryMocks.findPublishedPriceGroupForCountry).not.toHaveBeenCalled();
+  });
 });

@@ -50,7 +50,7 @@ export const previewPublicOfferingPrice = async (
     });
   }
 
-  if (offering.bookingMode !== "paid" && !offering.requiresPayment) {
+  if (offering.bookingMode !== "paid" || !offering.requiresPayment) {
     throw new AppError({
       code: "VALIDATION_ERROR",
       message: "This offering does not require payment.",

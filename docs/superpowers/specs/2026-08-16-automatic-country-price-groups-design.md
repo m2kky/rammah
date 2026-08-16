@@ -1,6 +1,6 @@
 # Automatic Country Pricing and Price Groups — Design Specification
 
-**Date:** 2026-08-16  
+**Date:** 2026-08-16
 **Status:** Engineering-reviewed; ready for implementation
 **Scope:** Admin offering prices, public price preview, paid booking checkout, server-side country detection, and price audit snapshots
 
@@ -466,7 +466,7 @@ Implementation remains sequential in this worktree because schema, generated mig
 
 ## 14. Testing Requirements
 
-Detected test infrastructure: API Vitest unit/integration/regression suites, Next Vitest unit/regression suites, and no existing component DOM or browser E2E runner. This feature adds `jsdom` plus Testing Library for React components and Playwright with a `test:e2e` script. E2E runs both applications against the migrated test database and mock payment provider; no live merchant or external checkout is used.
+Detected test infrastructure: API Vitest unit/integration/regression suites, Next Vitest unit/regression suites, and no existing component DOM or browser E2E runner. This feature adds `jsdom` plus Testing Library for React components and Playwright with a `test:e2e` script. Browser journeys use deterministic API fixtures; the API integration suite separately runs against the migrated test database and mock payment provider for persistence, locking, and payment invariants. No live merchant or external checkout is used.
 
 Minimum added coverage:
 
@@ -528,7 +528,7 @@ reconciliation, free/quote flows, location assignment, and historical snapshots 
 their existing integration/regression suites and are mandatory release gates.
 ```
 
-Every planned branch above must have a behavior assertion, not only a render/smoke assertion. The four customer journeys are E2E because each crosses frontend, API, transaction, and database boundaries; provider HTTP remains mocked at the existing payment adapter boundary.
+Every planned branch above must have a behavior assertion, not only a render/smoke assertion. The four customer journeys exercise the complete browser workflow with deterministic network fixtures, while migrated-database API integration tests cover the transaction and persistence boundaries. Provider HTTP remains mocked at the existing payment adapter boundary.
 
 ## 15. What Already Exists and Must Be Reused
 

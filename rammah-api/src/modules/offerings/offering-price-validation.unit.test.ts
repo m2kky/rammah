@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertAdminPriceWritesEnabled,
   normalizeAdminOfferingPriceInput,
+  validatePublishedPaidPrice,
   validateEarlyBookingPrice,
 } from "./admin-offerings.service.js";
 
@@ -24,6 +25,23 @@ describe("early-booking price validation", () => {
   it("allows no discount or a complete lower discount", () => {
     expect(() => validateEarlyBookingPrice(10_000, null, null)).not.toThrow();
     expect(() => validateEarlyBookingPrice(10_000, 8_000, new Date())).not.toThrow();
+  });
+
+  it("rejects a zero early-booking amount when the group is published", () => {
+    expect(() =>
+      normalizeAdminOfferingPriceInput(
+        {
+          name: "Egypt",
+          countryCodes: ["EG"],
+          currency: "EGP",
+          baseAmountMinor: 10_000,
+          earlyBirdAmountMinor: 0,
+          earlyBirdEndsAt: "2030-01-01T00:00:00.000Z",
+          status: "published",
+        },
+        ["EGP"],
+      ),
+    ).toThrowError(/greater than zero/i);
   });
 });
 
@@ -109,5 +127,20 @@ describe("admin price-group input validation", () => {
       expect.objectContaining({ code: "SERVICE_UNAVAILABLE", statusCode: 503 }),
     );
     expect(() => assertAdminPriceWritesEnabled(true)).not.toThrow();
+  });
+
+  it("rejects a zero published price for a paid offering but permits drafts", () => {
+    expect(() =>
+      validatePublishedPaidPrice(0, "published", {
+        bookingMode: "paid",
+        requiresPayment: true,
+      }),
+    ).toThrowError(/greater than zero/i);
+    expect(() =>
+      validatePublishedPaidPrice(0, "draft", {
+        bookingMode: "paid",
+        requiresPayment: true,
+      }),
+    ).not.toThrow();
   });
 });

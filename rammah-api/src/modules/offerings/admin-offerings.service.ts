@@ -220,6 +220,28 @@ export const validateEarlyBookingPrice = (
   }
 };
 
+export const validatePublishedPaidPrice = (
+  baseAmountMinor: number,
+  status: "draft" | "published",
+  offering: Pick<AdminOfferingRow, "bookingMode" | "requiresPayment">,
+) => {
+  if (
+    status === "published" &&
+    baseAmountMinor === 0 &&
+    (offering.bookingMode === "paid" || offering.requiresPayment)
+  ) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Published paid prices must be greater than zero.",
+      statusCode: httpStatus.badRequest,
+      details: [{
+        field: "baseAmountMinor",
+        message: "Enter an amount greater than zero before publishing.",
+      }],
+    });
+  }
+};
+
 const assertSchedulingConfiguration = (input: {
   schedulingMode: "appointment" | "scheduled_program";
   durationMinutes: number | null;
@@ -286,6 +308,8 @@ const assertOfferingExists = async (offeringId: string) => {
   if (!offering) {
     throw notFoundError();
   }
+
+  return offering;
 };
 
 export const assertAdminPriceWritesEnabled = (
@@ -380,6 +404,17 @@ export const normalizeAdminOfferingPriceInput = (
   const earlyBirdAmountMinor = input.earlyBirdAmountMinor ?? null;
   const earlyBirdEndsAt = toNullableDate(input.earlyBirdEndsAt) ?? null;
   validateEarlyBookingPrice(input.baseAmountMinor!, earlyBirdAmountMinor, earlyBirdEndsAt);
+  if (input.status === "published" && earlyBirdAmountMinor !== null && earlyBirdAmountMinor <= 0) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Published early-booking prices must be greater than zero.",
+      statusCode: httpStatus.badRequest,
+      details: [{
+        field: "earlyBirdAmountMinor",
+        message: "Enter an amount greater than zero before publishing.",
+      }],
+    });
+  }
 
   return {
     name,
@@ -482,8 +517,9 @@ export const createAdminOfferingPrice = async (
   auditContext?: AuditContext,
 ) => {
   assertAdminPriceWritesEnabled();
-  await assertOfferingExists(offeringId);
+  const offering = await assertOfferingExists(offeringId);
   const normalized = normalizeAdminOfferingPriceInput(input);
+  validatePublishedPaidPrice(normalized.baseAmountMinor, normalized.status, offering);
   const price = await insertAdminOfferingPriceGroup(offeringId, normalized, auditContext);
 
   if (!price) {
@@ -582,7 +618,7 @@ export const updateAdminOfferingPriceById = async (
   auditContext?: AuditContext,
 ) => {
   assertAdminPriceWritesEnabled();
-  await assertOfferingExists(offeringId);
+  const offering = await assertOfferingExists(offeringId);
 
   const existingPrice = await findAdminOfferingPriceById(offeringId, priceId);
 
@@ -620,6 +656,7 @@ export const updateAdminOfferingPriceById = async (
         : existingPrice.earlyBirdEndsAt?.toISOString() ?? null,
     status: input.status ?? existingPrice.status,
   });
+  validatePublishedPaidPrice(normalized.baseAmountMinor, normalized.status, offering);
 
   const updatedPrice = await updateAdminOfferingPriceGroup(
     offeringId,
