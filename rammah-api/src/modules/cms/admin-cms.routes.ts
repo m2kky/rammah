@@ -35,6 +35,12 @@ import {
   replaceGlobalMedia,
   replaceSectionMedia,
 } from "./media-assignments.service.js";
+import {
+  blogCategoryBodySchema,
+  blogPostBodySchema,
+  blogPostPatchSchema,
+  isScheduledBlogPublicationValid,
+} from "./blog-input.js";
 
 export const adminCmsRouter = Router();
 
@@ -114,23 +120,6 @@ const pageSectionBodySchema = z.object({
   config: z.record(z.unknown()).default({}),
   sortOrder: z.number().int().optional(),
   status: contentStatusSchema.default("draft"),
-});
-
-const blogCategoryBodySchema = z.object({
-  name: z.string().trim().min(1).max(160),
-  slug: z.string().trim().min(1).max(180),
-  status: contentStatusSchema.default("draft"),
-});
-
-const blogPostBodySchema = z.object({
-  categoryId: z.string().uuid().nullable().optional(),
-  title: z.string().trim().min(1).max(220),
-  slug: z.string().trim().min(1).max(180),
-  excerpt: z.string().trim().nullable().optional(),
-  body: z.string().trim().min(1),
-  featuredMediaAssetId: z.string().uuid().nullable().optional(),
-  status: contentStatusSchema.default("draft"),
-  publishedAt: z.string().datetime().nullable().optional(),
 });
 
 const seoMetadataBodySchema = z.object({
@@ -885,11 +874,23 @@ adminCmsRouter.post("/blog/posts", validateRequest({ body: blogPostBodySchema })
     res.status(httpStatus.created).json({ data: serializeRecord(post) });
   } catch (error) { next(error); }
 });
-adminCmsRouter.patch("/blog/posts/:id", validateRequest({ params: idParamsSchema, body: patch(blogPostBodySchema) }), async (req, res, next) => {
+adminCmsRouter.patch("/blog/posts/:id", validateRequest({ params: idParamsSchema, body: blogPostPatchSchema }), async (req, res, next) => {
   try {
     const beforeRows = await db.select().from(blogPosts).where(eq(blogPosts.id, req.params.id)).limit(1);
     const before = beforeRows[0] ?? null;
     if (!before) throw notFound("Blog post was not found.");
+    const nextStatus = req.body.status ?? before.status;
+    const nextPublishedAt = req.body.publishedAt === undefined
+      ? before.publishedAt
+      : parseDate(req.body.publishedAt);
+    if (!isScheduledBlogPublicationValid(nextStatus, nextPublishedAt)) {
+      throw new AppError({
+        code: "VALIDATION_ERROR",
+        message: "Choose a publication time for a scheduled post.",
+        statusCode: httpStatus.unprocessableEntity,
+        details: [{ field: "publishedAt", message: "Choose a publication time." }],
+      });
+    }
     const rows = await db.update(blogPosts).set({ ...req.body, excerpt: normalizeOptionalText(req.body.excerpt), publishedAt: parseDate(req.body.publishedAt), updatedAt: new Date() }).where(eq(blogPosts.id, req.params.id)).returning();
     const post = rows[0];
     await audit(req, { action: "admin.cms.blog_posts.update", resourceType: "blog_post", resourceId: post.id, beforeSnapshot: serializeRecord(before), afterSnapshot: serializeRecord(post) });

@@ -83,6 +83,32 @@ const cmsMedia = (
   metadata: publicMediaMetadata(row.metadata),
 });
 
+const resolveFeaturedMedia = async (assetIds: Array<string | null>) => {
+  const ids = [...new Set(assetIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return new Map<string, ReturnType<typeof cmsMedia>>();
+
+  const assets = await db.select({
+    id: mediaAssets.id,
+    mediaKind: mediaAssets.mediaKind,
+    mimeType: mediaAssets.mimeType,
+    publicUrl: mediaAssets.publicUrl,
+    altText: mediaAssets.altText,
+    width: mediaAssets.width,
+    height: mediaAssets.height,
+    durationMs: mediaAssets.durationMs,
+    metadata: mediaAssets.metadata,
+  }).from(mediaAssets).where(and(
+    inArray(mediaAssets.id, ids),
+    eq(mediaAssets.mediaKind, "image"),
+    eq(mediaAssets.processingState, "ready"),
+    ne(mediaAssets.status, "archived"),
+  ));
+
+  return new Map(assets
+    .filter((asset) => Boolean(asset.publicUrl))
+    .map((asset) => [asset.id, cmsMedia(asset)]));
+};
+
 const resolveSections = async (sectionRows: Array<typeof pageSections.$inferSelect>) => {
   if (sectionRows.length === 0) return [];
   const assignments = await db.select({
@@ -434,14 +460,23 @@ publicCmsRouter.get(
         .from(blogPosts)
         .where(and(...conditions))
         .orderBy(desc(blogPosts.publishedAt), desc(blogPosts.createdAt));
+      const featuredMedia = await resolveFeaturedMedia(
+        posts.map((post) => post.featuredMediaAssetId),
+      );
 
       res.status(httpStatus.ok).json({
-        data: posts.map((post) => ({
-          ...post,
-          publishedAt: serializeDate(post.publishedAt),
-          createdAt: post.createdAt.toISOString(),
-          updatedAt: post.updatedAt.toISOString(),
-        })),
+        data: posts.map((post) => {
+          const { featuredMediaAssetId, ...safePost } = post;
+          return {
+            ...safePost,
+            featuredMedia: featuredMediaAssetId
+              ? featuredMedia.get(featuredMediaAssetId) ?? null
+              : null,
+            publishedAt: serializeDate(post.publishedAt),
+            createdAt: post.createdAt.toISOString(),
+            updatedAt: post.updatedAt.toISOString(),
+          };
+        }),
       });
     } catch (error) {
       next(error);
@@ -476,10 +511,15 @@ publicCmsRouter.get(
       const post = rows[0] ?? null;
 
       if (!post) throw notFound("Blog post was not found.");
+      const featuredMedia = await resolveFeaturedMedia([post.featuredMediaAssetId]);
+      const { featuredMediaAssetId, ...safePost } = post;
 
       res.status(httpStatus.ok).json({
         data: {
-          ...post,
+          ...safePost,
+          featuredMedia: featuredMediaAssetId
+            ? featuredMedia.get(featuredMediaAssetId) ?? null
+            : null,
           category: post.categoryId
             ? {
                 id: post.categoryId,
