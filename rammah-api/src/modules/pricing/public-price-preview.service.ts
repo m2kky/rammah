@@ -7,7 +7,7 @@ import {
 import { isIsoCountryCode } from "../../shared/geo/countries.js";
 import {
   calculateEffectivePrice,
-  toExpectedPrice,
+  toPublicPriceDetails,
 } from "./pricing-resolution.js";
 
 export type PublicPricePreviewInput = {
@@ -92,25 +92,7 @@ export const previewPublicOfferingPrice = async (
       slug: offering.slug,
       bookingMode: offering.bookingMode,
     },
-    resolvedCountryCode: effectivePrice.countryCode,
-    priceGroup: {
-      id: effectivePrice.priceId,
-      name: effectivePrice.groupName,
-    },
-    price: {
-      priceId: effectivePrice.priceId,
-      countryCode: effectivePrice.countryCode,
-      currency: effectivePrice.currency,
-      baseAmountMinor: effectivePrice.baseAmountMinor,
-      amountMinor: effectivePrice.amountMinor,
-      earlyBirdAmountMinor: effectivePrice.earlyBirdAmountMinor,
-      earlyBirdEndsAt: effectivePrice.earlyBirdEndsAt,
-      earlyBirdApplied: effectivePrice.earlyBirdApplied,
-      discountAmountMinor: effectivePrice.discountAmountMinor,
-      taxAmountMinor: effectivePrice.taxAmountMinor,
-      totalAmountMinor: effectivePrice.totalAmountMinor,
-    },
-    expectedPrice: toExpectedPrice(effectivePrice),
+    ...toPublicPriceDetails(effectivePrice),
     coupon: couponCode
       ? {
           code: couponCode,

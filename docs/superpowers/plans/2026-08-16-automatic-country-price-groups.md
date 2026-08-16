@@ -130,12 +130,12 @@
 - Consumes: Task 4 `expectedPrice` and executor-aware price lookup.
 - Produces: active-hold transaction result variants `replay`, `price_changed`, `country_unavailable`, `converted`, and existing availability rejections.
 
-- [ ] Add failing integration tests for concurrent admin edit, full expectation mismatch, same-hold preservation, country removal/release, converted replay before repricing, and cross-offering group rejection.
-- [ ] Run focused suite; expect failure because price resolution currently occurs before `db.transaction`.
-- [ ] Move active-hold price lock/calculation/comparison into `createPaidBookingFromHold`; preserve the converted branch as the first mutable-state exit.
-- [ ] Store `offeringPriceId` and full server snapshot; release unavailable owned holds transactionally; create provider session only after commit.
-- [ ] Run focused and all booking/payment integration/regression suites, API typecheck, and build; expect PASS.
-- [ ] Commit Task 5 files with `fix(payments): make paid pricing atomic`.
+- [x] Add failing integration tests for concurrent admin edit, full expectation mismatch, same-hold preservation, country removal/release, converted replay before repricing, and cross-offering group rejection.
+- [x] Run focused suite; observed caller-authoritative/pre-transaction pricing failures.
+- [x] Move active-hold price lock/calculation/comparison into `createPaidBookingFromHold`; preserve the converted branch as the first mutable-state exit.
+- [x] Store `offeringPriceId` and full server snapshot; release unavailable owned holds transactionally; create provider session only after commit.
+- [x] Run focused and all booking/payment integration/regression suites, API typecheck, OpenAPI check, and build; PASS.
+- [x] Commit Task 5 files with `fix(payments): make paid pricing atomic`.
 
 ### Task 6: Admin Price-Group UI
 

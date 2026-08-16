@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   availabilityWindows,
   bookings,
+  offeringPriceCountries,
+  offeringPrices,
   offerings,
   siteSettings,
 } from "../../db/schema/index.js";
@@ -46,7 +48,25 @@ const seedTarget = async (minimumAdvanceDays: number, bookingMode: "free" | "pai
     { weekday: 4, startLocalTime: "09:00", endLocalTime: "10:00", status: "published" },
     { weekday: 5, startLocalTime: "09:00", endLocalTime: "10:00", status: "published" },
   ]);
-  return { settings: settings!, offering: offering! };
+  let priceId: string | null = null;
+  if (bookingMode === "paid") {
+    const [price] = await db.insert(offeringPrices).values({
+      offeringId: offering!.id,
+      name: "Egypt",
+      countryCode: "EG",
+      currency: "EGP",
+      baseAmountMinor: 10_000,
+      status: "published",
+    }).returning({ id: offeringPrices.id });
+    priceId = price!.id;
+    await db.insert(offeringPriceCountries).values({
+      priceId,
+      offeringId: offering!.id,
+      countryCode: "EG",
+      active: true,
+    });
+  }
+  return { settings: settings!, offering: offering!, priceId };
 };
 
 describe.sequential("transactional advance-day policy", () => {
@@ -97,7 +117,7 @@ describe.sequential("transactional advance-day policy", () => {
   it("also grandfathers paid conversion after the policy increases", async () => {
     vi.setSystemTime(now);
     const { db } = getTestDatabase();
-    const { settings, offering } = await seedTarget(1, "paid");
+    const { settings, offering, priceId } = await seedTarget(1, "paid");
     const hold = await createSlotHold({ offeringId: offering.id, ...thursday });
     await db.update(siteSettings)
       .set({ bookingMinimumAdvanceDays: 2 })
@@ -111,7 +131,10 @@ describe.sequential("transactional advance-day policy", () => {
       customerEmail: "grandfathered-paid@example.test",
       timezone: "Africa/Cairo",
       answers: [],
-      price: {
+      detectedCountryCode: "EG",
+      expectedPrice: {
+        priceId: priceId!,
+        countryCode: "EG",
         currency: "EGP",
         baseAmountMinor: 10_000,
         discountAmountMinor: 0,

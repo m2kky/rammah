@@ -88,6 +88,28 @@ export const toExpectedPrice = (price: EffectivePrice): ExpectedPrice => ({
   totalAmountMinor: price.totalAmountMinor,
 });
 
+export const toPublicPriceDetails = (price: EffectivePrice) => ({
+  resolvedCountryCode: price.countryCode,
+  priceGroup: {
+    id: price.priceId,
+    name: price.groupName,
+  },
+  price: {
+    priceId: price.priceId,
+    countryCode: price.countryCode,
+    currency: price.currency,
+    baseAmountMinor: price.baseAmountMinor,
+    amountMinor: price.amountMinor,
+    earlyBirdAmountMinor: price.earlyBirdAmountMinor,
+    earlyBirdEndsAt: price.earlyBirdEndsAt,
+    earlyBirdApplied: price.earlyBirdApplied,
+    discountAmountMinor: price.discountAmountMinor,
+    taxAmountMinor: price.taxAmountMinor,
+    totalAmountMinor: price.totalAmountMinor,
+  },
+  expectedPrice: toExpectedPrice(price),
+});
+
 export const compareExpectedPrice = (
   expected: ExpectedPrice,
   current: ExpectedPrice,

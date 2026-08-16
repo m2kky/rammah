@@ -25,7 +25,17 @@ const bookingAnswerSchema = z.object({
   value: z.string().trim().max(4000).nullable().optional(),
 });
 
-const createPaidBookingBodySchema = z.object({
+const expectedPriceSchema = z.object({
+  priceId: z.string().uuid(),
+  countryCode: z.string().trim().regex(/^[A-Z]{2}$/),
+  currency: z.string().trim().regex(/^[A-Z]{3}$/),
+  baseAmountMinor: z.number().int().nonnegative(),
+  discountAmountMinor: z.number().int().nonnegative(),
+  taxAmountMinor: z.number().int().nonnegative(),
+  totalAmountMinor: z.number().int().nonnegative(),
+}).strict();
+
+export const createPaidBookingBodySchema = z.object({
   holdId: z.string().uuid(),
   holdToken: z.string().trim().min(1).max(200).optional(),
   attendanceMode: attendanceModeSchema.optional(),
@@ -35,12 +45,7 @@ const createPaidBookingBodySchema = z.object({
     email: z.string().trim().email().max(255),
     phone: z.string().trim().min(5).max(80).nullable().optional(),
   }),
-  countryCode: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z]{2}$/, "Use a two-letter country code.")
-    .nullable()
-    .optional(),
+  expectedPrice: expectedPriceSchema,
   timezone: z.string().trim().min(1).max(80).default("Africa/Cairo"),
   answers: z.array(bookingAnswerSchema).max(50).default([]),
 });

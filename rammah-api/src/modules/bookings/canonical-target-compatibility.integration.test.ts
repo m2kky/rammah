@@ -251,6 +251,10 @@ describe("canonical hold and booking targets", () => {
           answers: [],
         });
       } else {
+        const [price] = await db
+          .select({ id: offeringPrices.id })
+          .from(offeringPrices)
+          .where(eq(offeringPrices.offeringId, offering.id));
         await createPaidBookingFromHold({
           holdId: hold.id,
           holdToken: hold.holdToken,
@@ -259,7 +263,10 @@ describe("canonical hold and booking targets", () => {
           customerEmail: "canonical-paid@example.test",
           timezone: "UTC",
           answers: [],
-          price: {
+          detectedCountryCode: "EG",
+          expectedPrice: {
+            priceId: price!.id,
+            countryCode: "EG",
             currency: "EGP",
             baseAmountMinor: 10_000,
             discountAmountMinor: 0,

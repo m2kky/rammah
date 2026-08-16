@@ -16,6 +16,14 @@ import { lockOwnedSlotHold } from "../availability/slot-holds.repository.js";
 import type { PublicBookingAnswerInput } from "../bookings/public-bookings.repository.js";
 import { attachCanonicalBookingTargets } from "../bookings/booking-target.repository.js";
 import { enqueueOutboxEvent } from "../outbox/outbox.repository.js";
+import { findPublishedPriceGroupForCountry } from "../pricing/public-price-preview.repository.js";
+import {
+  calculateEffectivePrice,
+  compareExpectedPrice,
+  toPublicPriceDetails,
+  toExpectedPrice,
+  type ExpectedPrice,
+} from "../pricing/pricing-resolution.js";
 
 export type PaidBookingInput = {
   holdId: string;
@@ -25,16 +33,10 @@ export type PaidBookingInput = {
   customerFullName: string;
   customerEmail: string;
   customerPhone?: string | null;
-  countryCode?: string | null;
+  detectedCountryCode?: string | null;
   timezone: string;
   answers: PublicBookingAnswerInput[];
-  price: {
-    currency: string;
-    baseAmountMinor: number;
-    discountAmountMinor: number;
-    taxAmountMinor: number;
-    totalAmountMinor: number;
-  };
+  expectedPrice: ExpectedPrice;
   payment: {
     provider: string;
     idempotencyKey: string;
@@ -46,6 +48,7 @@ const bookingSelect = {
   publicToken: bookings.publicToken,
   bookingReference: bookings.bookingReference,
   offeringId: bookings.offeringId,
+  offeringPriceId: bookings.offeringPriceId,
   offeringSessionId: bookings.offeringSessionId,
   scheduledProgramId: bookings.scheduledProgramId,
   locationId: bookings.locationId,
@@ -205,6 +208,45 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
           } as const;
         }
 
+        const detectedCountryCode = input.detectedCountryCode?.trim().toUpperCase() ?? "";
+        const priceGroup = detectedCountryCode
+          ? await findPublishedPriceGroupForCountry({
+              offeringId: hold.offeringId,
+              countryCode: detectedCountryCode,
+              executor: tx,
+              lock: true,
+            })
+          : null;
+        if (!priceGroup) {
+          await tx
+            .update(bookingSlotHolds)
+            .set({ status: "released" })
+            .where(
+              and(
+                eq(bookingSlotHolds.id, hold.id),
+                eq(bookingSlotHolds.status, "active"),
+              ),
+            );
+          return {
+            booking: null,
+            payment: null,
+            hold: currentHold,
+            rejection: "country_unavailable",
+          } as const;
+        }
+
+        const effectivePrice = calculateEffectivePrice(priceGroup, now);
+        const currentPrice = toExpectedPrice(effectivePrice);
+        if (!compareExpectedPrice(input.expectedPrice, currentPrice)) {
+          return {
+            booking: null,
+            payment: null,
+            hold: currentHold,
+            rejection: "price_changed",
+            currentPrice: toPublicPriceDetails(effectivePrice),
+          } as const;
+        }
+
         const attendanceMode = input.attendanceMode ?? offering.attendanceMode;
         if (
           offering.attendanceMode !== "hybrid" &&
@@ -222,6 +264,7 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
           .insert(bookings)
           .values({
             offeringId: hold.offeringId,
+            offeringPriceId: effectivePrice.priceId,
             offeringSessionId: hold.offeringSessionId,
             scheduledProgramId: hold.scheduledProgramId,
             locationId: sessionLocationId ?? input.locationId ?? null,
@@ -230,15 +273,15 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
             customerFullName: input.customerFullName,
             customerEmail: input.customerEmail,
             customerPhone: input.customerPhone ?? null,
-            countryCode: input.countryCode ?? null,
+            countryCode: effectivePrice.countryCode,
             slotStartAt: hold.slotStartAt,
             slotEndAt: hold.slotEndAt,
             timezone: target.timezone,
-            priceCurrency: input.price.currency,
-            baseAmountMinor: input.price.baseAmountMinor,
-            discountAmountMinor: input.price.discountAmountMinor,
-            taxAmountMinor: input.price.taxAmountMinor,
-            totalAmountMinor: input.price.totalAmountMinor,
+            priceCurrency: effectivePrice.currency,
+            baseAmountMinor: effectivePrice.baseAmountMinor,
+            discountAmountMinor: effectivePrice.discountAmountMinor,
+            taxAmountMinor: effectivePrice.taxAmountMinor,
+            totalAmountMinor: effectivePrice.totalAmountMinor,
             paymentRequired: true,
           })
           .returning(bookingSelect);
@@ -283,8 +326,8 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
             bookingId: booking.id,
             provider: input.payment.provider,
             status: "pending",
-            currency: input.price.currency,
-            amountMinor: input.price.totalAmountMinor,
+            currency: effectivePrice.currency,
+            amountMinor: effectivePrice.totalAmountMinor,
             idempotencyKey: input.payment.idempotencyKey,
           })
           .returning(paymentSelect);
@@ -309,7 +352,7 @@ export const createPaidBookingFromHold = async (input: PaidBookingInput) =>
         payment: null,
         hold,
         rejection: "hold_unavailable",
-      }
+      } as const
     );
   });
 

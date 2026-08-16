@@ -15,7 +15,7 @@ import {
   serializeCanonicalBookingTarget,
 } from "../bookings/booking-target.repository.js";
 import { findPublishedLocationsForOffering } from "../offerings/offerings.repository.js";
-import { previewPublicOfferingPrice } from "../pricing/public-price-preview.service.js";
+import type { ExpectedPrice } from "../pricing/pricing-resolution.js";
 import {
   createKashierSession,
   parseKashierAmountMinor,
@@ -46,8 +46,8 @@ type PublicPaidBookingInput = {
     email: string;
     phone?: string | null;
   };
-  countryCode?: string | null;
   detectedCountryCode?: string | null;
+  expectedPrice: ExpectedPrice;
   timezone: string;
   answers: Array<{
     fieldId?: string | null;
@@ -290,16 +290,10 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
       customerFullName: input.customer.fullName.trim(),
       customerEmail: input.customer.email.trim().toLowerCase(),
       customerPhone: normalizeOptionalText(input.customer.phone),
-      countryCode: normalizeCountryCode(input.countryCode),
+      detectedCountryCode: normalizeCountryCode(input.detectedCountryCode),
       timezone: input.timezone.trim() || "Africa/Cairo",
       answers: [],
-      price: {
-        currency: "EGP",
-        baseAmountMinor: 0,
-        discountAmountMinor: 0,
-        taxAmountMinor: 0,
-        totalAmountMinor: 0,
-      },
+      expectedPrice: input.expectedPrice,
       payment: {
         provider: env.PAYMENT_PROVIDER,
         idempotencyKey: "converted-hold-replay",
@@ -337,12 +331,6 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
     locationId: input.locationId,
   });
 
-  const pricePreview = await previewPublicOfferingPrice({
-    offeringId: holdContext.offeringId,
-    countryCode: input.countryCode,
-    detectedCountryCode: input.detectedCountryCode,
-  });
-
   const result = await createPaidBookingFromHold({
     holdId: input.holdId,
     holdToken: input.holdToken,
@@ -351,16 +339,10 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
     customerFullName: input.customer.fullName.trim(),
     customerEmail: input.customer.email.trim().toLowerCase(),
     customerPhone: normalizeOptionalText(input.customer.phone),
-    countryCode: normalizeCountryCode(input.countryCode) ?? pricePreview.resolvedCountryCode,
+    detectedCountryCode: normalizeCountryCode(input.detectedCountryCode),
     timezone: input.timezone.trim() || "Africa/Cairo",
     answers,
-    price: {
-      currency: pricePreview.price.currency,
-      baseAmountMinor: pricePreview.price.baseAmountMinor,
-      discountAmountMinor: pricePreview.price.discountAmountMinor,
-      taxAmountMinor: pricePreview.price.taxAmountMinor,
-      totalAmountMinor: pricePreview.price.totalAmountMinor,
-    },
+    expectedPrice: input.expectedPrice,
     payment: {
       provider: env.PAYMENT_PROVIDER,
       idempotencyKey: generatePaymentReference(),
@@ -390,6 +372,23 @@ export const submitPaidBooking = async (input: PublicPaidBookingInput) => {
           message: `Use ${result.hold.offeringAttendanceMode} for this offering.`,
         },
       ],
+    });
+  }
+
+  if (result.rejection === "country_unavailable") {
+    throw new AppError({
+      code: "COUNTRY_PRICE_UNAVAILABLE",
+      message: "Pricing is not available in your country.",
+      statusCode: httpStatus.unprocessableEntity,
+    });
+  }
+
+  if (result.rejection === "price_changed") {
+    throw new AppError({
+      code: "PRICE_CHANGED",
+      message: "The price changed. Review the current price and confirm again.",
+      statusCode: httpStatus.conflict,
+      meta: { currentPrice: result.currentPrice },
     });
   }
 

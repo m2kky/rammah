@@ -47,6 +47,7 @@ const digest = (token: string) =>
   createHash("sha256").update(token, "utf8").digest("hex");
 
 type BookingMode = "free" | "paid";
+let latestPaidPriceId = "";
 
 const seedOffering = async (input: {
   bookingMode?: BookingMode;
@@ -78,6 +79,7 @@ const seedOffering = async (input: {
       baseAmountMinor: 25_000,
       status: "published",
     }).returning({ id: offeringPrices.id });
+    latestPaidPriceId = price!.id;
     await db.insert(offeringPriceCountries).values({
       priceId: price!.id,
       offeringId: offering!.id,
@@ -197,7 +199,10 @@ const paidInput = (hold: { id: string; holdToken: string }, suffix = "first") =>
       value: "Pay once",
     },
   ],
-  price: {
+  detectedCountryCode: "EG",
+  expectedPrice: {
+    priceId: latestPaidPriceId,
+    countryCode: "EG",
     currency: "EGP",
     baseAmountMinor: 25_000,
     discountAmountMinor: 0,
@@ -245,6 +250,15 @@ const paidServiceInput = (
     email: "paid-service-owner@example.test",
   },
   detectedCountryCode: "EG",
+  expectedPrice: {
+    priceId: latestPaidPriceId,
+    countryCode: "EG",
+    currency: "EGP",
+    baseAmountMinor: 25_000,
+    discountAmountMinor: 0,
+    taxAmountMinor: 0,
+    totalAmountMinor: 25_000,
+  },
   timezone: "Africa/Cairo",
   answers,
 });
@@ -430,7 +444,14 @@ describe.sequential("owned slot holds and atomic conversion", () => {
     const { db } = getTestDatabase();
     const target = await seedRecurringTarget({ bookingMode: "paid" });
     const hold = await createSlotHold(target.holdInput);
-    await db.delete(offeringPrices).where(eq(offeringPrices.offeringId, target.offering.id));
+    await db
+      .update(offeringPrices)
+      .set({ status: "archived" })
+      .where(eq(offeringPrices.offeringId, target.offering.id));
+    await db
+      .update(offeringPriceCountries)
+      .set({ active: false })
+      .where(eq(offeringPriceCountries.offeringId, target.offering.id));
     await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, undefined)));
     await expectUnavailable(submitPaidBooking(paidServiceInput(hold.id, "wrong-token")));
     await db.update(bookingSlotHolds).set({ holdSecretHash: null }).where(eq(bookingSlotHolds.id, hold.id));
@@ -554,6 +575,15 @@ describe.sequential("owned slot holds and atomic conversion", () => {
         email: "paid-service@example.test",
       },
       detectedCountryCode: "EG",
+      expectedPrice: {
+        priceId: latestPaidPriceId,
+        countryCode: "EG",
+        currency: "EGP",
+        baseAmountMinor: 25_000,
+        discountAmountMinor: 0,
+        taxAmountMinor: 0,
+        totalAmountMinor: 25_000,
+      },
       timezone: "Africa/Cairo",
       answers: [],
     };
@@ -615,7 +645,14 @@ describe.sequential("owned slot holds and atomic conversion", () => {
       .update(bookingFormFields)
       .set({ status: "archived", label: "Changed current label" })
       .where(eq(bookingFormFields.id, field.id));
-    await db.delete(offeringPrices).where(eq(offeringPrices.offeringId, target.offering.id));
+    await db
+      .update(offeringPrices)
+      .set({ status: "archived" })
+      .where(eq(offeringPrices.offeringId, target.offering.id));
+    await db
+      .update(offeringPriceCountries)
+      .set({ active: false })
+      .where(eq(offeringPriceCountries.offeringId, target.offering.id));
     await db
       .update(payments)
       .set({ status: "failed", failedAt: new Date(), updatedAt: new Date() })
