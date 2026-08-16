@@ -5,7 +5,6 @@ const repositoryMocks = vi.hoisted(() => ({
   findPublishedOfferingBySlug: vi.fn(),
   findPublishedLocationsForOffering: vi.fn(),
   findPublishedOfferings: vi.fn(),
-  findPublishedPricesByOfferingIds: vi.fn(),
   findPublicBookingTimezone: vi.fn(),
 }));
 
@@ -44,7 +43,6 @@ const publishedOffering = {
 describe("persisted scheduling-mode contract", () => {
   beforeEach(() => {
     repositoryMocks.findPublishedOfferingById.mockResolvedValue(publishedOffering);
-    repositoryMocks.findPublishedPricesByOfferingIds.mockResolvedValue([]);
     repositoryMocks.findPublishedLocationsForOffering.mockResolvedValue([]);
     repositoryMocks.findPublicBookingTimezone.mockResolvedValue("Africa/Cairo");
     formFieldMocks.listPublicBookingFormFields.mockResolvedValue([]);

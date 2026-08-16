@@ -10,12 +10,6 @@ export { detectCountryFromRequest };
 
 const pricePreviewBodySchema = z.object({
   offeringId: z.string().uuid(),
-  countryCode: z
-    .string()
-    .trim()
-    .regex(/^[A-Za-z]{2}$/, "Use a two-letter country code.")
-    .nullable()
-    .optional(),
   couponCode: z.string().trim().max(80).nullable().optional(),
 });
 

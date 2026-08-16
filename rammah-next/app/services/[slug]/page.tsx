@@ -28,7 +28,6 @@ const fallbackOffering = (slug: string): PublicOffering | null => {
     requiresPayment: service.slug !== "corporate-training",
     quoteOnly: service.slug === "corporate-training",
     colors: { background: service.bg, text: service.text },
-    prices: [],
   };
 };
 

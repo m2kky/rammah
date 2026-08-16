@@ -2,26 +2,24 @@ import { AppError } from "../../shared/errors/app-error.js";
 import { httpStatus } from "../../shared/http/status.js";
 import {
   findPublishedOfferingForPricingById,
-  findPublishedPricesForOffering,
+  findPublishedPriceGroupForCountry,
 } from "./public-price-preview.repository.js";
-
-const defaultCountryCode = "EG";
+import { isIsoCountryCode } from "../../shared/geo/countries.js";
+import {
+  calculateEffectivePrice,
+  toExpectedPrice,
+} from "./pricing-resolution.js";
 
 export type PublicPricePreviewInput = {
   offeringId: string;
-  countryCode?: string | null;
   detectedCountryCode?: string | null;
   couponCode?: string | null;
 };
 
-type PriceRow = Awaited<ReturnType<typeof findPublishedPricesForOffering>>[number];
-
 const normalizeCountryCode = (value: string | null | undefined) => {
   const normalized = value?.trim().toUpperCase();
 
-  if (!normalized) return null;
-
-  return /^[A-Z]{2}$/.test(normalized) ? normalized : null;
+  return normalized && isIsoCountryCode(normalized) ? normalized : null;
 };
 
 const normalizeCouponCode = (value: string | null | undefined) => {
@@ -29,24 +27,10 @@ const normalizeCouponCode = (value: string | null | undefined) => {
   return normalized || null;
 };
 
-const isEarlyBirdActive = (price: PriceRow, now: Date) =>
-  price.earlyBirdAmountMinor !== null &&
-  price.earlyBirdAmountMinor < price.baseAmountMinor &&
-  (!price.earlyBirdEndsAt || price.earlyBirdEndsAt.getTime() >= now.getTime());
-
-const selectPrice = (prices: PriceRow[], targetCountryCode: string) => {
-  const exactPrice = prices.find((price) => price.countryCode === targetCountryCode);
-
-  if (exactPrice) {
-    return exactPrice;
-  }
-
-  const defaultPrice = prices.find((price) => price.countryCode === defaultCountryCode);
-
-  return defaultPrice ?? prices[0] ?? null;
-};
-
-export const previewPublicOfferingPrice = async (input: PublicPricePreviewInput) => {
+export const previewPublicOfferingPrice = async (
+  input: PublicPricePreviewInput,
+  now = new Date(),
+) => {
   const offering = await findPublishedOfferingForPricingById(input.offeringId);
 
   if (!offering) {
@@ -75,35 +59,30 @@ export const previewPublicOfferingPrice = async (input: PublicPricePreviewInput)
     });
   }
 
-  const prices = await findPublishedPricesForOffering(offering.id);
-
-  if (prices.length === 0) {
+  const detectedCountryCode = normalizeCountryCode(input.detectedCountryCode);
+  if (!detectedCountryCode) {
     throw new AppError({
-      code: "NOT_FOUND",
-      message: "No published price is available for this offering.",
-      statusCode: httpStatus.notFound,
+      code: "COUNTRY_PRICE_UNAVAILABLE",
+      message: "Pricing is not available in your country.",
+      statusCode: httpStatus.unprocessableEntity,
     });
   }
 
-  const manualCountryCode = normalizeCountryCode(input.countryCode);
-  const detectedCountryCode = normalizeCountryCode(input.detectedCountryCode);
-  const requestedCountryCode = manualCountryCode ?? detectedCountryCode ?? defaultCountryCode;
-  const countrySource = manualCountryCode ? "manual" : detectedCountryCode ? "detected" : "default";
-  const selectedPrice = selectPrice(prices, requestedCountryCode);
+  const selectedPrice = await findPublishedPriceGroupForCountry({
+    offeringId: offering.id,
+    countryCode: detectedCountryCode,
+    lock: false,
+  });
 
   if (!selectedPrice) {
     throw new AppError({
-      code: "NOT_FOUND",
-      message: "No published price is available for this offering.",
-      statusCode: httpStatus.notFound,
+      code: "COUNTRY_PRICE_UNAVAILABLE",
+      message: "Pricing is not available in your country.",
+      statusCode: httpStatus.unprocessableEntity,
     });
   }
 
-  const now = new Date();
-  const earlyBirdApplied = isEarlyBirdActive(selectedPrice, now);
-  const amountMinor = earlyBirdApplied
-    ? selectedPrice.earlyBirdAmountMinor ?? selectedPrice.baseAmountMinor
-    : selectedPrice.baseAmountMinor;
+  const effectivePrice = calculateEffectivePrice(selectedPrice, now);
   const couponCode = normalizeCouponCode(input.couponCode);
 
   return {
@@ -113,24 +92,25 @@ export const previewPublicOfferingPrice = async (input: PublicPricePreviewInput)
       slug: offering.slug,
       bookingMode: offering.bookingMode,
     },
-    requestedCountryCode,
-    detectedCountryCode,
-    resolvedCountryCode: selectedPrice.countryCode,
-    countrySource,
-    fallbackApplied: selectedPrice.countryCode !== requestedCountryCode,
-    price: {
-      priceId: selectedPrice.id,
-      countryCode: selectedPrice.countryCode,
-      currency: selectedPrice.currency,
-      baseAmountMinor: selectedPrice.baseAmountMinor,
-      amountMinor,
-      earlyBirdAmountMinor: selectedPrice.earlyBirdAmountMinor,
-      earlyBirdEndsAt: selectedPrice.earlyBirdEndsAt?.toISOString() ?? null,
-      earlyBirdApplied,
-      discountAmountMinor: 0,
-      taxAmountMinor: 0,
-      totalAmountMinor: amountMinor,
+    resolvedCountryCode: effectivePrice.countryCode,
+    priceGroup: {
+      id: effectivePrice.priceId,
+      name: effectivePrice.groupName,
     },
+    price: {
+      priceId: effectivePrice.priceId,
+      countryCode: effectivePrice.countryCode,
+      currency: effectivePrice.currency,
+      baseAmountMinor: effectivePrice.baseAmountMinor,
+      amountMinor: effectivePrice.amountMinor,
+      earlyBirdAmountMinor: effectivePrice.earlyBirdAmountMinor,
+      earlyBirdEndsAt: effectivePrice.earlyBirdEndsAt,
+      earlyBirdApplied: effectivePrice.earlyBirdApplied,
+      discountAmountMinor: effectivePrice.discountAmountMinor,
+      taxAmountMinor: effectivePrice.taxAmountMinor,
+      totalAmountMinor: effectivePrice.totalAmountMinor,
+    },
+    expectedPrice: toExpectedPrice(effectivePrice),
     coupon: couponCode
       ? {
           code: couponCode,

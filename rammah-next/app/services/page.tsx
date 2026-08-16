@@ -23,7 +23,6 @@ const fallbackOfferings = servicesFallback.map((service) => ({
   requiresPayment: service.slug !== "corporate-training",
   quoteOnly: service.slug === "corporate-training",
   colors: { background: service.bg, text: service.text },
-  prices: [],
 })) satisfies PublicOffering[];
 
 const getOfferings = async () => {

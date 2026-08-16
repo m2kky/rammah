@@ -1,7 +1,8 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   contentStatusEnum,
+  offeringPriceCountries,
   offeringPrices,
   offerings,
 } from "../../db/schema/index.js";
@@ -25,22 +26,39 @@ export const findPublishedOfferingForPricingById = async (id: string) => {
   return rows[0] ?? null;
 };
 
-export const findPublishedPricesForOffering = async (offeringId: string) =>
-  db
+export type PricingQueryExecutor = Pick<typeof db, "select">;
+
+export const findPublishedPriceGroupForCountry = async (input: {
+  offeringId: string;
+  countryCode: string;
+  executor?: PricingQueryExecutor;
+  lock?: boolean;
+}) => {
+  const executor = input.executor ?? db;
+  const query = executor
     .select({
       id: offeringPrices.id,
       offeringId: offeringPrices.offeringId,
-      countryCode: offeringPrices.countryCode,
+      name: offeringPrices.name,
+      countryCode: offeringPriceCountries.countryCode,
       currency: offeringPrices.currency,
       baseAmountMinor: offeringPrices.baseAmountMinor,
       earlyBirdAmountMinor: offeringPrices.earlyBirdAmountMinor,
       earlyBirdEndsAt: offeringPrices.earlyBirdEndsAt,
     })
-    .from(offeringPrices)
+    .from(offeringPriceCountries)
+    .innerJoin(offeringPrices, eq(offeringPrices.id, offeringPriceCountries.priceId))
     .where(
       and(
-        eq(offeringPrices.offeringId, offeringId),
+        eq(offeringPriceCountries.offeringId, input.offeringId),
+        eq(offeringPriceCountries.countryCode, input.countryCode),
+        eq(offeringPriceCountries.active, true),
         eq(offeringPrices.status, publishedStatus),
       ),
     )
-    .orderBy(asc(offeringPrices.countryCode), asc(offeringPrices.currency));
+    .limit(1)
+    .$dynamic();
+
+  const rows = input.lock ? await query.for("update") : await query;
+  return rows[0] ?? null;
+};

@@ -1,11 +1,3 @@
-export type PublicOfferingPrice = {
-  countryCode: string;
-  currency: string;
-  baseAmountMinor: number;
-  earlyBirdAmountMinor: number | null;
-  earlyBirdEndsAt: string | null;
-};
-
 export type PublicOffering = {
   id: string;
   slug: string;
@@ -31,5 +23,4 @@ export type PublicOffering = {
     background: string;
     text: string;
   };
-  prices: PublicOfferingPrice[];
 };

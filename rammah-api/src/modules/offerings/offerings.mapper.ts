@@ -1,27 +1,7 @@
-import type { PublicOffering, PublicOfferingPrice } from "./offerings.types.js";
+import type { PublicOffering } from "./offerings.types.js";
 import type { OfferingRow } from "./offerings.repository.js";
 
-type PriceRow = {
-  offeringId: string;
-  countryCode: string;
-  currency: string;
-  baseAmountMinor: number;
-  earlyBirdAmountMinor: number | null;
-  earlyBirdEndsAt: Date | null;
-};
-
-const toPrice = (price: PriceRow): PublicOfferingPrice => ({
-  countryCode: price.countryCode,
-  currency: price.currency,
-  baseAmountMinor: price.baseAmountMinor,
-  earlyBirdAmountMinor: price.earlyBirdAmountMinor,
-  earlyBirdEndsAt: price.earlyBirdEndsAt?.toISOString() ?? null,
-});
-
-export const toPublicOffering = (
-  offering: OfferingRow,
-  prices: PriceRow[],
-): PublicOffering => {
+export const toPublicOffering = (offering: OfferingRow): PublicOffering => {
   const colors = {
     background: offering.displayConfig.backgroundColor ?? "#0F3B46",
     text: offering.displayConfig.textColor ?? "#FFFFFF",
@@ -51,6 +31,5 @@ export const toPublicOffering = (
     requiresPayment: offering.requiresPayment,
     quoteOnly: offering.quoteOnly,
     colors,
-    prices: prices.map(toPrice),
   };
 };

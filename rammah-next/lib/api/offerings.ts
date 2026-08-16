@@ -1,14 +1,6 @@
 import { apiBaseUrl } from "./config";
 import type { ServiceCard } from "@/data/servicesFallback";
 
-export type PublicOfferingPrice = {
-  countryCode: string;
-  currency: string;
-  baseAmountMinor: number;
-  earlyBirdAmountMinor: number | null;
-  earlyBirdEndsAt: string | null;
-};
-
 export type PublicOfferingLocation = {
   id: string;
   name: string;
@@ -45,7 +37,6 @@ export type PublicOffering = {
     background: string;
     text: string;
   };
-  prices: PublicOfferingPrice[];
 };
 
 export type PublicSchedulingMode = "appointment" | "scheduled_program";

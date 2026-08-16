@@ -1,11 +1,10 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "../../db/client.js";
 import {
   contentStatusEnum,
   offlineLocations,
   offeringCategories,
   offeringLocations,
-  offeringPrices,
   offerings,
   siteSettings,
 } from "../../db/schema/index.js";
@@ -118,29 +117,6 @@ export const findPublicBookingTimezone = async () => {
     .limit(1);
 
   return rows[0]?.timezone ?? "Africa/Cairo";
-};
-
-export const findPublishedPricesByOfferingIds = async (offeringIds: string[]) => {
-  if (offeringIds.length === 0) {
-    return [];
-  }
-
-  return db
-    .select({
-      offeringId: offeringPrices.offeringId,
-      countryCode: offeringPrices.countryCode,
-      currency: offeringPrices.currency,
-      baseAmountMinor: offeringPrices.baseAmountMinor,
-      earlyBirdAmountMinor: offeringPrices.earlyBirdAmountMinor,
-      earlyBirdEndsAt: offeringPrices.earlyBirdEndsAt,
-    })
-    .from(offeringPrices)
-    .where(
-      and(
-        inArray(offeringPrices.offeringId, offeringIds),
-        eq(offeringPrices.status, publishedStatus),
-      ),
-    );
 };
 
 const publicLocationSelect = {

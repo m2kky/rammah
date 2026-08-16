@@ -108,12 +108,12 @@
 - Produces: `calculateEffectivePrice(row, now)`, `toExpectedPrice(snapshot)`, `compareExpectedPrice(expected,current)`, and exact executor-aware group lookup with optional row locking.
 - Preview response exposes resolved country, group details, full price, and seven-field `expectedPrice` only.
 
-- [ ] Add failing unit tests for standard/early boundary, every expectation field, null/no-match, and exact-country-only behavior.
-- [ ] Add failing integration test proving public offerings no longer expose the price matrix.
-- [ ] Implement pure pricing functions and exact membership query reusable with `db` or `tx`; refactor preview to use them.
-- [ ] Remove public catalog price arrays and obsolete fallback/request-source fields.
-- [ ] Run pricing/catalog tests, API unit/integration suites, typecheck, OpenAPI check, and build; expect PASS.
-- [ ] Commit Task 4 files with `feat(pricing): resolve exact public country prices`.
+- [x] Add failing unit tests for standard/early boundary, every expectation field, null/no-match, and exact-country-only behavior.
+- [x] Add failing integration test proving public offerings no longer expose the price matrix.
+- [x] Implement pure pricing functions and exact membership query reusable with `db` or `tx`; refactor preview to use them.
+- [x] Remove public catalog price arrays and obsolete fallback/request-source fields.
+- [x] Run pricing/catalog tests, API unit/integration suites, typecheck, OpenAPI check, and build; PASS.
+- [x] Commit Task 4 files with `feat(pricing): resolve exact public country prices`.
 
 ### Task 5: Atomic Paid Confirmation and Snapshot Replay
 

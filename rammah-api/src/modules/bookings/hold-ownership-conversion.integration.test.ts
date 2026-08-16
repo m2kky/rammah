@@ -10,6 +10,7 @@ import {
   bookingSlotHolds,
   bookings,
   offeringPrices,
+  offeringPriceCountries,
   offeringSessions,
   offerings,
   payments,
@@ -69,13 +70,19 @@ const seedOffering = async (input: {
     .returning();
 
   if (bookingMode === "paid") {
-    await db.insert(offeringPrices).values({
+    const [price] = await db.insert(offeringPrices).values({
       offeringId: offering!.id,
       name: "Egypt",
       countryCode: "EG",
       currency: "EGP",
       baseAmountMinor: 25_000,
       status: "published",
+    }).returning({ id: offeringPrices.id });
+    await db.insert(offeringPriceCountries).values({
+      priceId: price!.id,
+      offeringId: offering!.id,
+      countryCode: "EG",
+      active: true,
     });
   }
 
