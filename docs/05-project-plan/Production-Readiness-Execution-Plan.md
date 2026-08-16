@@ -573,13 +573,13 @@ Estimates are focused engineer-days including implementation and verification. P
 - **Tests:** draft vs published, archive, ordering, missing media, stale cache/revalidation.
 - **Accept:** Admin-published launch-critical content appears without code deployment.
 
-### FEAT-10 — Complete country pricing, overrides, early-bird, and price snapshots
+### FEAT-10 — Complete automatic country pricing, early-bird, and price snapshots
 
 - **Priority / owner / estimate:** P0/P1 / Product + backend + frontend / 2-3 days.
 - **Depends on:** DR-01, SEC-06, TEST-02.
-- **Change:** Define one deterministic price resolver covering trusted country detection, validated user override, offering/country price, early-bird window, optional approved coupon/tax rules, currency rounding, and a full immutable explanation snapshot. Trust geo headers only from Nginx/CDN; otherwise use a documented default and explicit user selection. Reuse the same resolver for preview, hold, booking, Kashier hash/session, callback verification, admin ledger, and receipts.
+- **Change:** Define one deterministic price resolver covering trusted automatic country detection, one active country-group membership, early-bird selection, currency minor units, and a full immutable seven-field price expectation/snapshot. Never accept a customer-entered pricing country or use a fallback country; block paid checkout when detection or pricing is unavailable. Trust provider headers only from configured proxy CIDRs and use GeoIP otherwise. Reuse the same resolver for preview and atomic hold conversion/payment creation. Coupons and non-zero tax rules remain deferred until their business rules are approved.
 - **Files:** `modules/pricing/public-price-preview.repository.ts`; `public-price-preview.service.ts`; offerings pricing repositories/routes; booking/payment services and schema snapshots; `BookingFlow.tsx`; `AdminOfferingPricing.tsx`; Nginx/env geo contract; OpenAPI.
-- **Tests:** Supported/unsupported country, spoofed geo header, override allowed/denied, DST/time-bound early bird, exact boundary, no price row, currency minor-unit rounding, coupon/tax decision, price change after hold, preview-to-payment parity, callback amount/currency parity.
+- **Tests:** Supported/unsupported country, spoofed geo header, missing detection, early-bird boundaries, no price row, multi-country overlap, price change after hold, same-hold reconfirmation, preview-to-payment parity, and callback amount/currency parity.
 - **Accept:** One immutable breakdown explains the exact amount from first preview through final payment and later audit.
 
 ### FEAT-11 — Complete CMS editorial lifecycle, rich text, and scheduled publishing

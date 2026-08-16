@@ -184,15 +184,15 @@
 - Modify: production runbook/env documentation where required
 
 **Interfaces:**
-- Produces: `npm run test:e2e` using the migrated test database and mock payment adapter.
+- Produces: deterministic `npm run test:e2e` browser journeys with network fixtures, backed by the API's migrated-database integration suite for persistence, locking, and payment invariants.
 
-- [ ] Add Playwright setup and four failing/blocked E2E journeys: supported checkout, unsupported country, mid-flow admin edit/reconfirm, and foreign-location booking.
-- [ ] Add deterministic API/database fixtures and implement only the harness needed by those journeys.
-- [ ] Run E2E until all four pass.
-- [ ] Run API unit, integration, booking regression, typecheck, OpenAPI, and build commands.
-- [ ] Run Next unit, component, booking regression, typecheck, lint, build, and E2E commands.
-- [ ] Run migration-history preflight, pricing-groups preflight against a migrated test copy, `git diff --check`, and inspect `git status` for intentional files only.
-- [ ] Update spec/task checkboxes and commit with `test(pricing): cover country pricing journeys`.
+- [x] Add Playwright setup and four browser journeys: supported checkout, unsupported country, mid-flow admin edit/reconfirm, and foreign-location booking.
+- [x] Add deterministic browser API fixtures while keeping database/locking behavior in the migrated-database API integration suite.
+- [x] Run E2E until all four pass.
+- [x] Run API unit, integration, booking regression, typecheck, OpenAPI, and build commands.
+- [x] Run Next unit, component, booking regression, typecheck, lint, build, and E2E commands.
+- [x] Run migration-history preflight, pricing-groups preflight against a migrated test copy, `git diff --check`, and inspect `git status` for intentional files only.
+- [x] Update spec/task checkboxes and commit with `test(pricing): cover country pricing journeys`.
 
 ## Self-Review
 

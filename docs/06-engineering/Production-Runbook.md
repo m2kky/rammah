@@ -3,13 +3,34 @@
 ## Release order
 
 1. Back up PostgreSQL and the R2 media bucket.
-2. Deploy the one-shot migration service and require a zero exit code. CMS migrations `0011` and `0012` add publication diagnostics and trusted seeded-local media support.
+2. Deploy the one-shot migration service and require a zero exit code. CMS migrations `0011` and `0012` add publication diagnostics and trusted seeded-local media support; migration `0013` adds multi-country price-group memberships and immutable paid-booking price references.
 3. Start the API and the worker. The worker is mandatory for animation processing, scheduled publishing, and media cleanup.
 4. Run `npm run db:seed --workspace=rammah-api`. The seed is idempotent and registers the currently shipped images, videos, and services frame animation before the frontend starts consuming named CMS slots.
 5. Start the web service.
 6. Run `npm run preflight:prod --workspace=rammah-api`, then `npm run smoke --workspace=rammah-api`.
 
 Do not publish new application containers against an older schema. If migration or seed fails, keep the previous API/web release active and investigate before retrying.
+
+## Country pricing and proxy trust
+
+Configure `PAYMENT_SUPPORTED_CURRENCIES` with the exact comma-separated currencies enabled on the merchant account. The dashboard uses this server-owned list, and `npm run db:pricing-groups:preflight --workspace=rammah-api` fails if published data contains unsupported currencies, missing memberships, duplicate active country assignments, or invalid price groups.
+
+Paid pricing never accepts a country from the customer. Detection uses GeoIP or one explicitly configured provider header:
+
+- keep `COUNTRY_HEADER_PROVIDER=none` while the application domain is not proxied through Cloudflare or Vercel;
+- after the domain is orange-cloud proxied through Cloudflare, set `COUNTRY_HEADER_PROVIDER=cloudflare`;
+- set `TRUSTED_PROXY_CIDRS` to the immediate reverse-proxy IP/CIDR visible to the API, not a numeric hop count;
+- restrict direct access to the API origin and make the trusted reverse proxy strip any inbound `CF-IPCountry` before adding Cloudflare's value.
+
+R2 configuration alone does not make `CF-IPCountry` trustworthy. If no valid country can be detected, or the detected country has no published group, paid checkout stops before payment with “Pricing is not available in your country.” Free bookings and quote requests remain available.
+
+Before enabling traffic:
+
+1. Run migrations, then `npm run db:pricing-groups:preflight --workspace=rammah-api`.
+2. In each paid Offering, publish non-overlapping country groups and verify every intended market has exactly one active membership.
+3. From a supported country, verify the previewed currency/amount is copied unchanged into the paid booking and payment.
+4. From an unsupported country, verify no payment or booking is created.
+5. Edit a price after the review screen opens and verify the customer sees the new amount and explicitly reconfirms it without reserving a second slot.
 
 ## Required CMS configuration
 
