@@ -1,7 +1,7 @@
 # Automatic Country Pricing and Price Groups — Design Specification
 
 **Date:** 2026-08-16  
-**Status:** Revised after code-level review
+**Status:** Engineering-reviewed; ready for implementation
 **Scope:** Admin offering prices, public price preview, paid booking checkout, server-side country detection, and price audit snapshots
 
 ## 1. Outcome
@@ -34,6 +34,12 @@ There is no Egypt default, first-price fallback, customer override, or automatic
 10. Archiving is terminal in this version. An archived group becomes read-only and releases its countries for new groups.
 11. Pricing country and attendance location are separate concepts. A customer may book an event in another country while paying the price assigned to their detected country.
 12. Existing appointment, session, scheduled-program, capacity, global booking lead-time, payment reconciliation, and media/R2 behavior must not change.
+13. Paid hold conversion, current-price resolution, expectation comparison, booking creation, and payment-row creation are one database transaction.
+14. A converted owned hold is replayed before any mutable form, location, country, or price validation; a lost response can never create or reprice a second booking.
+15. Forwarded IP and provider-country headers are trusted by explicit proxy CIDRs, never by a numeric hop count.
+16. The API owns one checked-in ISO country catalog and returns it to the admin UI; validation and display options never use separate country lists.
+17. The checkout expectation contains the complete displayed monetary breakdown, not only the total.
+18. Price-group mutations and their audit records commit or roll back together.
 
 ## 3. Verified Current State
 
@@ -47,7 +53,7 @@ Verified against the repository on 2026-08-16:
 | Price preview | Selects from `offering_prices.country_code` | Join the detected country to active group memberships |
 | Country context | Falls back to `EG` when detection fails | Return `null`; never choose Egypt automatically |
 | Forwarded headers | Accepts four country headers without provider selection | Accept only the configured provider's header |
-| Booking snapshot | Stores country/currency/amounts, not the applied price ID | Add `offering_price_id` to paid bookings |
+| Booking snapshot | Stores country/currency/amounts, not the applied price ID | Add an offering-consistent `offering_price_id` to paid bookings |
 | Price-change protection | `PRICE_CHANGED` exists only in the error union | Compare the displayed expectation with the current server price |
 | Locations | Client may filter locations by detected/default country | Show all offering locations; detection may only affect ordering |
 
@@ -75,16 +81,22 @@ For a successful detection, `countryCode` and `detectedCountryCode` contain the 
 
 ### 4.2 Exact price resolution
 
-For a paid offering:
+For paid preview:
 
 1. Resolve the request country on the server.
 2. Find the one active membership for that offering/country whose group is published.
 3. Apply the early-booking amount when its end time has not passed; otherwise apply the standard amount.
 4. Return the resolved country, group ID, currency, amounts, and an expectation object for checkout comparison.
-5. Re-detect country and re-resolve price during paid booking creation.
-6. Compare the current result with the submitted expectation; never use submitted money as the charged value.
-7. Store the group ID, resolved country, and monetary snapshot on the booking.
-8. Build the payment from the stored booking snapshot.
+
+For paid confirmation:
+
+1. Re-detect country on the server; the request contains no pricing country.
+2. Start one database transaction and lock the owned hold.
+3. If the hold is already converted, return its existing booking/payment before reading mutable form, location, country, or price state.
+4. For an active hold, validate its target and capacity, then lock the matching published price group and active country membership.
+5. Calculate the current effective price once using the transaction clock and compare the complete submitted expectation.
+6. Store the group ID, resolved country, and monetary snapshot on the booking, convert the hold, and create the payment row in that transaction.
+7. Commit before calling the external payment provider; provider retries use the stored booking/payment snapshot and never reprice.
 
 ### 4.3 Unavailable price
 
@@ -111,14 +123,19 @@ Price preview returns:
     "priceId": "uuid",
     "countryCode": "SA",
     "currency": "SAR",
+    "baseAmountMinor": 15000,
+    "discountAmountMinor": 0,
+    "taxAmountMinor": 0,
     "totalAmountMinor": 15000
   }
 }
 ```
 
-The paid-booking body returns this object unchanged. It is an expectation, not an authority. The server independently resolves the current price and compares all four fields.
+The paid-booking body returns this object unchanged. It is an expectation, not an authority. The server independently resolves the current price and compares all seven fields.
 
-If group, country, currency, or total changed, the server returns HTTP `409` with code `PRICE_CHANGED` and the new public price preview in `details.currentPrice`. The frontend replaces the displayed amount and requires a second explicit confirmation. The failed request does not convert the hold or create a booking/payment. It keeps the original hold active, stores its ID/token in client state, and reuses that same hold for the second confirmation; it must not create a competing hold for the same slot. Normal hold expiry still applies.
+If group, country, currency, or any displayed monetary component changed, the server returns HTTP `409` with code `PRICE_CHANGED` and the new public price preview in `details.currentPrice`. The frontend replaces the displayed amount and requires a second explicit confirmation. The failed request does not convert the hold or create a booking/payment. It keeps the original hold active, stores its ID/token in client state, and reuses that same hold for the second confirmation; it must not create a competing hold for the same slot. Normal hold expiry still applies.
+
+If the first confirmation committed but its HTTP response was lost, retrying with the same owned hold returns the existing booking/payment even if the form, location, detected country, or group changed afterwards. Replays do not call the provider twice; they reuse the payment idempotency key and stored checkout session behavior.
 
 ### 4.5 Free and quote-only offerings
 
@@ -150,6 +167,8 @@ The same control supports one or many countries. Archived groups are visible for
 If a country belongs to another non-archived group for the same offering, saving returns HTTP `409` with `PRICE_COUNTRY_CONFLICT` and identifies each conflicting country and group. The server never moves assignments silently.
 
 The list shows name, full country list, currency, standard amount, early-booking summary, and status. The UI displays country names; the API stores uppercase codes.
+
+The searchable country options come from `GET /admin/offerings/:id/prices` metadata. The API uses a single checked-in ISO 3166-1 alpha-2 code catalog for both this metadata and request validation; Node's `Intl.DisplayNames` supplies English labels with the code as a deterministic fallback. The frontend must not keep its own `commonCountries` list.
 
 ## 6. Data Model
 
@@ -199,10 +218,11 @@ Draft and published groups have active memberships. Archiving changes group stat
 
 Add:
 
-- `offering_price_id uuid null references offering_prices(id)`;
+- `offering_price_id uuid null`;
+- composite foreign key `(offering_price_id, offering_id)` referencing `offering_prices (id, offering_id)`;
 - index on `offering_price_id`.
 
-Existing and free bookings remain null. Every newly created paid booking must store a non-null applied group ID plus the existing country, currency, base, discount, tax, and total snapshots. Payment retries continue using the booking snapshot and do not reprice an already-created booking.
+The composite foreign key prevents application bugs from linking a booking to another offering's group. Existing and free bookings remain null. Every newly created paid booking must store a non-null applied group ID plus the existing country, currency, base, discount, tax, and total snapshots. Payment retries continue using the booking snapshot and do not reprice an already-created booking.
 
 ## 7. API Contracts
 
@@ -239,12 +259,16 @@ Create accepts only `draft` or `published`. Patch accepts only `draft` or `publi
 {
   "data": [],
   "meta": {
-    "supportedCurrencies": ["EGP"]
+    "supportedCurrencies": ["EGP"],
+    "countries": [
+      { "code": "EG", "name": "Egypt" },
+      { "code": "SA", "name": "Saudi Arabia" }
+    ]
   }
 }
 ```
 
-The currency list comes from `PAYMENT_SUPPORTED_CURRENCIES`, is normalized/deduplicated by the API, and is the same list used for server validation. Production must configure it to match the merchant account. The default development value is `EGP`.
+The currency list comes from `PAYMENT_SUPPORTED_CURRENCIES`, is normalized/deduplicated by the API, and is the same list used for server validation. Production must configure it to match the merchant account. The default development value is `EGP`. The country list is the API-owned canonical catalog sorted by display name.
 
 ### 7.2 Public offerings
 
@@ -256,32 +280,45 @@ Remove `prices` from public offering list, detail, and booking-config payloads a
 
 ### 7.4 Paid booking
 
-`POST /public/payments/paid-bookings` adds required `expectedPrice` for paid confirmation and contains no country. The route supplies trusted detection to the service. The service resolves the current group before converting the hold, compares expectations, and writes the booking snapshot transactionally.
+`POST /public/payments/paid-bookings` adds required `expectedPrice` for a new paid confirmation and contains no country. The route supplies trusted detection to the service. A converted-hold replay takes precedence. For an active hold, the repository resolves and locks the current group, compares expectations, converts the hold, and writes the booking/payment snapshots in one transaction.
+
+Preview and confirmation share one pricing implementation rather than duplicating early-booking or monetary rules:
+
+- a repository query accepts either the normal database client or the current transaction and can optionally lock the selected group/membership;
+- a pure calculator accepts a price row and explicit `now` and returns the effective monetary snapshot;
+- a pure comparator returns either an exact match or the current public expectation.
+
+The preview service uses the unlocked query. Paid confirmation uses the same query with its transaction and locks. This keeps preview and checkout behavior identical while preserving the atomic checkout boundary.
 
 ## 8. Country Detection Trust Boundary
 
 Add configuration:
 
 - `COUNTRY_HEADER_PROVIDER=cloudflare|vercel|none`, default `none`;
-- `TRUST_PROXY_HOPS`, integer, default `0` locally and explicitly configured in production.
+- `TRUSTED_PROXY_CIDRS`, comma-separated CIDRs/IPs, default empty locally.
 
 Behavior:
 
 - `cloudflare` accepts only `CF-IPCountry`;
 - `vercel` accepts only `X-Vercel-IP-Country`;
 - `none` accepts no country header and uses GeoIP only;
+- a provider header is accepted only when `req.socket.remoteAddress` matches `TRUSTED_PROXY_CIDRS`;
+- Express `trust proxy` uses the same compiled CIDR predicate to derive the effective client IP;
 - remove support for generic `X-Geo-Country` and `X-Country-Code`;
-- invalid/unknown provider values fail application startup;
+- invalid/unknown provider values or CIDRs fail application startup;
+- selecting `cloudflare` or `vercel` with an empty trusted-proxy list fails application startup;
 - if the trusted provider header is missing or invalid, use GeoIP on the effective client IP;
 - if neither produces a valid ISO country, return no detection and never default to Egypt.
 
-Production infrastructure must restrict the API origin to Cloudflare/the configured reverse proxy and strip inbound provider headers before adding its trusted value. `TRUST_PROXY_HOPS` must match the actual Coolify proxy chain; it cannot remain an unconditional hardcoded `1`.
+Production infrastructure must restrict the API origin to Cloudflare/the configured reverse proxy and strip inbound provider headers before adding its trusted value. The project declares `proxy-addr` as a direct dependency for CIDR compilation rather than importing Express's transitive copy.
+
+Cloudflare R2 configuration does not proxy website requests and does not make `CF-IPCountry` trustworthy. Until the application domain is orange-cloud proxied through Cloudflare and direct origin access is restricted, production must keep `COUNTRY_HEADER_PROVIDER=none` and rely on GeoIP/no-detection behavior.
 
 ## 9. Migration and Deployment
 
-### 9.1 Preflight
+### 9.1 Read-only pricing preflight
 
-The migration command reports counts and stops before writes if it finds:
+Add `npm run db:pricing-groups:preflight`. It connects to the target database read-only, reports counts and offending record IDs, reads `PAYMENT_SUPPORTED_CURRENCIES`, and exits non-zero if it finds:
 
 - more than one non-archived price for the same offering/country, including different currencies;
 - an invalid/non-ISO country code;
@@ -293,24 +330,27 @@ The migration command reports counts and stops before writes if it finds:
 
 Existing price rows with `status = scheduled` are reported and deterministically converted to `draft`; this preserves their current non-public behavior. The audit log records each conversion.
 
+The existing `db:migrations:preflight` remains the migration-history integrity check and is not renamed or overloaded with data inspection.
+
 ### 9.2 Backfill
 
 1. Add `name` as nullable.
-2. Add the parent composite unique key, memberships table, and nullable booking FK.
-3. For every price row, set `name` to the country display name or code.
-4. Insert one membership from legacy `country_code`, active unless the group is archived.
-5. Convert legacy `scheduled` price status to `draft` and record it.
-6. Enforce `name not null`.
-7. Verify row counts and membership uniqueness.
-8. Drop the old country/currency unique index.
-9. Create/verify the active membership partial unique index.
+2. Before any write, repeat every database-only invariant in a PostgreSQL `DO` block and raise with offending IDs; the write pause makes the environment-dependent currency preflight stable.
+3. Add the parent composite unique key, memberships table, and nullable composite booking FK.
+4. For every price row, set `name` to the country display name or code.
+5. Insert one membership from legacy `country_code`, active unless the group is archived.
+6. Convert legacy `scheduled` price status to `draft` and insert a system audit row in the same migration transaction.
+7. Enforce `name not null`.
+8. Verify row counts and membership uniqueness.
+9. Drop the old country/currency unique index.
+10. Create/verify the active membership partial unique index.
 
 All IDs, currency, amounts, early-booking values, and timestamps are preserved.
 
 ### 9.3 Deployment sequence
 
 1. Set `ADMIN_PRICE_WRITES_ENABLED=false`; admin reads stay available and write endpoints return `503` with a maintenance message.
-2. Run preflight and database migration.
+2. Run migration-history preflight, pricing-groups data preflight, and the database migration.
 3. Deploy API code that reads memberships and supports both new and legacy admin inputs.
 4. Run API smoke tests, then enable admin price writes.
 5. Deploy the new admin/customer frontend.
@@ -330,12 +370,44 @@ Old and new admin writers must never run concurrently. This explicit short write
 ## 10. Concurrency and Consistency
 
 - Create/update/archive runs in a transaction.
-- Membership replacement locks the group and current memberships, deactivates removed rows, then upserts/reactivates requested rows.
+- Group mutations lock the group before memberships, deactivates removed rows, then upserts/reactivates requested rows. Paid confirmation uses the same group-then-membership lock order.
 - The partial unique index is the final overlap guard; unique violations map to `PRICE_COUNTRY_CONFLICT`.
 - Public lookup joins active memberships to one published group by offering and exact detected country.
-- Paid confirmation rechecks both the slot hold and current price before conversion. A changed price preserves the owned hold for reconfirmation; an unavailable country releases it.
+- Paid confirmation locks the owned hold, handles converted replay, then rechecks capacity and locks the current group/membership before conversion. No external provider or email call occurs while database locks are held.
+- A changed price preserves the owned active hold for reconfirmation. An unavailable country changes that owned active hold to released in the same transaction before returning the error.
 - Submitted country, group, currency, and money are never charged as authoritative values.
 - An already-created booking/payment retry uses its immutable monetary snapshot.
+- Create/update/archive writes its before/after audit record inside the same transaction as the group and membership mutation.
+
+The paid path uses this order:
+
+```text
+POST paid-bookings
+  |
+  +-- detect country from trusted request context
+  |
+  +-- BEGIN
+       |
+       +-- lock owned hold
+       |    |
+       |    +-- converted --> load existing booking/payment --> COMMIT --> replay
+       |    +-- invalid/expired -----------------------------> ROLLBACK --> unavailable
+       |
+       +-- validate capacity + target using one transaction clock
+       +-- lock price group, then active country membership
+       |    |
+       |    +-- missing --> release owned hold --> COMMIT --> 422
+       |    +-- expectation mismatch ---------> ROLLBACK --> 409 + current price
+       |
+       +-- insert booking snapshot
+       +-- convert hold
+       +-- insert payment snapshot
+       +-- COMMIT
+  |
+  +-- create/reuse external checkout session by stored payment idempotency key
+```
+
+All admin mutations and paid confirmation acquire price locks in `group -> memberships` order. The paid path acquires `hold -> group -> memberships`; admin paths never acquire holds, so they cannot form a reverse lock cycle.
 
 ## 11. Errors
 
@@ -365,14 +437,18 @@ Old and new admin writers must never run concurrently. This explicit short write
 
 The schema must land before either API branch. Admin and public API work can then proceed independently. Checkout comparison depends on strict public preview. Browser QA comes last because it exercises all preceding contracts.
 
+Implementation remains sequential in this worktree because schema, generated migration metadata, shared API contracts, and payment code overlap. After slice #2 stabilizes the API response, the two frontend slices can be developed independently, but they must merge before the checkout E2E suite.
+
 ## 13. Files Expected to Change
 
 | File/area | Change |
 |---|---|
 | `rammah-api/src/db/schema/index.ts` | Group memberships and booking price FK |
-| `rammah-api/drizzle/*` | Preflight/backfill/index migration |
-| `rammah-api/src/config/env.ts` | Provider, proxy, currency, and write-pause config |
-| `rammah-api/src/app.ts` | Configured trust-proxy hops |
+| `rammah-api/drizzle/*` | In-transaction assertions, backfill, constraints, and indexes |
+| `rammah-api/src/scripts/pricing-groups-preflight.ts` plus query module | Read-only data/currency preflight with offending IDs |
+| `rammah-api/src/config/env.ts` and `.env.example` | Provider, trusted CIDRs, currency, and write-pause config |
+| `rammah-api/src/app.ts` | CIDR-based Express trust-proxy predicate |
+| `rammah-api/src/shared/geo/countries.ts` | Canonical ISO codes and display metadata |
 | `rammah-api/src/shared/geo/request-country.ts` | Provider-specific trusted detection, no default |
 | `rammah-api/src/modules/country/public-country.routes.ts` | Nullable country context |
 | `rammah-api/src/modules/offerings/admin-offerings.*` | Group DTOs, transactions, conflicts, audit |
@@ -386,8 +462,11 @@ The schema must land before either API branch. Admin and public API work can the
 | `rammah-next/lib/api/admin.ts` | Group DTO and response metadata |
 | `rammah-next/lib/api/bookings.ts` | Expected-price contract and nullable country context |
 | `rammah-next/lib/api/offerings.ts` | Remove public `prices`, keep location choice independent |
+| API/Next package and test configs | Direct `proxy-addr`, React component testing, and Playwright E2E tooling |
 
 ## 14. Testing Requirements
+
+Detected test infrastructure: API Vitest unit/integration/regression suites, Next Vitest unit/regression suites, and no existing component DOM or browser E2E runner. This feature adds `jsdom` plus Testing Library for React components and Playwright with a `test:e2e` script. E2E runs both applications against the migrated test database and mock payment provider; no live merchant or external checkout is used.
 
 Minimum added coverage:
 
@@ -400,8 +479,64 @@ Minimum added coverage:
 
 Release verification also requires API/Next type checks, lint, full tests, production builds, migration dry-run against a database copy, and post-deploy smoke tests.
 
-## 15. What Is Working and Must Not Change
+### 14.1 Required test files and branches
 
+| Test file/area | Required assertions |
+|---|---|
+| `request-country.unit.test.ts` | provider/header matrix; trusted and untrusted peer; invalid CIDR startup; `XX`/`T1`/invalid ISO; GeoIP; no Egypt fallback; spoofed generic headers ignored |
+| `offering-price-validation.unit.test.ts` | canonical ISO; duplicate countries; currency allowlist; draft/published zero rules; full early-booking pair; exact end-time boundary |
+| `pricing-resolution.unit.test.ts` | standard/early price calculation with injected clock; complete expectation match/mismatch for every field; no match and no fallback |
+| `price-groups.integration.test.ts` | one/many-country create, list metadata, update, overlap conflict, atomic replacement, archive, reuse, terminal archive, audit atomicity |
+| `pricing-groups-upgrade.integration.test.ts` | clean backfill; scheduled-to-draft audit; dirty-data failures with IDs; IDs/money/timestamps preserved; old index removed and partial index enforced |
+| `public-pricing.integration.test.ts` | strict exact-country preview; unknown/unsupported country; public offering payload contains no price matrix |
+| `paid-pricing-concurrency.integration.test.ts` | admin edit racing confirmation; full `PRICE_CHANGED`; unavailable membership releases hold; mismatch preserves hold; converted replay precedes repricing; composite FK rejects cross-offering group |
+| Existing payment/booking integration suites | snapshot retry, callback verification, reconciliation, capacity, expired/wrong-token holds remain green |
+| `AdminOfferingPricing.test.tsx` | canonical searchable list, one/many selection, conflict details, archived read-only state, supported currency metadata |
+| `BookingFlow.test.tsx` | no country field/default, preview-before-hold, 422 blocking state, 409 explicit reconfirmation with same hold, expired hold recovery, foreign location remains selectable |
+| Playwright `pricing-country.spec.ts` | supported paid flow; unsupported country; mid-flow admin edit/reconfirm; foreign-location booking |
+
+### 14.2 Coverage diagram
+
+```text
+CODE PATHS                                             USER FLOWS
+[PLANNED ★★★] detectCountryFromRequest                 [PLANNED →E2E] Supported paid checkout
+  +-- configured provider?                               +-- detect -> exact preview
+  |    +-- trusted peer + valid header -> country         +-- create one hold -> confirm -> checkout
+  |    +-- untrusted/invalid/missing -> GeoIP              +-- retry lost response -> same booking/payment
+  +-- provider none -> GeoIP
+  +-- invalid/no result -> null                         [PLANNED →E2E] Unsupported/unknown country
+                                                          +-- approved 422 message
+[PLANNED ★★★] admin price-group mutation                  +-- no paid hold/payment intent
+  +-- validate name/countries/currency/money
+  +-- lock group -> memberships                        [PLANNED →E2E] Price changes mid-flow
+  +-- overlap -> 409 details                              +-- same owned hold remains active
+  +-- save group + memberships + audit                    +-- show current price -> explicit reconfirm
+  +-- archive -> deactivate memberships + audit
+                                                        [PLANNED →E2E] Attendance in another country
+[PLANNED ★★★] paid confirmation                            +-- pricing follows detected country
+  +-- lock owned hold                                      +-- all assigned locations remain selectable
+  |    +-- converted -> immutable replay
+  |    +-- expired/invalid -> slot unavailable          [PLANNED ★★★] Admin editing
+  +-- lock current group + membership                     +-- canonical country search and multi-select
+  |    +-- missing -> release hold -> 422                  +-- overlap/validation errors recoverable
+  |    +-- changed -> preserve hold -> 409                 +-- archived group read-only
+  +-- match -> snapshot + convert + payment -> commit
+  +-- provider session after commit -> idempotent retry
+
+REGRESSION COVERAGE: capacity, booking lead time, scheduled programs, payment callbacks,
+reconciliation, free/quote flows, location assignment, and historical snapshots remain in
+their existing integration/regression suites and are mandatory release gates.
+```
+
+Every planned branch above must have a behavior assertion, not only a render/smoke assertion. The four customer journeys are E2E because each crosses frontend, API, transaction, and database boundaries; provider HTTP remains mocked at the existing payment adapter boundary.
+
+## 15. What Already Exists and Must Be Reused
+
+- The existing `/admin/offerings/:id/prices` routes, admin pricing component, `offering_prices` IDs, and audit table are extended rather than replaced.
+- `lockOwnedSlotHold(...).for("update")` and the converted-hold replay branch already protect hold ownership/idempotency; the new pricing transaction preserves and extends this ordering.
+- Booking and payment rows already store immutable monetary snapshots, and payment retries already use them.
+- Existing migration-upgrade integration tests provide the pattern for applying the new migration from the immediately previous schema.
+- Existing request-country, price-validation, capacity, callback-security, finalization, and booking regression suites are extended as regression gates.
 - Global booking advance-days rules continue to decide the earliest bookable date.
 - Capacity, holds, appointment sessions, programs, workshops, and event occurrences continue to decide availability.
 - Payment callback signature verification, reconciliation, idempotency, and retry-from-booking-snapshot remain intact.
@@ -413,7 +548,7 @@ Release verification also requires API/Next type checks, lint, full tests, produ
 
 Because price groups belong to an offering, the model works for appointments, courses, workshops, programs, and events. Scheduling decides what is bookable; country membership decides the detected customer's price. Future ticket tiers, add-ons, taxes, per-occurrence overrides, and coupons remain separate pricing layers.
 
-## 17. Non-Goals
+## 17. NOT in Scope
 
 - customer-selected pricing/billing country;
 - exchange-rate conversion;
@@ -423,6 +558,10 @@ Because price groups belong to an offering, the model works for appointments, co
 - restricting attendance locations to pricing country;
 - changing historical booking/payment amounts;
 - R2/media changes.
+- connecting or migrating DNS itself; the rollout gate only specifies when Cloudflare header mode may be enabled;
+- reopening archived groups; archive remains terminal for this release;
+- per-session, per-occurrence, tier, add-on, or quantity pricing;
+- translating the admin country catalog; English display names with code fallback are sufficient for this release.
 
 ## 18. Acceptance Criteria
 
@@ -433,11 +572,107 @@ Because price groups belong to an offering, the model works for appointments, co
 5. Failed country detection returns nullable context, never Egypt.
 6. Supported detected country receives only its exact published group price.
 7. Unknown/unsupported country receives `COUNTRY_PRICE_UNAVAILABLE`, creates no paid hold/payment, and sees the approved message.
-8. A preview-to-confirmation change returns `PRICE_CHANGED`; no booking/payment is created until the customer confirms the new value using the same still-owned hold.
-9. New paid bookings store non-null group ID, resolved country, and exact monetary snapshot; retries use that snapshot.
+8. A preview-to-confirmation change in any expectation field returns `PRICE_CHANGED`; no booking/payment is created until the customer confirms the complete new monetary value using the same still-owned hold.
+9. New paid bookings store a group ID belonging to the same offering, resolved country, and exact monetary snapshot; retries use that snapshot.
 10. Public offering endpoints no longer expose every country's prices.
 11. A customer can book a published location in another country without changing pricing country.
 12. Existing prices migrate to one-country groups with IDs and money intact; conflicts stop preflight with record IDs.
 13. Scheduled legacy prices become audited drafts and remain non-public.
-14. Only the configured provider header is trusted; invalid detection never falls back.
-15. All minimum tests, type checks, lint, builds, migration dry-run, and browser QA pass.
+14. Only the configured provider header received from an explicitly trusted proxy CIDR is trusted; invalid detection never falls back to another country.
+15. A concurrent admin edit cannot slip between paid price comparison and booking snapshot creation, and a converted-hold retry returns the original booking/payment before repricing.
+16. All minimum tests, type checks, lint, builds, migration dry-run, and browser QA pass.
+
+## 19. Engineering Review Findings
+
+All findings below were verified against the current repository and folded into this specification.
+
+| # | Severity / confidence | Evidence | Adopted correction |
+|---:|---|---|---|
+| 1 | P1 / 10 | `public-payments.service.ts:339` resolves price before `public-payments.repository.ts:129` starts its transaction | Resolve, lock, compare, and snapshot price inside the hold-conversion transaction |
+| 2 | P1 / 10 | `app.ts:43` contains `app.set("trust proxy", 1)` | Replace numeric hops with an explicit shared CIDR predicate and trusted-peer check |
+| 3 | P1 / 9 | `db/migration-preflight.ts:41` validates migration history, not legacy price data | Add a read-only pricing preflight and repeat database invariants inside migration SQL |
+| 4 | P1 / 10 | `db/schema/index.ts:719` has `offering_id`, while current bookings have no applied-price FK | Add nullable `(offering_price_id, offering_id)` composite FK |
+| 5 | P1 / 10 | `public-payments.service.ts:282` has an existing converted-hold replay branch before mutable validation | Make replay precedence an explicit contract and regression test |
+| 6 | P2 / 9 | `public-price-preview.service.ts:29-35` owns early-price calculation/selection while confirmation needs transactional reuse | Share an executor-aware query, pure calculator with injected clock, and pure comparator |
+| 7 | P2 / 10 | `AdminOfferingPricing.tsx:47-48` hardcodes separate currency/country lists | API owns canonical countries and currency metadata; admin consumes it |
+| 8 | P2 / 10 | `admin-offerings.service.ts:409/429` mutates a price and writes audit in separate calls | Put group, memberships, and audit row in the same transaction |
+| 9 | P2 / 9 | Original expectation contract compared only group/country/currency/total | Compare base, discount, tax, and total as one displayed snapshot |
+| 10 | P1 / 10 | No Playwright dependency, config, or E2E script exists | Add reproducible mock-provider E2E infrastructure and four critical journeys |
+| 11 | P2 / 10 | Next tests currently run in Node with no DOM/component configuration | Add jsdom and Testing Library for the six required component/API behaviors |
+| 12 | P1 / 9 | Existing suites contain no group migration or checkout-versus-admin concurrency coverage | Add migration-upgrade and two-transaction concurrency integration suites |
+| 13 | P2 / 8 | Multi-country groups can create per-group membership reads and long checkout locks if implemented naively | Load admin memberships in one query, use indexed exact public lookup, and keep provider/network calls outside locks |
+
+The PostgreSQL locking choice follows the platform's explicit row-lock semantics: selected rows remain protected from conflicting updates until transaction end. The proxy correction follows Express's warning that numeric hop counts are unsafe when paths of different lengths can reach the application. Cloudflare country headers remain an infrastructure trust signal only when requests actually pass through the configured proxy.
+
+References: [PostgreSQL explicit locking](https://www.postgresql.org/docs/17/explicit-locking.html), [Express behind proxies](https://expressjs.com/en/guide/behind-proxies.html), [Cloudflare request headers](https://developers.cloudflare.com/fundamentals/reference/http-headers/).
+
+## 20. Performance and Query Constraints
+
+- Public preview executes one exact indexed membership/group lookup by `(offering_id, country_code)` and never loads all countries' prices.
+- Paid confirmation performs the same exact lookup inside its transaction and locks at most one group, one membership, and the owned hold.
+- Admin list loads groups and memberships in one joined query and groups rows in memory; no per-group membership query is allowed.
+- Canonical country metadata is a process-static value and requires no database query.
+- External payment provider calls, email/outbox work, and display-name construction occur after commit or outside the locked section.
+- No cache is added initially: price updates are low-volume, exact database lookup is cheap, and correctness on immediate admin edits matters more than cache hit rate.
+- Query plans in migration/staging must show use of `offering_price_countries_active_unique` for exact public lookup; a sequential scan on realistic seeded volume blocks release.
+
+## 21. Production Failure Modes
+
+| Failure | Handling | Test | Customer/admin result |
+|---|---|---|---|
+| Spoofed country/provider header | Ignore unless immediate peer is trusted; fall back to GeoIP/null | Unit + API security | Correct price or approved unavailable message |
+| Country cannot be resolved | Return 422 before a paid hold/payment intent | Component + E2E | Clear approved message; cannot continue payment |
+| Group changes during confirmation | Row locks serialize the edit; compare current snapshot atomically | Concurrency integration + E2E | 409 with current price and explicit reconfirmation |
+| Country removed after hold creation | Release only the owned active hold in the transaction | Integration | 422; slot is no longer unnecessarily held |
+| Response lost after commit | Converted-hold replay returns immutable booking/payment first | Integration + E2E | Retry resumes the same checkout, no duplicate booking/payment |
+| Concurrent admin overlap | Partial unique index wins; map violation to conflict details | Integration | Recoverable 409, no partial memberships |
+| Dirty legacy data | Read-only preflight and SQL assertion stop before backfill writes | Upgrade integration | Deployment stops with offending IDs |
+| Hold expires before reconfirmation | Existing hold validation rejects conversion | Component + E2E | Slot-unavailable recovery; no competing hold is silently created |
+| Provider fails after commit | Existing payment idempotency/retry flow reuses stored snapshot | Existing + extended payment integration | Retryable checkout; booking amount does not change |
+
+No planned production failure is both silent and uncovered; critical gap count after review is zero.
+
+## 22. Implementation Tasks
+
+Synthesized from the engineering review. Execute and verify sequentially in the current feature worktree.
+
+- [ ] **T1 (P1, human: ~4h / CC: ~45m)** — Database — add group memberships, composite booking FK, dual preflight, backfill, audit conversion, and constraints.
+  - Surfaced by: findings 3, 4, and 12.
+  - Verify: migration-history preflight, pricing preflight fixtures, fresh migration, upgrade integration suite, and dry-run against a production copy.
+- [ ] **T2 (P1, human: ~2h / CC: ~25m)** — Country trust — add canonical ISO catalog, explicit proxy CIDRs, provider-specific trusted-peer detection, nullable public context, and startup validation.
+  - Surfaced by: findings 2 and 7.
+  - Verify: environment, app proxy, request-country, spoofing, and no-default unit/API tests.
+- [ ] **T3 (P1, human: ~5h / CC: ~50m)** — Admin pricing API — implement one/many-country group CRUD, locking, conflict mapping, metadata, compatibility input, write pause, and transactional audit.
+  - Surfaced by: findings 7, 8, and 13.
+  - Verify: price-group integration suite and query-count assertion.
+- [ ] **T4 (P1, human: ~3h / CC: ~30m)** — Public pricing — implement the shared exact resolver/calculator/comparator and remove public price matrices.
+  - Surfaced by: findings 6 and 9.
+  - Verify: pricing unit/integration tests and public contract/OpenAPI tests.
+- [ ] **T5 (P1, human: ~5h / CC: ~50m)** — Paid checkout — move price resolution/comparison into atomic hold conversion, preserve replay precedence, release unavailable holds, and store the applied group snapshot.
+  - Surfaced by: findings 1, 4, 5, 9, and 12.
+  - Verify: concurrency, ownership, capacity, payment finalization, callback, and replay integration suites.
+- [ ] **T6 (P2, human: ~4h / CC: ~40m)** — Admin frontend — replace the single-country form with the metadata-driven price-group editor and searchable multi-select.
+  - Surfaced by: findings 7 and 11.
+  - Verify: admin component tests, typecheck, lint, and production build.
+- [ ] **T7 (P1, human: ~4h / CC: ~40m)** — Customer frontend — remove country defaults, enforce unavailable blocking, and implement same-hold changed-price reconfirmation without filtering attendance locations.
+  - Surfaced by: findings 5, 9, and 11.
+  - Verify: BookingFlow component/regression tests, typecheck, lint, and production build.
+- [ ] **T8 (P1, human: ~4h / CC: ~45m)** — Release QA — add Playwright infrastructure, four critical E2Es, smoke checks, and post-deploy verification.
+  - Surfaced by: findings 10 and 12.
+  - Verify: full API/Next test commands, `test:e2e`, migration dry-run, and production smoke.
+
+No new `TODOS.md` item is created: all review findings are necessary for this release, while future tiers/taxes/coupons remain explicit non-goals rather than actionable debt. Outside-voice review was skipped; no parallel agents were used.
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|---|---|---:|---:|---|---|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | Not required for this engineering correction |
+| Codex Review | `/codex review` | Independent second opinion | 0 | — | Skipped |
+| Eng Review | `/plan-eng-review` | Architecture & tests | 1 | CLEAR | 13 issues found and folded; 0 critical gaps |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | Recommended before final UI polish, not an implementation blocker |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | Not required |
+
+- **VERDICT:** ENG CLEARED — specification is ready for implementation in the defined slices.
+
+NO UNRESOLVED DECISIONS
