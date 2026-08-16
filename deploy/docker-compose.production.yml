@@ -38,6 +38,7 @@ services:
       dockerfile: rammah-next/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL in Coolify}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:?Set NEXT_PUBLIC_SITE_URL in Coolify}
     env_file: .env
     environment:
       PORT: "3000"
