@@ -2,6 +2,7 @@ import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../app.js";
 import {
+  blogPosts,
   globalMediaAssignments,
   globalMediaAssignmentSets,
   mediaAssets,
@@ -27,7 +28,7 @@ const withServer = async (run: (baseUrl: string) => Promise<void>) => {
 describe.sequential("public CMS media contracts", () => {
   it("resolves named section and global media without exposing storage fields", async () => {
     const { db } = getTestDatabase();
-    const [image, video] = await db.insert(mediaAssets).values([
+    const [image, video, blogImage] = await db.insert(mediaAssets).values([
       {
         displayName: "Hero",
         fileName: "hero.webp",
@@ -50,6 +51,19 @@ describe.sequential("public CMS media contracts", () => {
         storageKey: "tests/loading.mp4",
         publicUrl: "https://media.example.test/loading.mp4",
         sizeBytes: 2048,
+        processingState: "ready",
+        status: "published",
+      },
+      {
+        displayName: "Blog cover",
+        fileName: "blog.webp",
+        mimeType: "image/webp",
+        sourceType: "r2",
+        mediaKind: "image",
+        storageKey: "tests/blog.webp",
+        publicUrl: "https://media.example.test/blog.webp",
+        altText: "Article cover",
+        sizeBytes: 1536,
         processingState: "ready",
         status: "published",
       },
@@ -83,6 +97,14 @@ describe.sequential("public CMS media contracts", () => {
       mediaAssetId: video!.id,
       decorative: true,
     });
+    await db.insert(blogPosts).values({
+      title: "A useful post",
+      slug: "a-useful-post",
+      body: "Post body",
+      featuredMediaAssetId: blogImage!.id,
+      status: "published",
+      publishedAt: new Date("2030-01-02T09:00:00.000Z"),
+    });
 
     await withServer(async (baseUrl) => {
       const pageResponse = await fetch(`${baseUrl}/pages/leadership`);
@@ -109,6 +131,29 @@ describe.sequential("public CMS media contracts", () => {
         decorative: true,
       });
       expect(JSON.stringify(globalsBody)).not.toContain("storageKey");
+
+      const postsResponse = await fetch(`${baseUrl}/blog/posts`);
+      const postsBody = await postsResponse.json() as {
+        data: Array<{ featuredMedia: Record<string, unknown> | null }>;
+      };
+      expect(postsResponse.status).toBe(200);
+      expect(postsBody.data[0]!.featuredMedia).toMatchObject({
+        kind: "image",
+        publicUrl: "https://media.example.test/blog.webp",
+        altText: "Article cover",
+      });
+      expect(JSON.stringify(postsBody)).not.toContain("storageKey");
+
+      const postResponse = await fetch(`${baseUrl}/blog/posts/a-useful-post`);
+      const postBody = await postResponse.json() as {
+        data: { featuredMedia: Record<string, unknown> | null };
+      };
+      expect(postResponse.status).toBe(200);
+      expect(postBody.data.featuredMedia).toMatchObject({
+        kind: "image",
+        publicUrl: "https://media.example.test/blog.webp",
+      });
+      expect(JSON.stringify(postBody)).not.toContain("storageKey");
     });
   });
 });

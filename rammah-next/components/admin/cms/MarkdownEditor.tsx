@@ -56,6 +56,7 @@ export function MarkdownEditor({ label = "Content", value, onChange, rows = 12 }
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
         <textarea
+          aria-label={label}
           ref={textareaRef}
           value={value}
           rows={rows}

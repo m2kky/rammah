@@ -13,16 +13,18 @@ import {
   type AdminSiteSettingsPayload,
 } from "../../lib/api/admin";
 import { CmsPagesEditor } from "./cms/CmsPagesEditor";
+import { BlogEditor } from "./cms/BlogEditor";
 import { GlobalMediaEditor } from "./cms/GlobalMediaEditor";
 import { LegalPagesEditor } from "./cms/LegalPagesEditor";
 import { MediaLibrary } from "./cms/MediaLibrary";
 
-type CmsView = "pages" | "media" | "global" | "legal" | "navigation" | "settings";
+type CmsView = "pages" | "media" | "global" | "legal" | "blog" | "navigation" | "settings";
 const views: Array<{ id: CmsView; label: string; description: string }> = [
   { id: "pages", label: "Pages", description: "Create pages and edit their ready-made sections" },
   { id: "media", label: "Media", description: "Upload, inspect and safely remove files" },
   { id: "global", label: "Global media", description: "Loading, menu, SEO and custom page visuals" },
   { id: "legal", label: "Legal", description: "Versioned Markdown legal documents" },
+  { id: "blog", label: "Blog", description: "Articles, categories, images and SEO" },
   { id: "navigation", label: "Navigation", description: "Header and footer links" },
   { id: "settings", label: "Settings", description: "Brand and contact details" },
 ];
@@ -70,7 +72,7 @@ export default function AdminCms() {
       <header className="border-b border-[#102329]/10 px-5 py-6 lg:px-8"><p className="font-inter text-xs font-semibold uppercase tracking-[0.2em] text-[#102329]/42">Content management</p><h1 className="mt-2 text-4xl font-semibold">Website CMS</h1><p className="mt-2 max-w-2xl font-inter text-sm leading-6 text-[#102329]/58">Control every page section, image, video and legal document from one place.</p></header>
       <div className="grid lg:grid-cols-[230px_minmax(0,1fr)]">
         <nav className="border-b border-[#102329]/10 p-4 lg:min-h-[calc(100vh-140px)] lg:border-b-0 lg:border-r"><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">{views.map((view) => <button key={view.id} type="button" onClick={() => setActiveView(view.id)} className={`border p-3 text-left transition-colors ${activeView === view.id ? "border-[#0F3B46] bg-[#0F3B46] text-white" : "border-transparent hover:border-[#102329]/15 hover:bg-white"}`}><strong className="block font-inter text-sm">{view.label}</strong><span className={`mt-1 block font-inter text-xs leading-5 ${activeView === view.id ? "text-white/65" : "text-[#102329]/48"}`}>{view.description}</span></button>)}</div></nav>
-        <main className="min-w-0 p-5 lg:p-8">{activeView === "pages" ? <CmsPagesEditor /> : activeView === "media" ? <MediaLibrary /> : activeView === "global" ? <GlobalMediaEditor /> : activeView === "legal" ? <LegalPagesEditor /> : activeView === "navigation" ? <NavigationEditor /> : <SettingsEditor />}</main>
+        <main className="min-w-0 p-5 lg:p-8">{activeView === "pages" ? <CmsPagesEditor /> : activeView === "media" ? <MediaLibrary /> : activeView === "global" ? <GlobalMediaEditor /> : activeView === "legal" ? <LegalPagesEditor /> : activeView === "blog" ? <BlogEditor /> : activeView === "navigation" ? <NavigationEditor /> : <SettingsEditor />}</main>
       </div>
     </div>
   );

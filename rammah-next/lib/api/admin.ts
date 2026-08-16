@@ -480,6 +480,46 @@ export type AdminLegalPagePayload = {
   publishedAt?: string | null;
 };
 
+export type AdminBlogCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  status: AdminContentStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminBlogCategoryPayload = {
+  name: string;
+  slug: string;
+  status: AdminContentStatus;
+};
+
+export type AdminBlogPost = {
+  id: string;
+  categoryId: string | null;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  body: string;
+  featuredMediaAssetId: string | null;
+  status: AdminContentStatus;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AdminBlogPostPayload = {
+  categoryId?: string | null;
+  title: string;
+  slug: string;
+  excerpt?: string | null;
+  body: string;
+  featuredMediaAssetId?: string | null;
+  status: AdminContentStatus;
+  publishedAt?: string | null;
+};
+
 export type AdminCmsPage = {
   id: string;
   slug: string;
@@ -1572,6 +1612,78 @@ export const archiveAdminLegalPage = async (id: string) => {
   await adminRequest<void>(`/admin/cms/legal-pages/${id}`, {
     method: "DELETE",
   });
+};
+
+const blogListQuery = (filters: { status?: AdminContentStatus | "all"; search?: string }) => {
+  const params = new URLSearchParams();
+  if (filters.status && filters.status !== "all") params.set("status", filters.status);
+  if (filters.search?.trim()) params.set("search", filters.search.trim());
+  const query = params.toString();
+  return query ? `?${query}` : "";
+};
+
+export const fetchAdminBlogCategories = async (
+  filters: { status?: AdminContentStatus | "all"; search?: string } = {},
+) => {
+  const payload = await adminRequest<{ data: AdminBlogCategory[] }>(
+    `/admin/cms/blog/categories${blogListQuery(filters)}`,
+  );
+  return payload.data;
+};
+
+export const createAdminBlogCategory = async (input: AdminBlogCategoryPayload) => {
+  const payload = await adminRequest<{ data: AdminBlogCategory }>(
+    "/admin/cms/blog/categories",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const updateAdminBlogCategory = async (
+  id: string,
+  input: Partial<AdminBlogCategoryPayload>,
+) => {
+  const payload = await adminRequest<{ data: AdminBlogCategory }>(
+    `/admin/cms/blog/categories/${id}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const archiveAdminBlogCategory = async (id: string) => {
+  await adminRequest<void>(`/admin/cms/blog/categories/${id}`, { method: "DELETE" });
+};
+
+export const fetchAdminBlogPosts = async (
+  filters: { status?: AdminContentStatus | "all"; search?: string } = {},
+) => {
+  const payload = await adminRequest<{ data: AdminBlogPost[] }>(
+    `/admin/cms/blog/posts${blogListQuery(filters)}`,
+  );
+  return payload.data;
+};
+
+export const createAdminBlogPost = async (input: AdminBlogPostPayload) => {
+  const payload = await adminRequest<{ data: AdminBlogPost }>(
+    "/admin/cms/blog/posts",
+    { method: "POST", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const updateAdminBlogPost = async (
+  id: string,
+  input: Partial<AdminBlogPostPayload>,
+) => {
+  const payload = await adminRequest<{ data: AdminBlogPost }>(
+    `/admin/cms/blog/posts/${id}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+  return payload.data;
+};
+
+export const archiveAdminBlogPost = async (id: string) => {
+  await adminRequest<void>(`/admin/cms/blog/posts/${id}`, { method: "DELETE" });
 };
 
 export const fetchAdminCmsPages = async (

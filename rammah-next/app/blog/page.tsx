@@ -1,5 +1,6 @@
 import Link from "next/link";
 import PublicFrame from "@/components/PublicFrame";
+import { BlogFeaturedImage } from "@/components/blog/BlogFeaturedImage";
 import { fetchPublicBlogPosts, fetchPublicGlobalMedia, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
 import { getGlobalMedia, getPageMetadata } from "@/lib/api/cms-content";
 
@@ -73,6 +74,7 @@ export default async function BlogPage() {
                     {formatDate(post.publishedAt)}
                   </p>
                   <div>
+                    <BlogFeaturedImage media={post.featuredMedia} className="mb-5 aspect-[16/9]" />
                     <h2 className="text-4xl font-semibold leading-[0.95] md:text-6xl">
                       {post.title}
                     </h2>

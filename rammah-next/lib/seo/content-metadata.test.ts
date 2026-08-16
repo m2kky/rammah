@@ -16,6 +16,7 @@ describe("dynamic content metadata", () => {
       publishedAt: "2026-08-01T10:00:00.000Z",
       createdAt: "2026-07-31T10:00:00.000Z",
       updatedAt: "2026-08-02T10:00:00.000Z",
+      featuredMedia: null,
       seo: {
         metaTitle: "Edited post title",
         metaDescription: "Edited post description",
