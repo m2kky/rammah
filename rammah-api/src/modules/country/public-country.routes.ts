@@ -1,8 +1,5 @@
 import { Router } from "express";
-import {
-  defaultCountryCode,
-  detectCountryFromRequest,
-} from "../../shared/geo/request-country.js";
+import { detectCountryFromRequest } from "../../shared/geo/request-country.js";
 
 export const publicCountryRouter = Router();
 
@@ -11,9 +8,9 @@ publicCountryRouter.get("/", (req, res) => {
 
   res.json({
     data: {
-      countryCode: detection.countryCode ?? defaultCountryCode,
+      countryCode: detection.countryCode,
       detectedCountryCode: detection.countryCode,
-      source: detection.source ?? "default",
+      source: detection.source,
     },
   });
 });

@@ -1,23 +1,6 @@
 import type { Request } from "express";
 import { describe, expect, it, vi } from "vitest";
-import * as pricePreviewRoutes from "./public-price-preview.routes.js";
-
-type CountryDetection = {
-  countryCode: string | null;
-  source: "header" | "geoip" | null;
-};
-
-type CountryResolver = (
-  req: Request,
-  lookupCountryByIp?: (ipAddress: string) => string | null,
-) => CountryDetection;
-
-const getResolver = () =>
-  (
-    pricePreviewRoutes as typeof pricePreviewRoutes & {
-      detectCountryFromRequest?: CountryResolver;
-    }
-  ).detectCountryFromRequest;
+import { detectCountryFromRequest } from "../../shared/geo/request-country.js";
 
 const requestWith = (input: {
   headers?: Record<string, string>;
@@ -27,81 +10,105 @@ const requestWith = (input: {
   ({
     header: (name: string) => input.headers?.[name.toLowerCase()],
     ip: input.ip,
-    socket: {
-      remoteAddress: input.remoteAddress,
-    },
+    socket: { remoteAddress: input.remoteAddress },
   }) as Request;
 
+const trustedProxy = (ipAddress: string) => ipAddress === "172.18.0.2";
+
 describe("request country detection", () => {
-  it("exposes a reusable request country resolver", () => {
-    expect(getResolver()).toBeTypeOf("function");
-  });
-
-  it("prefers a valid CF-IPCountry header over a GeoIP lookup", () => {
-    const resolver = getResolver();
-    expect(resolver).toBeTypeOf("function");
-    if (!resolver) return;
-
+  it("accepts only the configured provider header from a trusted immediate peer", () => {
     const lookup = vi.fn(() => "US");
-    const result = resolver(
+    const result = detectCountryFromRequest(
       requestWith({
-        headers: { "cf-ipcountry": "eg" },
+        headers: {
+          "cf-ipcountry": "eg",
+          "x-vercel-ip-country": "SA",
+          "x-country-code": "AE",
+        },
         ip: "8.8.8.8",
+        remoteAddress: "172.18.0.2",
       }),
       lookup,
+      { provider: "cloudflare", isTrustedProxy: trustedProxy },
     );
 
-    expect(result).toEqual({
-      countryCode: "EG",
-      source: "header",
-    });
+    expect(result).toEqual({ countryCode: "EG", source: "header" });
     expect(lookup).not.toHaveBeenCalled();
   });
 
-  it("falls back to GeoIP and normalizes IPv4-mapped proxy addresses", () => {
-    const resolver = getResolver();
-    expect(resolver).toBeTypeOf("function");
-    if (!resolver) return;
-
-    const lookup = vi.fn(() => "us");
-    const result = resolver(
+  it("ignores a provider header from an untrusted peer and uses effective-IP GeoIP", () => {
+    const lookup = vi.fn(() => "US");
+    const result = detectCountryFromRequest(
       requestWith({
-        headers: { "cf-ipcountry": "XX" },
-        ip: "::ffff:8.8.8.8",
+        headers: { "cf-ipcountry": "EG" },
+        ip: "8.8.8.8",
+        remoteAddress: "203.0.113.9",
       }),
       lookup,
+      { provider: "cloudflare", isTrustedProxy: trustedProxy },
+    );
+
+    expect(result).toEqual({ countryCode: "US", source: "geoip" });
+    expect(lookup).toHaveBeenCalledWith("8.8.8.8");
+  });
+
+  it("uses only Vercel's header when Vercel is configured", () => {
+    const result = detectCountryFromRequest(
+      requestWith({
+        headers: { "cf-ipcountry": "EG", "x-vercel-ip-country": "sa" },
+        remoteAddress: "172.18.0.2",
+      }),
+      () => null,
+      { provider: "vercel", isTrustedProxy: trustedProxy },
+    );
+
+    expect(result).toEqual({ countryCode: "SA", source: "header" });
+  });
+
+  it("provider none ignores every country header and never defaults to Egypt", () => {
+    const result = detectCountryFromRequest(
+      requestWith({
+        headers: {
+          "cf-ipcountry": "EG",
+          "x-vercel-ip-country": "SA",
+          "x-geo-country": "AE",
+          "x-country-code": "US",
+        },
+        ip: "8.8.8.8",
+        remoteAddress: "172.18.0.2",
+      }),
+      () => null,
+      { provider: "none", isTrustedProxy: trustedProxy },
+    );
+
+    expect(result).toEqual({ countryCode: null, source: null });
+  });
+
+  it.each(["XX", "T1", "ZZ", "not-a-country"])(
+    "rejects provider country %j and returns no detection without GeoIP",
+    (countryCode) => {
+      expect(
+        detectCountryFromRequest(
+          requestWith({
+            headers: { "cf-ipcountry": countryCode },
+            remoteAddress: "172.18.0.2",
+          }),
+          () => null,
+          { provider: "cloudflare", isTrustedProxy: trustedProxy },
+        ),
+      ).toEqual({ countryCode: null, source: null });
+    },
+  );
+
+  it("normalizes IPv4-mapped effective addresses before GeoIP", () => {
+    const lookup = vi.fn(() => "us");
+    const result = detectCountryFromRequest(
+      requestWith({ ip: "::ffff:8.8.8.8" }),
+      lookup,
+      { provider: "none", isTrustedProxy: () => false },
     );
 
     expect(lookup).toHaveBeenCalledWith("8.8.8.8");
-    expect(result).toEqual({
-      countryCode: "US",
-      source: "geoip",
-    });
-  });
-
-  it("returns no detection for invalid addresses and unknown country codes", () => {
-    const resolver = getResolver();
-    expect(resolver).toBeTypeOf("function");
-    if (!resolver) return;
-
-    expect(
-      resolver(
-        requestWith({
-          headers: { "x-country-code": "not-a-country" },
-          ip: "not-an-ip",
-        }),
-        () => "US",
-      ),
-    ).toEqual({
-      countryCode: null,
-      source: null,
-    });
-
-    expect(
-      resolver(requestWith({ ip: "8.8.8.8" }), () => "XX"),
-    ).toEqual({
-      countryCode: null,
-      source: null,
-    });
+    expect(result).toEqual({ countryCode: "US", source: "geoip" });
   });
 });

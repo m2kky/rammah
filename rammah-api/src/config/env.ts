@@ -1,5 +1,7 @@
 import "dotenv/config";
 import { z } from "zod";
+import { parseSupportedCurrencies } from "../modules/pricing/pricing-groups-preflight.js";
+import { compileTrustedProxyCidrs } from "../shared/geo/trusted-proxy.js";
 
 const positiveInteger = z.coerce.number().int().positive();
 const nonNegativeInteger = z.coerce.number().int().nonnegative();
@@ -43,6 +45,34 @@ const mimeTypeList = (fallback: string) =>
       }
       return values;
     });
+const commaSeparatedList = z
+  .string()
+  .default("")
+  .transform((value) => [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))]);
+const trustedProxyCidrs = commaSeparatedList.superRefine((values, context) => {
+  try {
+    compileTrustedProxyCidrs(values);
+  } catch {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Use valid comma-separated proxy IP addresses or CIDRs.",
+    });
+  }
+});
+const supportedCurrencyList = z
+  .string()
+  .default("EGP")
+  .transform((value, context) => {
+    try {
+      return [...parseSupportedCurrencies(value)];
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error instanceof Error ? error.message : "Use valid currency codes.",
+      });
+      return z.NEVER;
+    }
+  });
 
 const envSchema = z.object({
   NODE_ENV: z
@@ -57,9 +87,12 @@ const envSchema = z.object({
   ADMIN_SEED_PASSWORD: z.string().min(8).optional(),
   ADMIN_SEED_NAME: z.string().min(1).default("Ahmed Ramah Admin"),
   REQUEST_LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  COUNTRY_HEADER_PROVIDER: z.enum(["cloudflare", "vercel", "none"]).default("none"),
+  TRUSTED_PROXY_CIDRS: trustedProxyCidrs,
   PAYMENT_PROVIDER: z.enum(["mock", "kashier"]).default("mock"),
   PAYMENT_MODE: z.enum(["test", "live"]).default("test"),
   PAYMENT_HOLD_MINUTES: z.coerce.number().int().positive().default(15),
+  PAYMENT_SUPPORTED_CURRENCIES: supportedCurrencyList,
   BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: nonNegativeInteger.default(1440),
   BOOKING_DAILY_LIMIT: positiveInteger.default(8),
   KASHIER_MERCHANT_ID: z.string().optional(),
@@ -110,6 +143,13 @@ const envSchema = z.object({
   JOB_BACKOFF_MAX_MS: positiveInteger.default(300000),
   WORKER_DRAIN_TIMEOUT_MS: positiveInteger.default(30000),
 }).superRefine((value, context) => {
+  if (value.COUNTRY_HEADER_PROVIDER !== "none" && value.TRUSTED_PROXY_CIDRS.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["TRUSTED_PROXY_CIDRS"],
+      message: "Trusted proxy CIDRs are required when a country header provider is enabled.",
+    });
+  }
   if (value.JOB_LEASE_SECONDS <= value.JOB_TIMEOUT_SECONDS) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
@@ -146,6 +186,8 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+export const trustedProxyPredicate = compileTrustedProxyCidrs(env.TRUSTED_PROXY_CIDRS);
 
 export const frontendOrigins = env.FRONTEND_ORIGIN.split(",")
   .map((origin) => origin.trim())

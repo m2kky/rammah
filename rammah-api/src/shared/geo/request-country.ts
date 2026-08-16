@@ -1,6 +1,9 @@
 import { isIP } from "node:net";
 import { createRequire } from "node:module";
 import type { Request } from "express";
+import { env, trustedProxyPredicate } from "../../config/env.js";
+import { isIsoCountryCode } from "./countries.js";
+import type { TrustedProxyPredicate } from "./trusted-proxy.js";
 
 const require = createRequire(import.meta.url);
 
@@ -10,24 +13,27 @@ type GeoIpCountryModule = {
 
 const geoIpCountry = require("geoip-country") as GeoIpCountryModule;
 
-export const defaultCountryCode = "EG";
-
 export type RequestCountryDetection = {
   countryCode: string | null;
   source: "header" | "geoip" | null;
 };
 
-const countryHeaderNames = [
-  "cf-ipcountry",
-  "x-vercel-ip-country",
-  "x-geo-country",
-  "x-country-code",
-] as const;
+export type CountryHeaderProvider = "cloudflare" | "vercel" | "none";
+
+export type RequestCountryDetectionOptions = {
+  provider: CountryHeaderProvider;
+  isTrustedProxy: TrustedProxyPredicate;
+};
+
+const providerHeaderNames: Record<Exclude<CountryHeaderProvider, "none">, string> = {
+  cloudflare: "cf-ipcountry",
+  vercel: "x-vercel-ip-country",
+};
 
 const normalizeCountryCode = (value: string | null | undefined) => {
   const normalized = value?.trim().toUpperCase();
 
-  if (!normalized || !/^[A-Z]{2}$/.test(normalized) || normalized === "XX") {
+  if (!normalized || !isIsoCountryCode(normalized)) {
     return null;
   }
 
@@ -57,10 +63,20 @@ export const lookupCountryCodeByIp = (ipAddress: string) =>
 export const detectCountryFromRequest = (
   req: Request,
   lookupCountryByIp: (ipAddress: string) => string | null = lookupCountryCodeByIp,
+  options: RequestCountryDetectionOptions = {
+    provider: env.COUNTRY_HEADER_PROVIDER,
+    isTrustedProxy: trustedProxyPredicate,
+  },
 ): RequestCountryDetection => {
-  for (const headerName of countryHeaderNames) {
-    const countryCode = normalizeCountryCode(req.header(headerName));
-
+  const immediatePeer = normalizeIpAddress(req.socket.remoteAddress);
+  if (
+    options.provider !== "none" &&
+    immediatePeer &&
+    options.isTrustedProxy(immediatePeer)
+  ) {
+    const countryCode = normalizeCountryCode(
+      req.header(providerHeaderNames[options.provider]),
+    );
     if (countryCode) {
       return {
         countryCode,

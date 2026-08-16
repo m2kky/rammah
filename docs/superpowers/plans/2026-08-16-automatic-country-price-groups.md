@@ -62,11 +62,11 @@
 - Produces: `countryCatalog`, `isIsoCountryCode`, `compileTrustedProxyCidrs`, and provider-aware `detectCountryFromRequest`.
 - Environment: `COUNTRY_HEADER_PROVIDER=cloudflare|vercel|none`, `TRUSTED_PROXY_CIDRS` comma list.
 
-- [ ] Rewrite request-country/app tests for provider matrix, trusted/untrusted socket peer, invalid CIDR/provider startup, `XX`/`T1`, GeoIP, and no fallback.
-- [ ] Run focused tests; expect failures against the current four-header/default-EG behavior.
-- [ ] Add direct `proxy-addr` dependency/types, canonical catalog, validated env, shared predicate, nullable route response, and `.env.example` docs.
-- [ ] Run focused tests, all API unit tests, and `npm run typecheck`; expect PASS.
-- [ ] Commit Task 2 files with `feat(pricing): trust automatic country detection`.
+- [x] Rewrite request-country/app tests for provider matrix, trusted/untrusted socket peer, invalid CIDR/provider startup, `XX`/`T1`, GeoIP, and no fallback.
+- [x] Run focused tests; observed failures against the current four-header/default-EG behavior.
+- [x] Add direct `proxy-addr` dependency/types, canonical catalog, validated env, shared predicate, nullable route response, and `.env.example` docs.
+- [x] Run focused tests, all API unit tests, and `npm run typecheck`; PASS.
+- [x] Commit Task 2 files with `feat(pricing): trust automatic country detection`.
 
 ### Task 3: Transactional Admin Price-Group API
 

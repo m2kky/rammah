@@ -1,6 +1,7 @@
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import express from "express";
+import { trustedProxyPredicate } from "./config/env.js";
 import helmet from "helmet";
 import { env, frontendOrigins } from "./config/env.js";
 import { errorHandlerMiddleware } from "./middleware/error-handler.js";
@@ -40,7 +41,7 @@ import { publicSessionsRouter } from "./modules/sessions/public-sessions.routes.
 export const createApp = () => {
   const app = express();
 
-  app.set("trust proxy", 1);
+  app.set("trust proxy", trustedProxyPredicate);
   app.disable("x-powered-by");
   app.use(helmet());
   app.use(
