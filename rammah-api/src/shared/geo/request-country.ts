@@ -1,21 +1,12 @@
 import { isIP } from "node:net";
-import { createRequire } from "node:module";
 import type { Request } from "express";
 import { env, trustedProxyPredicate } from "../../config/env.js";
 import { isIsoCountryCode } from "./countries.js";
 import type { TrustedProxyPredicate } from "./trusted-proxy.js";
 
-const require = createRequire(import.meta.url);
-
-type GeoIpCountryModule = {
-  lookup: (ipAddress: string) => { country?: string | null } | null;
-};
-
-const geoIpCountry = require("geoip-country") as GeoIpCountryModule;
-
 export type RequestCountryDetection = {
   countryCode: string | null;
-  source: "header" | "geoip" | null;
+  source: "header" | null;
 };
 
 export type CountryHeaderProvider = "cloudflare" | "vercel" | "none";
@@ -57,12 +48,8 @@ const normalizeIpAddress = (value: string | null | undefined) => {
   return isIP(withoutZone) ? withoutZone : null;
 };
 
-export const lookupCountryCodeByIp = (ipAddress: string) =>
-  normalizeCountryCode(geoIpCountry.lookup(ipAddress)?.country);
-
 export const detectCountryFromRequest = (
   req: Request,
-  lookupCountryByIp: (ipAddress: string) => string | null = lookupCountryCodeByIp,
   options: RequestCountryDetectionOptions = {
     provider: env.COUNTRY_HEADER_PROVIDER,
     isTrustedProxy: trustedProxyPredicate,
@@ -85,24 +72,8 @@ export const detectCountryFromRequest = (
     }
   }
 
-  const ipAddress = normalizeIpAddress(req.ip ?? req.socket.remoteAddress);
-
-  if (!ipAddress) {
-    return {
-      countryCode: null,
-      source: null,
-    };
-  }
-
-  const countryCode = normalizeCountryCode(lookupCountryByIp(ipAddress));
-
-  return countryCode
-    ? {
-        countryCode,
-        source: "geoip",
-      }
-    : {
-        countryCode: null,
-        source: null,
-      };
+  return {
+    countryCode: null,
+    source: null,
+  };
 };
