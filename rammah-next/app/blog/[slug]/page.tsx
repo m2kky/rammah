@@ -1,7 +1,25 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicBlogPost } from "@/lib/api/cms";
+import { fetchPublicBlogPost, fetchPublicGlobalMedia } from "@/lib/api/cms";
+import { getGlobalMedia } from "@/lib/api/cms-content";
+import { blogPostMetadata } from "@/lib/seo/content-metadata";
+import { privateMetadata } from "@/lib/seo/metadata";
+
+type Props = { params: Promise<{ slug: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const decodedSlug = decodeURIComponent(slug);
+  const [post, globals] = await Promise.all([
+    fetchPublicBlogPost(decodedSlug).catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
+  return post
+    ? blogPostMetadata(post, getGlobalMedia(globals).defaultOgImage)
+    : privateMetadata("Article not found");
+}
 
 const formatDate = (value: string | null) => {
   if (!value) return "Published";
@@ -13,9 +31,7 @@ const formatDate = (value: string | null) => {
 
 export default async function BlogPostPage({
   params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+}: Props) {
   const { slug } = await params;
   const post = await fetchPublicBlogPost(decodeURIComponent(slug)).catch(() => null);
 

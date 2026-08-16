@@ -1,10 +1,13 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import PublicFrame from "@/components/PublicFrame";
 import { servicesFallback } from "@/data/servicesFallback";
 import { fetchPublicOffering, type PublicOffering } from "@/lib/api/offerings";
 import { fetchPublicGlobalMedia } from "@/lib/api/cms";
 import { getServiceDetailMedia } from "@/lib/api/cms-content";
+import { offeringMetadata } from "@/lib/seo/content-metadata";
+import { privateMetadata } from "@/lib/seo/metadata";
 
 const fallbackOffering = (slug: string): PublicOffering | null => {
   const service = servicesFallback.find((item) => item.slug === slug);
@@ -45,11 +48,27 @@ const bookingCopy: Record<PublicOffering["bookingMode"], string> = {
   quote_only: "Request quote",
 };
 
+type Props = { params: Promise<{ slug: string }> };
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  const decodedSlug = decodeURIComponent(slug);
+  const [offering, globals] = await Promise.all([
+    getOffering(decodedSlug),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
+  return offering
+    ? offeringMetadata(
+        offering,
+        `/services/${offering.slug}`,
+        getServiceDetailMedia(globals).portrait,
+      )
+    : privateMetadata("Service not found");
+}
+
 export default async function ServiceDetailPage({
   params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+}: Props) {
   const { slug } = await params;
   const [offering, globals] = await Promise.all([
     getOffering(decodeURIComponent(slug)),

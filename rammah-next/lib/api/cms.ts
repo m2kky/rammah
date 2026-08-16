@@ -66,6 +66,7 @@ export type PublicBlogPost = {
   body?: string;
   publishedAt: string | null;
   createdAt: string;
+  updatedAt: string;
   category?: {
     id: string;
     name: string | null;
@@ -76,6 +77,7 @@ export type PublicBlogPost = {
     metaDescription: string | null;
     canonicalUrl: string | null;
     noindex: boolean;
+    ogImage: CmsMedia | null;
   } | null;
 };
 

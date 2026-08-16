@@ -1,6 +1,7 @@
 import Link from "next/link";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicBlogPosts, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
+import { fetchPublicBlogPosts, fetchPublicGlobalMedia, fetchPublicPage, findPublicSection } from "@/lib/api/cms";
+import { getGlobalMedia, getPageMetadata } from "@/lib/api/cms-content";
 
 const formatDate = (value: string | null) => {
   if (!value) return "Draft date";
@@ -10,10 +11,19 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
-export const metadata = {
-  title: "Blog | Ahmed Rammah",
-  description: "Essays and notes on psychology, systems, coaching, and aCRL.",
-};
+export async function generateMetadata() {
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("blog").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
+  return getPageMetadata(
+    page,
+    "Blog",
+    "Essays and notes on psychology, systems, coaching, and aCRL.",
+    "/blog",
+    getGlobalMedia(globals).defaultOgImage,
+  );
+}
 
 export default async function BlogPage() {
   const [posts, page] = await Promise.all([
