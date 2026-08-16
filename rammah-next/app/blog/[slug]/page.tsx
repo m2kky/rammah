@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import PublicFrame from "@/components/PublicFrame";
+import { BlogFeaturedImage } from "@/components/blog/BlogFeaturedImage";
 import { fetchPublicBlogPost, fetchPublicGlobalMedia } from "@/lib/api/cms";
 import { getGlobalMedia } from "@/lib/api/cms-content";
 import { blogPostMetadata } from "@/lib/seo/content-metadata";
@@ -55,6 +56,7 @@ export default async function BlogPostPage({
               {post.excerpt}
             </p>
           )}
+          <BlogFeaturedImage media={post.featuredMedia} className="mt-10 aspect-[16/9]" />
           <div className="mt-12 whitespace-pre-wrap border-t border-[#102329]/14 pt-8 font-inter text-base leading-8 text-[#102329]/76">
             {post.body}
           </div>
