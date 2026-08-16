@@ -84,6 +84,10 @@ const plainText = (value: string, fallback: string) => {
   return normalized || fallback;
 };
 
+const pageTitle = (value: string) => plainText(value, DEFAULT_SITE_TITLE)
+  .replace(/\s*(?:\||—|-)\s*Ahmed Rammah$/i, "")
+  .trim();
+
 const imageMetadata = (image: SeoImage) => {
   const url = absoluteUrl(image.publicUrl) ?? absoluteUrl(DEFAULT_OG_IMAGE.publicUrl)!;
   const dimensions =
@@ -101,7 +105,7 @@ const imageMetadata = (image: SeoImage) => {
 };
 
 export const buildMetadata = (input: MetadataInput): Metadata => {
-  const title = plainText(input.title, DEFAULT_SITE_TITLE);
+  const title = pageTitle(input.title);
   const description = plainText(input.description, DEFAULT_SITE_DESCRIPTION);
   const routeCanonical = absoluteUrl(input.pathname)!;
   const canonical = input.canonicalUrl

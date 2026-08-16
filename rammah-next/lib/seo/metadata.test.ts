@@ -79,7 +79,7 @@ describe("site metadata", () => {
 
     expect(
       buildMetadata({
-        title: " <b>Services</b> ",
+        title: " <b>Services</b> | Ahmed Rammah ",
         description: " Work   on the system. ",
         pathname: "/services",
         canonicalUrl: "javascript:alert(1)",

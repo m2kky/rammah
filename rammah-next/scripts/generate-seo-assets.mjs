@@ -16,7 +16,8 @@ const faviconPath = path.join(appRoot, "favicon.ico");
 
 const iconPng = (size) => sharp(portraitMaster)
   .resize(size, size, { fit: "cover", position: "centre" })
-  .png({ compressionLevel: 9, palette: size <= 48 })
+  .ensureAlpha()
+  .png({ compressionLevel: 9, palette: false })
   .toBuffer();
 
 const packIco = (images) => {
@@ -62,6 +63,9 @@ const main = async () => {
   const faviconImages = await Promise.all(
     [16, 32, 48].map(async (size) => ({ size, data: await iconPng(size) })),
   );
+  for (const { data } of faviconImages) {
+    assert.equal((await sharp(data).metadata()).hasAlpha, true, "ICO PNG frames must be RGBA.");
+  }
   await writeFile(faviconPath, packIco(faviconImages));
 
   assert.deepEqual(await dimensions(iconPath), { width: 512, height: 512 });
