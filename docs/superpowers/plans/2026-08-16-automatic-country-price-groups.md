@@ -84,12 +84,12 @@
 - Consumes: Task 1 membership schema and Task 2 country/currency validation.
 - Produces: existing `/prices` CRUD using `{name,countryCodes[],currency,amounts,status}` and metadata `{supportedCurrencies,countries}`.
 
-- [ ] Add failing validation/integration tests for one/many CRUD, legacy input, overlap, atomic replacement, archive/reuse, archived terminal state, write pause, and audit atomicity.
-- [ ] Run focused tests; expect contract/schema failures.
-- [ ] Implement executor-aware repository transactions with `group -> memberships` locking and in-transaction audit inserts.
-- [ ] Implement service/route DTOs, compatibility input, stable conflict/maintenance errors, and OpenAPI contract.
-- [ ] Run focused tests, API unit/integration suites, typecheck, and build; expect PASS.
-- [ ] Commit Task 3 files with `feat(admin): manage country price groups`.
+- [x] Add failing validation/integration tests for one/many CRUD, legacy input, overlap, atomic replacement, archive/reuse, archived terminal state, write pause, and audit atomicity.
+- [x] Run focused tests; observed contract/schema failures against the single-country implementation.
+- [x] Implement executor-aware repository transactions with `group -> memberships` locking and in-transaction audit inserts.
+- [x] Implement service/route DTOs, compatibility input, stable conflict/maintenance errors, and OpenAPI contract.
+- [x] Run focused tests, API unit/integration suites, typecheck, OpenAPI check, and build; PASS.
+- [x] Commit Task 3 files with `feat(admin): manage country price groups`.
 
 ### Task 4: Shared Strict Public Price Resolution
 

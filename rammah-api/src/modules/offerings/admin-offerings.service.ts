@@ -1,28 +1,28 @@
 import { AppError } from "../../shared/errors/app-error.js";
+import { env } from "../../config/env.js";
+import { countryCatalog, isIsoCountryCode } from "../../shared/geo/countries.js";
 import { httpStatus } from "../../shared/http/status.js";
 import { writeAuditLog, type AuditContext } from "../audit/audit.service.js";
 import {
   archiveAdminOffering,
-  archiveAdminOfferingPrice,
+  archiveAdminOfferingPriceGroup,
   findAdminOfferingCategories,
   findAdminOfferingById,
   findAdminOfferingPriceById,
   findAdminOfferingPricesByOfferingId,
   findAdminOfferings,
   findOfferingSchedulingDependencies,
-  findOfferingPriceByCountryCurrency,
   findOfferingBySlug,
   findOfferingCategoryById,
-  insertAdminOfferingPrice,
+  insertAdminOfferingPriceGroup,
   insertAdminOffering,
   updateAdminOffering,
-  updateAdminOfferingPrice,
+  updateAdminOfferingPriceGroup,
   type AdminOfferingFilters,
   type AdminOfferingCategoryRow,
   type AdminOfferingInsert,
-  type AdminOfferingPriceInsert,
+  type AdminOfferingPriceGroupWrite,
   type AdminOfferingPriceRow,
-  type AdminOfferingPriceUpdate,
   type AdminOfferingRow,
   type AdminOfferingUpdate,
 } from "./admin-offerings.repository.js";
@@ -51,12 +51,14 @@ export type AdminOfferingInput = {
 export type AdminOfferingPatchInput = Partial<AdminOfferingInput>;
 
 export type AdminOfferingPriceInput = {
-  countryCode: string;
+  name?: string;
+  countryCodes?: string[];
+  countryCode?: string;
   currency: string;
   baseAmountMinor: number;
   earlyBirdAmountMinor?: number | null;
   earlyBirdEndsAt?: string | null;
-  status: AdminOfferingPriceInsert["status"];
+  status: "draft" | "published";
 };
 
 export type AdminOfferingPricePatchInput = Partial<AdminOfferingPriceInput>;
@@ -123,7 +125,8 @@ const toAdminOfferingCategory = (category: AdminOfferingCategoryRow) => ({
 const toAdminOfferingPrice = (price: AdminOfferingPriceRow) => ({
   id: price.id,
   offeringId: price.offeringId,
-  countryCode: price.countryCode,
+  name: price.name,
+  countryCodes: price.countryCodes,
   currency: price.currency,
   baseAmountMinor: price.baseAmountMinor,
   earlyBirdAmountMinor: price.earlyBirdAmountMinor,
@@ -134,6 +137,10 @@ const toAdminOfferingPrice = (price: AdminOfferingPriceRow) => ({
 });
 
 const toUpperCode = (value: string) => value.trim().toUpperCase();
+
+const countryNamesByCode = new Map<string, string>(
+  countryCatalog.map(({ code, name }) => [code, name]),
+);
 
 const toNullableDate = (value: string | null | undefined) => {
   if (value === undefined) return undefined;
@@ -281,33 +288,115 @@ const assertOfferingExists = async (offeringId: string) => {
   }
 };
 
-const assertPriceAvailable = async (
-  offeringId: string,
-  countryCode: string,
-  currency: string,
-  excludeId?: string,
+export const assertAdminPriceWritesEnabled = (
+  enabled = env.ADMIN_PRICE_WRITES_ENABLED,
 ) => {
-  const existingPrice = await findOfferingPriceByCountryCurrency(
-    offeringId,
-    countryCode,
-    currency,
-    excludeId,
-  );
-
-  if (existingPrice) {
+  if (!enabled) {
     throw new AppError({
-      code: "CONFLICT",
-      message: "Offering price already exists for this country and currency.",
-      statusCode: httpStatus.conflict,
-      details: [
-        {
-          field: "countryCode",
-          message: "Use a unique country/currency pair for each offering.",
-        },
-      ],
+      code: "SERVICE_UNAVAILABLE",
+      message: "Price editing is temporarily paused for maintenance.",
+      statusCode: httpStatus.serviceUnavailable,
     });
   }
 };
+
+type RawAdminOfferingPriceInput = Omit<
+  Partial<AdminOfferingPriceInput>,
+  "status"
+> & {
+  currency?: string;
+  baseAmountMinor?: number;
+  status?: string;
+};
+
+export const normalizeAdminOfferingPriceInput = (
+  input: RawAdminOfferingPriceInput,
+  supportedCurrencies: readonly string[] = env.PAYMENT_SUPPORTED_CURRENCIES,
+): AdminOfferingPriceGroupWrite => {
+  if (input.countryCode !== undefined && input.countryCodes !== undefined) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Use countryCodes or the legacy countryCode field, not both.",
+      statusCode: httpStatus.badRequest,
+      details: [{ field: "countryCodes", message: "Remove one of the country fields." }],
+    });
+  }
+
+  const requestedCountries = input.countryCodes ??
+    (input.countryCode !== undefined ? [input.countryCode] : []);
+  const countryCodes = [...new Set(requestedCountries.map(toUpperCode))].sort();
+  const invalidCountryCodes = countryCodes.filter((code) => !isIsoCountryCode(code));
+  if (countryCodes.length === 0 || invalidCountryCodes.length > 0) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Select at least one valid ISO country.",
+      statusCode: httpStatus.badRequest,
+      details: [{
+        field: "countryCodes",
+        message: invalidCountryCodes.length > 0
+          ? `Unsupported country codes: ${invalidCountryCodes.join(", ")}.`
+          : "Select at least one country.",
+      }],
+    });
+  }
+
+  const currency = input.currency ? toUpperCode(input.currency) : "";
+  if (!supportedCurrencies.includes(currency)) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Currency is not enabled for this payment account.",
+      statusCode: httpStatus.badRequest,
+      details: [{ field: "currency", message: "Choose a supported currency." }],
+    });
+  }
+  if (input.status !== "draft" && input.status !== "published") {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Price groups can only be draft or published.",
+      statusCode: httpStatus.badRequest,
+      details: [{ field: "status", message: "Use draft or published; archive separately." }],
+    });
+  }
+  if (!Number.isInteger(input.baseAmountMinor) || (input.baseAmountMinor ?? -1) < 0) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Standard price must be a non-negative integer.",
+      statusCode: httpStatus.badRequest,
+      details: [{ field: "baseAmountMinor", message: "Enter a valid minor-unit amount." }],
+    });
+  }
+
+  const name = input.name?.trim() ||
+    (countryCodes.length === 1 ? countryNamesByCode.get(countryCodes[0]!) : undefined);
+  if (!name || name.length > 120) {
+    throw new AppError({
+      code: "VALIDATION_ERROR",
+      message: "Price group name is required.",
+      statusCode: httpStatus.badRequest,
+      details: [{ field: "name", message: "Enter a group name up to 120 characters." }],
+    });
+  }
+
+  const earlyBirdAmountMinor = input.earlyBirdAmountMinor ?? null;
+  const earlyBirdEndsAt = toNullableDate(input.earlyBirdEndsAt) ?? null;
+  validateEarlyBookingPrice(input.baseAmountMinor!, earlyBirdAmountMinor, earlyBirdEndsAt);
+
+  return {
+    name,
+    countryCodes,
+    countryCode: countryCodes[0]!,
+    currency,
+    baseAmountMinor: input.baseAmountMinor!,
+    earlyBirdAmountMinor,
+    earlyBirdEndsAt,
+    status: input.status,
+  };
+};
+
+export const getAdminOfferingPriceMetadata = () => ({
+  supportedCurrencies: [...env.PAYMENT_SUPPORTED_CURRENCIES],
+  countries: countryCatalog,
+});
 
 export const listAdminOfferings = async (filters: AdminOfferingFilters) => {
   const offerings = await findAdminOfferings(filters);
@@ -392,30 +481,10 @@ export const createAdminOfferingPrice = async (
   input: AdminOfferingPriceInput,
   auditContext?: AuditContext,
 ) => {
+  assertAdminPriceWritesEnabled();
   await assertOfferingExists(offeringId);
-
-  const countryCode = toUpperCode(input.countryCode);
-  const currency = toUpperCode(input.currency);
-  const earlyBirdAmountMinor = input.earlyBirdAmountMinor ?? null;
-  const earlyBirdEndsAt = toNullableDate(input.earlyBirdEndsAt) ?? null;
-
-  await assertPriceAvailable(offeringId, countryCode, currency);
-  validateEarlyBookingPrice(
-    input.baseAmountMinor,
-    earlyBirdAmountMinor,
-    earlyBirdEndsAt,
-  );
-
-  const price = await insertAdminOfferingPrice({
-    offeringId,
-    name: countryCode,
-    countryCode,
-    currency,
-    baseAmountMinor: input.baseAmountMinor,
-    earlyBirdAmountMinor,
-    earlyBirdEndsAt,
-    status: input.status,
-  });
+  const normalized = normalizeAdminOfferingPriceInput(input);
+  const price = await insertAdminOfferingPriceGroup(offeringId, normalized, auditContext);
 
   if (!price) {
     throw new AppError({
@@ -425,17 +494,7 @@ export const createAdminOfferingPrice = async (
     });
   }
 
-  const createdPrice = toAdminOfferingPrice(price);
-
-  await writeAuditLog(auditContext, {
-    action: "admin.offering_prices.create",
-    resourceType: "offering_price",
-    resourceId: createdPrice.id,
-    beforeSnapshot: null,
-    afterSnapshot: createdPrice,
-  });
-
-  return createdPrice;
+  return toAdminOfferingPrice(price);
 };
 
 export const updateAdminOfferingById = async (
@@ -522,6 +581,7 @@ export const updateAdminOfferingPriceById = async (
   input: AdminOfferingPricePatchInput,
   auditContext?: AuditContext,
 ) => {
+  assertAdminPriceWritesEnabled();
   await assertOfferingExists(offeringId);
 
   const existingPrice = await findAdminOfferingPriceById(offeringId, priceId);
@@ -534,38 +594,39 @@ export const updateAdminOfferingPriceById = async (
     });
   }
 
-  const countryCode =
-    input.countryCode !== undefined ? toUpperCode(input.countryCode) : existingPrice.countryCode;
-  const currency =
-    input.currency !== undefined ? toUpperCode(input.currency) : existingPrice.currency;
-
-  if (input.countryCode !== undefined || input.currency !== undefined) {
-    await assertPriceAvailable(offeringId, countryCode, currency, priceId);
+  if (existingPrice.status !== "draft" && existingPrice.status !== "published") {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "Archived price groups are read-only and cannot be restored.",
+      statusCode: httpStatus.conflict,
+    });
   }
 
-  const baseAmountMinor = input.baseAmountMinor ?? existingPrice.baseAmountMinor;
-  const earlyBirdAmountMinor =
-    input.earlyBirdAmountMinor !== undefined
-      ? input.earlyBirdAmountMinor
-      : existingPrice.earlyBirdAmountMinor;
-  const earlyBirdEndsAt =
-    input.earlyBirdEndsAt !== undefined
-      ? toNullableDate(input.earlyBirdEndsAt) ?? null
-      : existingPrice.earlyBirdEndsAt;
-  validateEarlyBookingPrice(baseAmountMinor, earlyBirdAmountMinor, earlyBirdEndsAt);
-
-  const updatePayload = removeUndefined<AdminOfferingPriceUpdate>({
-    countryCode: input.countryCode !== undefined ? countryCode : undefined,
-    currency: input.currency !== undefined ? currency : undefined,
-    baseAmountMinor: input.baseAmountMinor,
-    earlyBirdAmountMinor: input.earlyBirdAmountMinor,
+  const suppliedCountries = input.countryCodes !== undefined || input.countryCode !== undefined;
+  const normalized = normalizeAdminOfferingPriceInput({
+    name: input.name ?? existingPrice.name,
+    ...(suppliedCountries
+      ? { countryCodes: input.countryCodes, countryCode: input.countryCode }
+      : { countryCodes: existingPrice.countryCodes }),
+    currency: input.currency ?? existingPrice.currency,
+    baseAmountMinor: input.baseAmountMinor ?? existingPrice.baseAmountMinor,
+    earlyBirdAmountMinor:
+      input.earlyBirdAmountMinor !== undefined
+        ? input.earlyBirdAmountMinor
+        : existingPrice.earlyBirdAmountMinor,
     earlyBirdEndsAt:
-      input.earlyBirdEndsAt === undefined ? undefined : earlyBirdEndsAt,
-    status: input.status,
+      input.earlyBirdEndsAt !== undefined
+        ? input.earlyBirdEndsAt
+        : existingPrice.earlyBirdEndsAt?.toISOString() ?? null,
+    status: input.status ?? existingPrice.status,
   });
 
-  const beforePrice = toAdminOfferingPrice(existingPrice);
-  const updatedPrice = await updateAdminOfferingPrice(offeringId, priceId, updatePayload);
+  const updatedPrice = await updateAdminOfferingPriceGroup(
+    offeringId,
+    priceId,
+    normalized,
+    auditContext,
+  );
 
   if (!updatedPrice) {
     throw new AppError({
@@ -575,17 +636,7 @@ export const updateAdminOfferingPriceById = async (
     });
   }
 
-  const afterPrice = toAdminOfferingPrice(updatedPrice);
-
-  await writeAuditLog(auditContext, {
-    action: "admin.offering_prices.update",
-    resourceType: "offering_price",
-    resourceId: afterPrice.id,
-    beforeSnapshot: beforePrice,
-    afterSnapshot: afterPrice,
-  });
-
-  return afterPrice;
+  return toAdminOfferingPrice(updatedPrice);
 };
 
 export const archiveAdminOfferingById = async (
@@ -621,6 +672,7 @@ export const archiveAdminOfferingPriceById = async (
   priceId: string,
   auditContext?: AuditContext,
 ) => {
+  assertAdminPriceWritesEnabled();
   await assertOfferingExists(offeringId);
   const existingPrice = await findAdminOfferingPriceById(offeringId, priceId);
 
@@ -632,8 +684,19 @@ export const archiveAdminOfferingPriceById = async (
     });
   }
 
-  const beforePrice = toAdminOfferingPrice(existingPrice);
-  const archivedPrice = await archiveAdminOfferingPrice(offeringId, priceId);
+  if (existingPrice.status === "archived") {
+    throw new AppError({
+      code: "CONFLICT",
+      message: "Archived price groups are read-only and cannot be restored.",
+      statusCode: httpStatus.conflict,
+    });
+  }
+
+  const archivedPrice = await archiveAdminOfferingPriceGroup(
+    offeringId,
+    priceId,
+    auditContext,
+  );
 
   if (!archivedPrice) {
     throw new AppError({
@@ -643,13 +706,5 @@ export const archiveAdminOfferingPriceById = async (
     });
   }
 
-  const afterPrice = await findAdminOfferingPriceById(offeringId, priceId);
-
-  await writeAuditLog(auditContext, {
-    action: "admin.offering_prices.archive",
-    resourceType: "offering_price",
-    resourceId: priceId,
-    beforeSnapshot: beforePrice,
-    afterSnapshot: afterPrice ? toAdminOfferingPrice(afterPrice) : null,
-  });
+  return toAdminOfferingPrice(archivedPrice);
 };

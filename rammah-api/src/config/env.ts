@@ -93,6 +93,7 @@ const envSchema = z.object({
   PAYMENT_MODE: z.enum(["test", "live"]).default("test"),
   PAYMENT_HOLD_MINUTES: z.coerce.number().int().positive().default(15),
   PAYMENT_SUPPORTED_CURRENCIES: supportedCurrencyList,
+  ADMIN_PRICE_WRITES_ENABLED: booleanFlag.default(true),
   BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: nonNegativeInteger.default(1440),
   BOOKING_DAILY_LIMIT: positiveInteger.default(8),
   KASHIER_MERCHANT_ID: z.string().optional(),

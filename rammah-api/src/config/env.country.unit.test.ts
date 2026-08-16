@@ -21,7 +21,14 @@ describe("country pricing environment", () => {
       COUNTRY_HEADER_PROVIDER: "none",
       TRUSTED_PROXY_CIDRS: [],
       PAYMENT_SUPPORTED_CURRENCIES: ["EGP"],
+      ADMIN_PRICE_WRITES_ENABLED: true,
     });
+  });
+
+  it("parses the explicit admin price write pause", () => {
+    expect(
+      parseEnv({ ...baseEnv, ADMIN_PRICE_WRITES_ENABLED: "false" }),
+    ).toMatchObject({ ADMIN_PRICE_WRITES_ENABLED: false });
   });
 
   it("normalizes trusted CIDRs and payment currencies", () => {

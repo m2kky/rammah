@@ -8,6 +8,7 @@ import {
   archiveAdminOfferingPriceById,
   createAdminOffering,
   createAdminOfferingPrice,
+  getAdminOfferingPriceMetadata,
   getAdminOffering,
   listAdminOfferingCategories,
   listAdminOfferingPrices,
@@ -105,20 +106,50 @@ const listQuerySchema = z.object({
   search: z.string().trim().min(1).max(180).optional(),
 });
 
-const adminOfferingPriceBodySchema = z.object({
-  countryCode: z.string().trim().length(2),
+const adminOfferingPriceFieldsSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  countryCodes: z.array(z.string().trim().length(2)).min(1).max(249).optional(),
+  countryCode: z.string().trim().length(2).optional(),
   currency: z.string().trim().length(3),
   baseAmountMinor: z.number().int().min(0).max(1000000000),
   earlyBirdAmountMinor: z.number().int().min(0).max(1000000000).nullable().optional(),
   earlyBirdEndsAt: z.string().datetime().nullable().optional(),
-  status: contentStatusSchema.default("draft"),
+  status: z.enum(["draft", "published"]).default("draft"),
 });
 
-const adminOfferingPricePatchSchema = adminOfferingPriceBodySchema
+const validatePriceCountryFields = (
+  body: { countryCode?: string; countryCodes?: string[] },
+  context: z.RefinementCtx,
+  requireCountry: boolean,
+) => {
+  const hasLegacy = body.countryCode !== undefined;
+  const hasGroup = body.countryCodes !== undefined;
+  if (hasLegacy && hasGroup) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["countryCodes"],
+      message: "Use countryCodes or legacy countryCode, not both.",
+    });
+  }
+  if (requireCountry && !hasLegacy && !hasGroup) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["countryCodes"],
+      message: "Select at least one country.",
+    });
+  }
+};
+
+export const adminOfferingPriceBodySchema = adminOfferingPriceFieldsSchema.superRefine(
+  (body, context) => validatePriceCountryFields(body, context, true),
+);
+
+export const adminOfferingPricePatchSchema = adminOfferingPriceFieldsSchema
   .partial()
   .refine((body) => Object.keys(body).length > 0, {
     message: "At least one field is required.",
-  });
+  })
+  .superRefine((body, context) => validatePriceCountryFields(body, context, false));
 
 const getAuditContext = (req: Request) => ({
   adminUserId: req.admin?.id,
@@ -181,6 +212,7 @@ adminOfferingsRouter.get(
 
       res.status(httpStatus.ok).json({
         data: prices,
+        meta: getAdminOfferingPriceMetadata(),
       });
     } catch (error) {
       next(error);

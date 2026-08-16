@@ -237,7 +237,7 @@ const paidServiceInput = (
     fullName: "Paid Service Owner",
     email: "paid-service-owner@example.test",
   },
-  countryCode: "EG",
+  detectedCountryCode: "EG",
   timezone: "Africa/Cairo",
   answers,
 });
@@ -546,7 +546,7 @@ describe.sequential("owned slot holds and atomic conversion", () => {
         fullName: "Paid Service",
         email: "paid-service@example.test",
       },
-      countryCode: "EG",
+      detectedCountryCode: "EG",
       timezone: "Africa/Cairo",
       answers: [],
     };
