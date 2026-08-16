@@ -67,6 +67,7 @@ export type PublicBlogPost = {
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  featuredMedia: CmsMedia | null;
   category?: {
     id: string;
     name: string | null;
