@@ -149,6 +149,7 @@ const createTemporaryPaidSessionOffering = async () => {
 
   await db.insert(offeringPrices).values({
     offeringId,
+    name: "Egypt",
     countryCode: "EG",
     currency,
     baseAmountMinor: amountMinor,

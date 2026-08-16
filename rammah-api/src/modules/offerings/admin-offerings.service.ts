@@ -408,6 +408,7 @@ export const createAdminOfferingPrice = async (
 
   const price = await insertAdminOfferingPrice({
     offeringId,
+    name: countryCode,
     countryCode,
     currency,
     baseAmountMinor: input.baseAmountMinor,

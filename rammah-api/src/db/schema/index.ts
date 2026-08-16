@@ -2,12 +2,14 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgEnum,
   pgSequence,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -450,6 +452,7 @@ export const offeringPrices = pgTable(
   {
     id: id(),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
+    name: varchar("name", { length: 120 }).notNull(),
     countryCode: varchar("country_code", { length: 2 }).notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
     baseAmountMinor: integer("base_amount_minor").notNull(),
@@ -460,8 +463,39 @@ export const offeringPrices = pgTable(
     updatedAt: updatedAt(),
   },
   (table) => ({
-    countryUnique: uniqueIndex("offering_prices_country_unique").on(table.offeringId, table.countryCode, table.currency),
+    idOfferingUnique: uniqueIndex("offering_prices_id_offering_unique").on(table.id, table.offeringId),
     offeringIdx: index("offering_prices_offering_idx").on(table.offeringId),
+  }),
+);
+
+export const offeringPriceCountries = pgTable(
+  "offering_price_countries",
+  {
+    priceId: uuid("price_id").notNull(),
+    offeringId: uuid("offering_id").notNull(),
+    countryCode: varchar("country_code", { length: 2 }).notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => ({
+    primaryKey: primaryKey({
+      name: "offering_price_countries_pk",
+      columns: [table.priceId, table.countryCode],
+    }),
+    priceOfferingForeignKey: foreignKey({
+      name: "offering_price_countries_price_offering_fk",
+      columns: [table.priceId, table.offeringId],
+      foreignColumns: [offeringPrices.id, offeringPrices.offeringId],
+    }).onDelete("cascade"),
+    activeCountryUnique: uniqueIndex("offering_price_countries_active_unique")
+      .on(table.offeringId, table.countryCode)
+      .where(sql`${table.active} = true`),
+    priceIdx: index("offering_price_countries_price_idx").on(table.priceId),
+    countryFormat: check(
+      "offering_price_countries_country_format",
+      sql`${table.countryCode} ~ '^[A-Z]{2}$'`,
+    ),
   }),
 );
 
@@ -717,6 +751,7 @@ export const bookings = pgTable(
       .notNull()
       .default(sql`('RMM-' || lpad(nextval('booking_reference_seq')::text, 6, '0'))`),
     offeringId: uuid("offering_id").notNull().references(() => offerings.id),
+    offeringPriceId: uuid("offering_price_id"),
     offeringSessionId: uuid("offering_session_id").references(() => offeringSessions.id),
     scheduledProgramId: uuid("scheduled_program_id").references(() => scheduledPrograms.id),
     locationId: uuid("location_id").references(() => offlineLocations.id),
@@ -746,6 +781,7 @@ export const bookings = pgTable(
       table.bookingReference,
     ),
     offeringSlotIdx: index("bookings_offering_slot_idx").on(table.offeringId, table.slotStartAt, table.status),
+    offeringPriceIdx: index("bookings_offering_price_idx").on(table.offeringPriceId),
     customerEmailIdx: index("bookings_customer_email_idx").on(table.customerEmail),
     locationIdx: index("bookings_location_idx").on(table.locationId),
     statusIdx: index("bookings_status_idx").on(table.status),
@@ -757,6 +793,11 @@ export const bookings = pgTable(
       table.scheduledProgramId,
       table.status,
     ),
+    offeringPriceForeignKey: foreignKey({
+      name: "bookings_offering_price_offering_fk",
+      columns: [table.offeringPriceId, table.offeringId],
+      foreignColumns: [offeringPrices.id, offeringPrices.offeringId],
+    }),
     validSchedulingTarget: check(
       "bookings_valid_scheduling_target",
       sql`(${table.scheduledProgramId} IS NULL AND ${table.slotStartAt} IS NOT NULL AND ${table.slotEndAt} IS NOT NULL AND ${table.slotStartAt} < ${table.slotEndAt}) OR (${table.scheduledProgramId} IS NOT NULL AND ${table.slotStartAt} IS NULL AND ${table.slotEndAt} IS NULL)`,

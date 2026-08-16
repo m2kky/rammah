@@ -45,6 +45,7 @@ const seedOffering = async (input: {
   if (bookingMode === "paid") {
     await db.insert(offeringPrices).values({
       offeringId: offering!.id,
+      name: "Egypt",
       countryCode: "EG",
       currency: "EGP",
       baseAmountMinor: 10_000,

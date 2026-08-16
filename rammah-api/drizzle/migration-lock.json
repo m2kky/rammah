@@ -55,6 +55,21 @@
       "tag": "0010_overconfident_miracleman",
       "sqlSha256": "da851c15f418f71a5f75d845121ec3bd49dbe09572170c312da515465090e3c0",
       "snapshotSha256": "0e73587c293696561c3e4127b8b7d410cb9170dead8cc1d4c52821ea20cfbb30"
+    },
+    {
+      "tag": "0011_right_mariko_yashida",
+      "sqlSha256": "47e3c083e27cefdc2228b03cde3cb447485ce1f81c2e006bf56776fa9cc00273",
+      "snapshotSha256": "031f1c06c198cd5c696d8572a71fc067d9da58fedb0648deeeec45c02067a432"
+    },
+    {
+      "tag": "0012_famous_stryfe",
+      "sqlSha256": "7dca35b41167f76e89870946313926f302dc6eed56d1d2b0d0510e5a390d06c0",
+      "snapshotSha256": "ad4a2ae92da5156a7b4f347802efd259fd79269647a1ebeccfb5e6df3c50160f"
+    },
+    {
+      "tag": "0013_first_unicorn",
+      "sqlSha256": "ad0c2eda523e670bb7fa0374890d6ecc512e15bfd0ccfc2ec42706ce430f54ac",
+      "snapshotSha256": "6301f375f2444c84350e8d07da9b6d9dba2df7d67916a7cef724ec979049ee60"
     }
   ]
 }
