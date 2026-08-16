@@ -93,7 +93,8 @@ export type AdminOffering = {
 export type AdminOfferingPrice = {
   id: string;
   offeringId: string;
-  countryCode: string;
+  name: string;
+  countryCodes: string[];
   currency: string;
   baseAmountMinor: number;
   earlyBirdAmountMinor: number | null;
@@ -118,6 +119,11 @@ export type AdminAvailabilityWindow = {
   };
   createdAt: string;
   updatedAt: string;
+};
+
+export type AdminOfferingPriceMetadata = {
+  supportedCurrencies: string[];
+  countries: Array<{ code: string; name: string }>;
 };
 
 export type AdminAvailabilityOverrideType = "available" | "unavailable";
@@ -727,12 +733,13 @@ export type AdminOfferingPayload = {
 };
 
 export type AdminOfferingPricePayload = {
-  countryCode: string;
+  name: string;
+  countryCodes: string[];
   currency: string;
   baseAmountMinor: number;
   earlyBirdAmountMinor?: number | null;
   earlyBirdEndsAt?: string | null;
-  status: AdminOfferingStatus;
+  status: "draft" | "published";
 };
 
 export type AdminAvailabilityWindowPayload = {
@@ -1036,11 +1043,14 @@ export const updateAdminOffering = async (
 };
 
 export const fetchAdminOfferingPrices = async (offeringId: string) => {
-  const payload = await adminRequest<{ data: AdminOfferingPrice[] }>(
+  const payload = await adminRequest<{
+    data: AdminOfferingPrice[];
+    meta: AdminOfferingPriceMetadata;
+  }>(
     `/admin/offerings/${offeringId}/prices`,
   );
 
-  return payload.data;
+  return { prices: payload.data, meta: payload.meta };
 };
 
 export const createAdminOfferingPrice = async (

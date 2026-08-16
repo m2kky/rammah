@@ -150,11 +150,11 @@
 - Consumes: Task 3 price-group data and response metadata.
 - Produces: metadata-driven searchable one/many country editor with archived read-only state.
 
-- [ ] Add jsdom/Testing Library test config and failing component tests for metadata options, one/many selection, conflict display, supported currencies, and archived read-only state.
-- [ ] Run focused component tests; expect failures against current single-country datalist UI.
-- [ ] Update admin API types/client and implement accessible searchable multi-select without local country/currency arrays.
-- [ ] Run component/unit tests, typecheck, lint, and production build; expect PASS.
-- [ ] Commit Task 6 files with `feat(admin): edit multi-country price groups`.
+- [x] Add jsdom/Testing Library test config and failing component tests for metadata options, one/many selection, conflict display, supported currencies, and archived read-only state.
+- [x] Run focused component tests; failures reproduced against the previous single-country datalist UI.
+- [x] Update admin API types/client and implement accessible searchable multi-select without local country/currency arrays.
+- [x] Run component/unit tests, typecheck, lint, and production build; PASS.
+- [x] Commit Task 6 files with `feat(admin): edit multi-country price groups`.
 
 ### Task 7: Strict Booking UX and Same-Hold Reconfirmation
 
