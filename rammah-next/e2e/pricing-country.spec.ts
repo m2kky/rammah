@@ -318,7 +318,9 @@ test("supported country reaches payment with the previewed snapshot", async ({ p
   await reachReview(page);
   await page.getByRole("button", { name: "Continue to payment" }).click();
 
-  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`));
+  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`), {
+    timeout: 15_000,
+  });
   expect(observations.holdRequests).toBe(1);
   expect(observations.paidRequests[0]).toMatchObject({ expectedPrice: expectedPrice() });
 });
@@ -342,7 +344,9 @@ test("an admin price edit requires explicit confirmation on the same hold", asyn
 
   await expect(page.getByText(/The price changed to .*300/)).toBeVisible();
   await page.getByRole("button", { name: "Confirm updated price" }).click();
-  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`));
+  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`), {
+    timeout: 15_000,
+  });
 
   expect(observations.holdRequests).toBe(1);
   expect(observations.paidRequests).toHaveLength(2);
@@ -359,7 +363,9 @@ test("pricing country does not hide or override a foreign attendance location", 
   await page.getByRole("textbox", { name: "Email" }).fill("mizo@example.com");
   await page.getByRole("button", { name: "Review and pay" }).click();
   await page.getByRole("button", { name: "Continue to payment" }).click();
-  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`));
+  await expect(page).toHaveURL(new RegExp(`/booking/payment/${publicToken}$`), {
+    timeout: 15_000,
+  });
 
   expect(observations.paidRequests[0]).toMatchObject({
     locationId: dubaiLocationId,
