@@ -1,15 +1,20 @@
 import Link from "next/link";
 import ContactForm from "@/components/ContactForm";
 import PublicFrame from "@/components/PublicFrame";
-import { fetchPublicSiteSettings, fetchPublicPage } from "@/lib/api/cms";
-import { getContactPageContent, getPageMetadata } from "@/lib/api/cms-content";
+import { fetchPublicGlobalMedia, fetchPublicSiteSettings, fetchPublicPage } from "@/lib/api/cms";
+import { getContactPageContent, getGlobalMedia, getPageMetadata } from "@/lib/api/cms-content";
 
 export async function generateMetadata() {
-  const page = await fetchPublicPage("contact").catch(() => null);
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("contact").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
   return getPageMetadata(
     page,
     "Contact | Ahmed Rammah",
     "Send a message, request a program, or start a booking conversation.",
+    "/contact",
+    getGlobalMedia(globals).defaultOgImage,
   );
 }
 

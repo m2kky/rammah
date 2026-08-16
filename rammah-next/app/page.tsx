@@ -6,14 +6,19 @@ import {
   fetchPublicSiteSettings,
   fetchPublicGlobalMedia,
 } from "@/lib/api/cms";
-import { getPageMetadata, getSiteBrand } from "@/lib/api/cms-content";
+import { getGlobalMedia, getPageMetadata, getSiteBrand } from "@/lib/api/cms-content";
 
 export async function generateMetadata() {
-  const page = await fetchPublicPage("home").catch(() => null);
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("home").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
   return getPageMetadata(
     page,
     "Ahmed Rammah — Engineer · Systematizer · Trainer · Coach",
     "I map your psychological system, find the bugs, and rewrite the code.",
+    "/",
+    getGlobalMedia(globals).defaultOgImage,
   );
 }
 

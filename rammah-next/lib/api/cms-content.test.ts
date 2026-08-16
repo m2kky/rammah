@@ -175,19 +175,52 @@ describe("CMS page content contracts", () => {
   it("uses CMS page and SEO fields for browser metadata", () => {
     const contentPage = page([]);
     contentPage.title = "Edited browser title";
+    const ogImage = {
+      ...getGlobalMedia(null).defaultOgImage,
+      publicUrl: "https://media.example.test/page-card.png",
+      width: 1200,
+      height: 630,
+    };
     contentPage.seo = {
       metaTitle: "SEO title",
       metaDescription: "SEO description",
       canonicalUrl: "https://example.com/page",
       noindex: true,
-      ogImage: null,
+      ogImage,
     };
 
-    expect(getPageMetadata(contentPage, "Fallback", "Fallback description")).toEqual({
+    expect(getPageMetadata(
+      contentPage,
+      "Fallback",
+      "Fallback description",
+      "/test",
+      getGlobalMedia(null).defaultOgImage,
+    )).toEqual({
       title: "SEO title",
       description: "SEO description",
       alternates: { canonical: "https://example.com/page" },
       robots: { index: false, follow: false },
+      openGraph: {
+        title: "SEO title",
+        description: "SEO description",
+        url: "https://example.com/page",
+        siteName: "Ahmed Rammah",
+        locale: "en",
+        type: "website",
+        images: [{
+          url: "https://media.example.test/page-card.png",
+          alt: "Ahmed Rammah",
+          width: 1200,
+          height: 630,
+          type: "image/png",
+        }],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: "SEO title",
+        description: "SEO description",
+        images: ["https://media.example.test/page-card.png"],
+      },
     });
   });
 });

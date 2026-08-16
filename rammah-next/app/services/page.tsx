@@ -1,8 +1,8 @@
 import PublicFrame from "@/components/PublicFrame";
 import ServicesStack from "@/components/services/ServicesStack";
 import { fetchPublicOfferingRecords, type PublicOffering } from "@/lib/api/offerings";
-import { fetchPublicPage } from "@/lib/api/cms";
-import { getPageMetadata, getServicesPageContent } from "@/lib/api/cms-content";
+import { fetchPublicGlobalMedia, fetchPublicPage } from "@/lib/api/cms";
+import { getGlobalMedia, getPageMetadata, getServicesPageContent } from "@/lib/api/cms-content";
 import { servicesFallback } from "@/data/servicesFallback";
 
 const fallbackOfferings = servicesFallback.map((service) => ({
@@ -35,11 +35,16 @@ const getOfferings = async () => {
 };
 
 export async function generateMetadata() {
-  const page = await fetchPublicPage("services").catch(() => null);
+  const [page, globals] = await Promise.all([
+    fetchPublicPage("services").catch(() => null),
+    fetchPublicGlobalMedia().catch(() => null),
+  ]);
   return getPageMetadata(
     page,
     "Services | Ahmed Rammah",
     "Coaching, therapy-style sessions, workshops, and corporate aCRL programs.",
+    "/services",
+    getGlobalMedia(globals).defaultOgImage,
   );
 }
 

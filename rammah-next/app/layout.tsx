@@ -6,15 +6,46 @@ import "./globals.css";
 
 import FloatingCTA from "@/components/FloatingCTA";
 import { fetchPublicGlobalMedia, fetchPublicSiteSettings } from "@/lib/api/cms";
-import { getGlobalMedia, getSiteLocale } from "@/lib/api/cms-content";
+import { getGlobalMedia, getSiteBrand, getSiteLocale } from "@/lib/api/cms-content";
+import {
+  buildMetadata,
+  DEFAULT_SITE_DESCRIPTION,
+  DEFAULT_SITE_TITLE,
+  siteUrl,
+} from "@/lib/seo/metadata";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const globals = await fetchPublicGlobalMedia().catch(() => null);
+  const [globals, settings] = await Promise.all([
+    fetchPublicGlobalMedia().catch(() => null),
+    fetchPublicSiteSettings().catch(() => null),
+  ]);
   const defaultOgImage = getGlobalMedia(globals).defaultOgImage;
+  const brand = getSiteBrand(settings);
+  const base = buildMetadata({
+    title: DEFAULT_SITE_TITLE,
+    description: DEFAULT_SITE_DESCRIPTION,
+    pathname: "/",
+    image: defaultOgImage,
+  });
+
   return {
-    title: "Ahmed Rammah — Engineer · Systematizer · Trainer · Coach",
-    description: "I map your psychological system, find the bugs, and rewrite the code.",
-    openGraph: { images: [defaultOgImage.publicUrl] },
+    ...base,
+    metadataBase: siteUrl(),
+    title: {
+      default: DEFAULT_SITE_TITLE,
+      template: "%s | Ahmed Rammah",
+    },
+    applicationName: brand,
+    creator: "Ahmed Rammah",
+    publisher: brand,
+    manifest: "/manifest.webmanifest",
+    icons: {
+      icon: [
+        { url: "/favicon.ico", sizes: "any" },
+        { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      ],
+      apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
+    },
   };
 }
 

@@ -7,6 +7,7 @@ import {
   type CmsMedia,
 } from "./cms";
 import type { Metadata } from "next";
+import { buildMetadata, DEFAULT_OG_IMAGE } from "@/lib/seo/metadata";
 
 const fallbackMedia = (
   id: string,
@@ -15,6 +16,8 @@ const fallbackMedia = (
   publicUrl: string,
   altText: string | null,
   metadata: Record<string, unknown> = {},
+  width: number | null = null,
+  height: number | null = null,
 ): CmsMedia => ({
   id: `fallback:${id}`,
   kind,
@@ -22,8 +25,8 @@ const fallbackMedia = (
   publicUrl,
   altText,
   decorative: altText === null,
-  width: null,
-  height: null,
+  width,
+  height,
   durationMs: null,
   metadata,
 });
@@ -43,7 +46,16 @@ export const getGlobalMedia = (globals: PublicGlobalMedia | null | undefined) =>
   matchedHeroFrame: globals?.matchedHeroFrame ?? fallbackMedia("matched-hero", "image", "image/png", "/hero.png", "Ahmed Rammah"),
   desktopMenuVideo: globals?.desktopMenuVideo ?? fallbackMedia("menu-desktop", "video", "video/webm", "/videos/about-fastcut-desktop.webm", null),
   mobileMenuVideo: globals?.mobileMenuVideo ?? fallbackMedia("menu-mobile", "video", "video/webm", "/videos/about-fastcut-mobile.webm", null),
-  defaultOgImage: globals?.defaultOgImage ?? fallbackMedia("default-og", "image", "image/png", "/hero.png", "Ahmed Rammah"),
+  defaultOgImage: globals?.defaultOgImage ?? fallbackMedia(
+    "default-og",
+    "image",
+    "image/png",
+    DEFAULT_OG_IMAGE.publicUrl,
+    DEFAULT_OG_IMAGE.altText ?? "Ahmed Rammah",
+    {},
+    DEFAULT_OG_IMAGE.width ?? null,
+    DEFAULT_OG_IMAGE.height ?? null,
+  ),
 });
 
 export const getHomepageMedia = (globals: PublicGlobalMedia | null | undefined) => ({
@@ -133,15 +145,15 @@ export const getPageMetadata = (
   page: PublicPage | null,
   fallbackTitle: string,
   fallbackDescription: string,
-): Metadata => ({
+  pathname: string,
+  fallbackImage?: CmsMedia | null,
+): Metadata => buildMetadata({
   title: page?.seo?.metaTitle || page?.title || fallbackTitle,
   description: page?.seo?.metaDescription || fallbackDescription,
-  ...(page?.seo?.canonicalUrl
-    ? { alternates: { canonical: page.seo.canonicalUrl } }
-    : {}),
-  ...(page?.seo?.noindex
-    ? { robots: { index: false, follow: false } }
-    : {}),
+  pathname,
+  canonicalUrl: page?.seo?.canonicalUrl,
+  noindex: page?.seo?.noindex,
+  image: page?.seo?.ogImage || fallbackImage || DEFAULT_OG_IMAGE,
 });
 
 export const getHomePageContent = (page: PublicPage | null) => {
