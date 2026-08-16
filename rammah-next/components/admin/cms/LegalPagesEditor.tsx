@@ -10,6 +10,7 @@ import {
   type AdminLegalPagePayload,
 } from "../../../lib/api/admin";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { SeoEditor } from "./SeoEditor";
 
 const emptyLegal: AdminLegalPagePayload = { slug: "", title: "", body: "", version: "1.0", status: "draft", publishedAt: null };
 const localDate = (value: string | null) => value ? new Date(value).toISOString().slice(0, 16) : "";
@@ -62,6 +63,7 @@ export function LegalPagesEditor() {
           <div className="grid gap-3 md:grid-cols-3"><label className="text-xs font-semibold">Version<input value={form.version} onChange={(event) => setForm({ ...form, version: event.target.value })} className="mt-1 h-10 w-full border border-[#102329]/18 px-3 text-sm" /></label><label className="text-xs font-semibold">Status<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as AdminLegalPagePayload["status"] })} className="mt-1 h-10 w-full border border-[#102329]/18 px-3 text-sm"><option value="draft">Draft</option><option value="published">Published</option><option value="scheduled">Scheduled</option><option value="archived">Archived</option></select></label><label className="text-xs font-semibold">Publish at<input type="datetime-local" value={form.publishedAt ?? ""} onChange={(event) => setForm({ ...form, publishedAt: event.target.value || null })} disabled={form.status !== "scheduled"} className="mt-1 h-10 w-full border border-[#102329]/18 px-3 text-sm disabled:opacity-40" /></label></div>
           {selected?.publicationError ? <p className="text-xs text-red-700">Last publication check: {selected.publicationError}</p> : null}
           <div className="flex justify-end gap-2"><button type="button" onClick={() => void save()} disabled={busy} className="bg-[#0F3B46] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{selected ? "Save legal page" : "Create legal page"}</button>{selected ? <button type="button" onClick={() => void archive()} className="border border-red-700/40 px-4 py-2 text-sm font-semibold text-red-700">Archive</button> : null}</div>
+          {selected ? <SeoEditor resourceType="legal_page" resourceId={selected.id} /> : null}
         </article>
       </div>
     </section>
