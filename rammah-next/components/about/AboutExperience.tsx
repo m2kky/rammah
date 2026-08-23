@@ -334,12 +334,14 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
           </div>
 
           <div className={styles.heroPortrait} data-hero-image>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={media.heroImage.publicUrl}
-              alt={media.heroImage.decorative ? "" : media.heroImage.altText ?? ""}
-              className={`${styles.portraitImage} absolute inset-0 h-full w-full`}
-            />
+            <picture>
+              <source srcSet={media.heroMobileImage.publicUrl} media="(max-width: 899px)" />
+              <img
+                src={media.heroImage.publicUrl}
+                alt={media.heroImage.decorative ? "" : media.heroImage.altText ?? ""}
+                className={`${styles.portraitImage} absolute inset-0 h-full w-full`}
+              />
+            </picture>
           </div>
 
           <p className={styles.heroAside} style={{ whiteSpace: "pre-wrap" }}>{heroAside}</p>

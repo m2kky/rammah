@@ -40,6 +40,15 @@ const groupSlot = (
   return Array.isArray(value) ? value[0] : value;
 };
 
+const sectionSlot = (
+  page: PublicPage | null | undefined,
+  sectionType: string,
+  slotKey: string,
+) => {
+  const value = findPublicSection(page, sectionType)?.media[slotKey];
+  return Array.isArray(value) ? value[0] : value;
+};
+
 export const getGlobalMedia = (globals: PublicGlobalMedia | null | undefined) => ({
   loadingVideo: globals?.loadingVideo ?? fallbackMedia("loading-video", "video", "video/mp4", "/videos/intro-loading.mp4", null),
   loadingPoster: globals?.loadingPoster ?? fallbackMedia("loading-poster", "image", "image/jpeg", "/videos/intro-loading-poster.jpg", "Ahmed Rammah intro"),
@@ -69,16 +78,25 @@ export const getHomepageMedia = (globals: PublicGlobalMedia | null | undefined) 
     }),
 });
 
-export const getAboutMedia = (globals: PublicGlobalMedia | null | undefined) => ({
-  heroImage: groupSlot(globals, "about", "heroImage")
-    ?? fallbackMedia("about-hero", "image", "image/png", "/about_hero.png", "Ahmed Rammah"),
-  desktopFastCutVideo: groupSlot(globals, "about", "desktopFastCutVideo")
-    ?? fallbackMedia("about-video-desktop", "video", "video/webm", "/videos/about-fastcut-desktop.webm", null),
-  mobileFastCutVideo: groupSlot(globals, "about", "mobileFastCutVideo")
-    ?? fallbackMedia("about-video-mobile", "video", "video/webm", "/videos/about-fastcut-mobile.webm", null),
-  supportingImage: groupSlot(globals, "about", "supportingImage")
-    ?? fallbackMedia("about-supporting", "image", "image/png", "/Systems meet people.png", "Ahmed Rammah during a training session"),
-});
+export const getAboutMedia = (
+  globals: PublicGlobalMedia | null | undefined,
+  page?: PublicPage | null,
+) => {
+  const heroImage = sectionSlot(page, "hero", "desktopImage")
+    ?? groupSlot(globals, "about", "heroImage")
+    ?? fallbackMedia("about-hero", "image", "image/png", "/about_hero.png", "Ahmed Rammah");
+
+  return {
+    heroImage,
+    heroMobileImage: sectionSlot(page, "hero", "mobileImage") ?? heroImage,
+    desktopFastCutVideo: groupSlot(globals, "about", "desktopFastCutVideo")
+      ?? fallbackMedia("about-video-desktop", "video", "video/webm", "/videos/about-fastcut-desktop.webm", null),
+    mobileFastCutVideo: groupSlot(globals, "about", "mobileFastCutVideo")
+      ?? fallbackMedia("about-video-mobile", "video", "video/webm", "/videos/about-fastcut-mobile.webm", null),
+    supportingImage: groupSlot(globals, "about", "supportingImage")
+      ?? fallbackMedia("about-supporting", "image", "image/png", "/Systems meet people.png", "Ahmed Rammah during a training session"),
+  };
+};
 
 export const getCorporateMedia = (globals: PublicGlobalMedia | null | undefined) => ({
   portrait: groupSlot(globals, "corporateTraining", "portrait")

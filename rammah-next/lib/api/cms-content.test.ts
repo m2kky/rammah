@@ -54,6 +54,29 @@ describe("CMS page content contracts", () => {
     expect(edited.loadingVideo.publicUrl).toBe("https://media.example.test/loading.mp4");
   });
 
+  it("prefers About hero section images over global and seeded media", () => {
+    const fallback = getAboutMedia(null);
+    const desktopImage = {
+      ...fallback.heroImage,
+      id: "about-desktop",
+      publicUrl: "https://media.example.test/about-desktop.webp",
+    };
+    const mobileImage = {
+      ...fallback.heroImage,
+      id: "about-mobile",
+      publicUrl: "https://media.example.test/about-mobile.webp",
+    };
+
+    const media = getAboutMedia(null, page([
+      section("hero", {
+        media: { desktopImage, mobileImage },
+      }),
+    ]));
+
+    expect(media.heroImage).toEqual(desktopImage);
+    expect(media.heroMobileImage).toEqual(mobileImage);
+  });
+
   it("uses the home hero title as the visible display word", () => {
     const content = getHomePageContent(
       page([

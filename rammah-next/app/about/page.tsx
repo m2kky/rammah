@@ -26,7 +26,7 @@ export default async function AboutPage() {
 
   return (
     <PublicFrame>
-      <AboutExperience page={page} media={getAboutMedia(globals)} />
+      <AboutExperience page={page} media={getAboutMedia(globals, page)} />
     </PublicFrame>
   );
 }

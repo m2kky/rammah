@@ -42,7 +42,9 @@ export function CmsPagesEditor() {
   const [mediaValues, setMediaValues] = useState<Record<string, AdminMediaAsset[]>>({});
   const [newSectionType, setNewSectionType] = useState("hero");
   const [error, setError] = useState<string | null>(null);
+  const [sectionMessage, setSectionMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savingSection, setSavingSection] = useState(false);
 
   const loadIndex = useCallback(async () => {
     try {
@@ -59,6 +61,7 @@ export function CmsPagesEditor() {
   useEffect(() => { void loadIndex(); }, [loadIndex]);
 
   const choosePage = async (page: AdminCmsPage) => {
+    setSectionMessage(null);
     setSelectedPage(page);
     setPageForm({ slug: page.slug, title: page.title, template: page.template, status: page.status, publishedAt: dateTimeLocal(page.publishedAt) || null });
     setSelectedSection(null);
@@ -71,6 +74,7 @@ export function CmsPagesEditor() {
   };
 
   const chooseSection = (section: AdminCmsPageSection) => {
+    setSectionMessage(null);
     setSelectedSection({ ...section, config: { ...section.config } });
     setMediaValues(Object.fromEntries(Object.entries(section.media).map(([slot, assignments]) => [slot, assignments.map(assignmentToMediaAsset)])));
   };
@@ -99,7 +103,9 @@ export function CmsPagesEditor() {
   const saveSection = async () => {
     if (!selectedPage || !selectedSection) return;
     setBusy(true);
+    setSavingSection(true);
     setError(null);
+    setSectionMessage(null);
     try {
       await updateAdminCmsPageSection(selectedPage.id, selectedSection.id, {
         sectionType: selectedSection.sectionType,
@@ -118,8 +124,9 @@ export function CmsPagesEditor() {
       setSections(next);
       const refreshed = next.find(({ id }) => id === selectedSection.id);
       if (refreshed) chooseSection(refreshed);
+      setSectionMessage("Section saved.");
     } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Could not save section."); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setSavingSection(false); }
   };
 
   const addSection = async () => {
@@ -184,7 +191,7 @@ export function CmsPagesEditor() {
 
           {selectedPage ? <article className="space-y-4 border border-[#102329]/12 bg-white p-5"><div className="flex flex-col justify-between gap-2 sm:flex-row"><h3 className="text-lg font-semibold">Sections</h3><div className="flex gap-2"><select value={newSectionType} onChange={(event) => setNewSectionType(event.target.value)} className="h-9 border border-[#102329]/18 px-2 text-xs">{definitions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select><button type="button" onClick={() => void addSection()} className="bg-[#102329] px-3 text-xs font-semibold text-white">Add section</button></div></div><div className="space-y-2">{sections.filter(({ status }) => status !== "archived").map((section, index) => <div key={section.id} className="flex items-center gap-2 border border-[#102329]/10 p-2"><button type="button" onClick={() => chooseSection(section)} className="min-w-0 flex-1 text-left"><strong className="block truncate text-sm">{definitions.find(({ key }) => key === section.sectionType)?.label ?? section.sectionType}</strong><span className="text-xs text-[#102329]/45">{section.status}</span></button><button type="button" aria-label="Move up" onClick={() => void moveSection(section.id, -1)} disabled={index === 0} className="px-2 disabled:opacity-30">↑</button><button type="button" aria-label="Move down" onClick={() => void moveSection(section.id, 1)} disabled={index === sections.length - 1} className="px-2 disabled:opacity-30">↓</button><button type="button" onClick={() => void duplicateSection(section)} className="px-2 text-xs font-semibold">Duplicate</button><button type="button" onClick={() => void archiveSection(section)} className="px-2 text-xs font-semibold text-red-700">Archive</button></div>)}</div></article> : null}
 
-          {selectedSection && definition ? <article className="space-y-5 border border-[#0F3B46]/30 bg-white p-5"><SectionEditor definition={definition} section={selectedSection} onChange={setSelectedSection} mediaValues={mediaValues} onMediaChange={(slot, assets) => setMediaValues((current) => ({ ...current, [slot]: assets }))} /><div className="flex items-center justify-between border-t border-[#102329]/10 pt-4"><select value={selectedSection.status} onChange={(event) => setSelectedSection({ ...selectedSection, status: event.target.value as AdminCmsPageSection["status"] })} className="h-10 border border-[#102329]/18 px-3 text-sm"><option value="draft">Draft</option><option value="published">Published</option><option value="scheduled">Scheduled</option><option value="archived">Archived</option></select><button type="button" onClick={() => void saveSection()} disabled={busy} className="bg-[#0F3B46] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Save section</button></div></article> : null}
+          {selectedSection && definition ? <article className="space-y-5 border border-[#0F3B46]/30 bg-white p-5"><SectionEditor definition={definition} section={selectedSection} onChange={(next) => { setSectionMessage(null); setSelectedSection(next); }} mediaValues={mediaValues} onMediaChange={(slot, assets) => { setSectionMessage(null); setMediaValues((current) => ({ ...current, [slot]: assets })); }} /><div className="flex items-center justify-between gap-4 border-t border-[#102329]/10 pt-4"><select value={selectedSection.status} onChange={(event) => { setSectionMessage(null); setSelectedSection({ ...selectedSection, status: event.target.value as AdminCmsPageSection["status"] }); }} className="h-10 border border-[#102329]/18 px-3 text-sm"><option value="draft">Draft</option><option value="published">Published</option><option value="scheduled">Scheduled</option><option value="archived">Archived</option></select><div className="flex items-center gap-3">{sectionMessage ? <p role="status" aria-live="polite" className="text-sm font-semibold text-emerald-700">{sectionMessage}</p> : null}<button type="button" onClick={() => void saveSection()} disabled={busy} className="bg-[#0F3B46] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{savingSection ? "Saving…" : "Save section"}</button></div></div></article> : null}
         </div>
       </div>
     </section>
