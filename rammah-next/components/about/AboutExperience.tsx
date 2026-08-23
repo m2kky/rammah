@@ -287,9 +287,12 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
                 scrub: true,
               },
             });
-            globeTimeline
-              .fromTo("[data-globe]", { scale: 0.62, yPercent: 24 }, { scale: 2.15, yPercent: -4, ease: "none" })
-              .from("[data-stat]", { autoAlpha: 0, y: 35, stagger: 0.08, duration: 0.28 }, 0.2);
+            globeTimeline.from("[data-stat]", {
+              autoAlpha: 0,
+              y: 35,
+              stagger: 0.08,
+              duration: 0.28,
+            });
           }
         },
       );

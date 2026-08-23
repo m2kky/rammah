@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import createGlobe, { COBEOptions } from "cobe";
-import { useMotionValue, useSpring } from "motion/react";
 import styles from "./AboutExperience.module.css";
-
-const MOVEMENT_DAMPING = 1400;
 
 const GLOBE_CONFIG: COBEOptions = {
   width: 800,
@@ -39,31 +36,7 @@ export default function AboutGlobe() {
   const phiRef = useRef(0);
   const widthRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const pointerInteracting = useRef<number | null>(null);
-  const pointerInteractionMovement = useRef(0);
   const [isVisible, setIsVisible] = useState(false);
-
-  const r = useMotionValue(0);
-  const rs = useSpring(r, {
-    mass: 1,
-    damping: 30,
-    stiffness: 100,
-  });
-
-  const updatePointerInteraction = (value: number | null) => {
-    pointerInteracting.current = value;
-    if (canvasRef.current) {
-      canvasRef.current.style.cursor = value !== null ? "grabbing" : "grab";
-    }
-  };
-
-  const updateMovement = (clientX: number) => {
-    if (pointerInteracting.current !== null) {
-      const delta = clientX - pointerInteracting.current;
-      pointerInteractionMovement.current = delta;
-      r.set(r.get() + delta / MOVEMENT_DAMPING);
-    }
-  };
 
   useEffect(() => {
     const onResize = () => {
@@ -80,8 +53,8 @@ export default function AboutGlobe() {
       width: widthRef.current * 2,
       height: widthRef.current * 2,
       onRender: (state) => {
-        if (!pointerInteracting.current) phiRef.current += 0.005;
-        state.phi = phiRef.current + rs.get();
+        phiRef.current += 0.005;
+        state.phi = phiRef.current;
         state.width = widthRef.current * 2;
         state.height = widthRef.current * 2;
       },
@@ -92,7 +65,7 @@ export default function AboutGlobe() {
       globe.destroy();
       window.removeEventListener("resize", onResize);
     };
-  }, [rs]);
+  }, []);
 
   return (
     <canvas
@@ -102,16 +75,8 @@ export default function AboutGlobe() {
         transition: "opacity 0.5s ease",
       }}
       ref={canvasRef}
-      onPointerDown={(e) => {
-        pointerInteracting.current = e.clientX;
-        updatePointerInteraction(e.clientX);
-      }}
-      onPointerUp={() => updatePointerInteraction(null)}
-      onPointerOut={() => updatePointerInteraction(null)}
-      onMouseMove={(e) => updateMovement(e.clientX)}
-      onTouchMove={(e) => e.touches[0] && updateMovement(e.touches[0].clientX)}
       role="img"
-      aria-label="Interactive globe"
+      aria-label="Rotating globe"
     />
   );
 }

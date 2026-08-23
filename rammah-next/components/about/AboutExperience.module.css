@@ -476,8 +476,7 @@
   width: 100%;
   height: 100%;
   contain: layout paint size;
-  cursor: grab;
-  touch-action: none;
+  pointer-events: none;
   filter: drop-shadow(0 0 28px rgba(92, 221, 190, 0.2));
 }
 
