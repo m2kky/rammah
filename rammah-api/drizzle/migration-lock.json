@@ -70,6 +70,11 @@
       "tag": "0013_first_unicorn",
       "sqlSha256": "ad0c2eda523e670bb7fa0374890d6ecc512e15bfd0ccfc2ec42706ce430f54ac",
       "snapshotSha256": "6301f375f2444c84350e8d07da9b6d9dba2df7d67916a7cef724ec979049ee60"
+    },
+    {
+      "tag": "0014_acrl_recognition",
+      "sqlSha256": "ce21f42133330bccb193126c251a1a704226ec6c3f754175aab618cece91c1c4",
+      "snapshotSha256": "91f2820afdbde291b9613b3e21da6214645d0fd78ff2744d35003db7a881698c"
     }
   ]
 }

@@ -8,6 +8,7 @@ import {
   pages,
   pageSections,
   mediaAssets,
+  sectionMediaAssignments,
   globalMediaAssignmentSets,
   globalMediaAssignments,
 } from "./schema/index.js";
@@ -191,6 +192,21 @@ const mediaSeeds = [
     metadata: {},
   },
   {
+    key: "acrlRecognitionPortrait",
+    displayName: "Ahmed Rammah — official aCRL profile",
+    fileName: "acrl-ahmed-rammah.webp",
+    publicUrl: "/acrl-ahmed-rammah.webp",
+    mimeType: "image/webp",
+    mediaKind: "image",
+    altText: "Ahmed Sherif Rammah on the official aCRL Academy website",
+    width: 300,
+    height: 300,
+    metadata: {
+      sourceUrl: "https://acrl-academy.eu/wp-content/uploads/2025/11/achmed4.png",
+      officialPage: "https://acrl-academy.eu/acrl-academy-eddi-schulze-2/",
+    },
+  },
+  {
     key: "rammahPortrait",
     displayName: "Ahmed Rammah portrait",
     fileName: "RammahPortrait1.png",
@@ -292,6 +308,8 @@ const seedManagedMedia = async () => {
       storageKey: null,
       altText: asset.altText,
       sizeBytes: 0,
+      width: "width" in asset ? asset.width : null,
+      height: "height" in asset ? asset.height : null,
       metadata: asset.metadata,
       processingState: "ready" as const,
       processingError: null,
@@ -345,6 +363,8 @@ const seedManagedMedia = async () => {
       });
     }
   }
+
+  return assetIds;
 };
 
 const seed = async () => {
@@ -485,8 +505,9 @@ const seed = async () => {
         { sectionType: "premise", title: "(01) The premise", body: "Most people do not need more motivation.", config: { statement: "They need to see the invisible system that keeps making the decision before they do.", foot: "aCRL turns that system into a map: structured enough to understand, practical enough to change." }, sortOrder: 30 },
         { sectionType: "method", title: "(02) The method", body: "One operating system. Three deliberate moves. One exclusive standard.", config: { statement: "Decode before\nyou change.", stages: [{ number: "01", title: "Map the system", body: "We surface the hidden rules behind your decisions, relationships, stress responses, and repeated outcomes." }, { number: "02", title: "Decode the pattern", body: "We separate the trigger from the behavior and identify the loop that keeps rebuilding the same result." }, { number: "03", title: "Rewrite the response", body: "We replace insight-only advice with a practical operating system you can use under real pressure." }, { number: "04", title: "Regional exclusivity", body: "Applied for the first time in the Middle East and Arab World by the region's first and only aCRL Master Trainer." }] }, sortOrder: 40 },
         { sectionType: "story", title: "(03) Systems meet people", body: "Built by an engineer. Tested in real human rooms.", config: { copy: "The method was not designed as theory. It grew through coaching, training, facilitation, and more than 1,500 profiles where the same truth kept appearing: behavior becomes less mysterious when its structure is visible.", quote: "“Clarity is not the finish line. It is the point where better choices finally become available.”" }, sortOrder: 50 },
-        { sectionType: "reach", title: "(04) The reach", body: "One language for human patterns. Across borders.", config: { pioneerText: "Bringing the aCRL methodology to the Arab World for the first time. The absolute pioneer and sole Master Trainer in the region.", stats: [["10+", "years in engineering and systems thinking"], ["1,500+", "behavioral profiles analyzed"], ["22+", "countries reached through training"]] }, sortOrder: 60 },
-        { sectionType: "cta", title: "(05) Start the work", body: "Your patterns already tell a story. Let's read it properly.", config: {}, sortOrder: 70 }
+        { sectionType: "recognition", title: "(04) Official recognition", body: "Officially listed among aCRL® Cooperation & Project Partners — Middle East.", config: { name: "Ahmed Sherif Rammah", roles: "Supervisor aCRL® Middle East · Master Trainer aCRL®", sourceLabel: "acrl-academy.eu", profileBadge: "Official profile", cta: { label: "View Ahmed on aCRL® Academy", url: "https://acrl-academy.eu/acrl-academy-eddi-schulze-2/#:~:text=Ahmed%20Sherif%20Rammah" } }, sortOrder: 60 },
+        { sectionType: "reach", title: "(05) The reach", body: "One language for human patterns. Across borders.", config: { pioneerText: "Bringing the aCRL methodology to the Arab World for the first time. The absolute pioneer and sole Master Trainer in the region.", stats: [["10+", "years in engineering and systems thinking"], ["1,500+", "behavioral profiles analyzed"], ["22+", "countries reached through training"]] }, sortOrder: 70 },
+        { sectionType: "cta", title: "(06) Start the work", body: "Your patterns already tell a story. Let's read it properly.", config: {}, sortOrder: 80 }
       ]
     },
     {
@@ -583,7 +604,29 @@ const seed = async () => {
     }
   }
 
-  await seedManagedMedia();
+  const assetIds = await seedManagedMedia();
+  const [recognitionSection] = await db
+    .select({ id: pageSections.id })
+    .from(pageSections)
+    .innerJoin(pages, eq(pages.id, pageSections.pageId))
+    .where(and(
+      eq(pages.slug, "about"),
+      eq(pageSections.sectionType, "recognition"),
+    ))
+    .limit(1);
+  const recognitionPortraitId = assetIds.get("acrlRecognitionPortrait");
+
+  if (!recognitionSection || !recognitionPortraitId) {
+    throw new Error("Missing seeded aCRL recognition section or portrait");
+  }
+
+  await db.insert(sectionMediaAssignments).values({
+    pageSectionId: recognitionSection.id,
+    slotKey: "portrait",
+    mediaAssetId: recognitionPortraitId,
+    sortOrder: 0,
+    decorative: false,
+  }).onConflictDoNothing();
 
   const publishedOfferings = await db
     .select({ slug: offerings.slug, title: offerings.title })
