@@ -8,11 +8,12 @@ const consumers = [
   "components/HeroSection.tsx",
   "components/ServicesSection.tsx",
   "components/about/AboutExperience.tsx",
+  "components/about/RecognitionSection.tsx",
   "components/corporate/CorporateExperience.tsx",
   "app/services/[slug]/page.tsx",
 ];
 
-const knownRenderedPaths = /\/(?:videos\/(?:intro-loading\.mp4|intro-loading-poster\.jpg|about-fastcut-(?:mobile|desktop)\.webm)|hero\.png|about_hero\.png|Systems meet people\.png|RammahPortrait1\.png|hero-final-frame\.png|services-frames\/)/;
+const knownRenderedPaths = /\/(?:videos\/(?:intro-loading\.mp4|intro-loading-poster\.jpg|about-fastcut-(?:mobile|desktop)\.webm)|hero\.png|about_hero\.png|Systems meet people\.png|RammahPortrait1\.png|acrl-ahmed-rammah\.webp|hero-final-frame\.png|services-frames\/)/;
 
 describe("rendered CMS media inventory", () => {
   it("contains no hard-coded rendered content media paths in consumers", () => {

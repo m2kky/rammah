@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useGSAP } from "@gsap/react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-init";
 import AboutGlobe from "./AboutGlobe";
+import { RecognitionSection } from "./RecognitionSection";
 import { ShapeBlue } from "../aCRLShapes";
 import styles from "./AboutExperience.module.css";
 import { findPublicSection, type PublicPage } from "@/lib/api/cms";
@@ -50,6 +51,7 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
   const premiseSec = findPublicSection(page, "premise");
   const methodSec = findPublicSection(page, "method");
   const storySec = findPublicSection(page, "story");
+  const recognitionSec = findPublicSection(page, "recognition");
   const reachSec = findPublicSection(page, "reach");
   const ctaSec = findPublicSection(page, "cta");
 
@@ -81,12 +83,12 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
   const storyCopy = (storySec?.config?.copy as string) || "The method was not designed as theory. It grew through coaching, training, facilitation, and more than 1,500 profiles where the same truth kept appearing: behavior becomes less mysterious when its structure is visible.";
   const storyQuote = (storySec?.config?.quote as string) || "“Clarity is not the finish line. It is the point where better choices finally become available.”";
 
-  const reachTitle = reachSec?.title || "(04) The reach";
+  const reachTitle = reachSec?.title || "(05) The reach";
   const reachHeadline = reachSec?.body || "One language for human patterns. Across borders.";
   const reachPioneer = (reachSec?.config?.pioneerText as string) || "Bringing the aCRL methodology to the Arab World for the first time. The absolute pioneer and sole Master Trainer in the region.";
   const reachStats = (reachSec?.config?.stats as string[][]) || proof;
 
-  const ctaTitle = ctaSec?.title || "(05) Start the work";
+  const ctaTitle = ctaSec?.title || "(06) Start the work";
   const ctaHeadline = ctaSec?.body || "Your patterns already tell a story. Let's read it properly.";
 
   useGSAP(
@@ -277,7 +279,20 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
               },
             );
 
-            // 5. World Section (04 The reach)
+            gsap.from("[data-recognition-reveal]", {
+              autoAlpha: 0,
+              y: 24,
+              stagger: 0.08,
+              duration: 0.72,
+              ease: "power3.out",
+              scrollTrigger: {
+                trigger: "[data-recognition]",
+                start: "top 82%",
+                once: true,
+              },
+            });
+
+            // 5. World Section (05 The reach)
             const globeTimeline = gsap.timeline({
               scrollTrigger: {
                 trigger: "[data-world]",
@@ -469,6 +484,8 @@ export default function AboutExperience({ page, media }: { page?: PublicPage | n
           </blockquote>
         </div>
       </section>
+
+      <RecognitionSection section={recognitionSec} />
 
       <section className={styles.world} data-world>
         <div className={styles.worldHeader}>
