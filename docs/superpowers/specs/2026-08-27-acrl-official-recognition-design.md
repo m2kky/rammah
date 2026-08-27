@@ -43,8 +43,9 @@ The numbered sequence becomes:
 5. `(05) The reach`
 6. `(06) Start the work`
 
-Update both frontend fallbacks and seeded/published About content so production
-does not show duplicate or stale section numbers.
+Update frontend fallbacks and the fresh-install seed. Add an idempotent data
+migration for existing deployments so production receives the new published
+section and updated reach/CTA numbers without depending on `db:seed`.
 
 ## Approved Content
 
@@ -95,10 +96,21 @@ the dark, restrained editorial band.
 - Use intrinsic dimensions or an aspect-ratio container to prevent layout shift.
 - Alt text: `Ahmed Sherif Rammah on the official aCRL Academy website`.
 
+Define a single-image `portrait` slot on the recognition section. Keep the local
+file fallback independent of database state. Register the same local portrait as
+a managed media asset and assign it to the new section in both the fresh seed and
+the production data migration so the current image is visible and replaceable in
+the media library immediately after deployment.
+
 ## CMS Contract
 
-Add an About section kind named `recognition` and expose the approved content as
-editable CMS fields:
+Add a supported CMS section kind named `recognition`. Register it in the API
+section definitions, the Next section-renderer registry, and the generic
+renderer map so the existing registry-parity and publication contracts remain
+valid. The database already stores section types as strings, so this does not
+require a schema change.
+
+Expose the approved content as editable CMS fields:
 
 - section label/title
 - name/headline
@@ -111,8 +123,49 @@ editable CMS fields:
 
 The public page must render the approved fallback section when no CMS record
 exists yet, and use safe field-level fallbacks when a record is incomplete. The
-external URL must only accept HTTP or HTTPS values. Opening the CTA must use a
+renderer must only use HTTP or HTTPS external URLs; an invalid or unsupported
+CMS value falls back to the approved aCRL deep link. Opening the CTA must use a
 new tab with `rel="noopener noreferrer"`.
+
+The current About page also contains legacy custom section types that are not
+all present in the generic CMS definition registry. Retrofitting those existing
+types and repairing full-page republication is pre-existing CMS debt and is not
+part of this feature. The new `recognition` section itself must be editable and
+publishable through the current section editor without adding to that debt.
+
+## Renderer and Data Flow
+
+- The About page reads the first published `recognition` section and renders it
+  between the existing story and reach markup.
+- A dedicated recognition renderer owns the approved editorial band and is also
+  registered in the generic renderer map to satisfy the shared CMS contract.
+- Title, body, and config fields are normalized into a small recognition content
+  model before rendering. Missing values use the approved copy.
+- The portrait resolves from the section media slot first and then falls back to
+  the optimized local portrait.
+- The CTA URL passes through an HTTP(S)-only resolver. Invalid CMS data never
+  reaches the rendered `href`; the approved deep link is used instead.
+
+## Production Data Migration
+
+Add one idempotent migration that targets the published About page by slug:
+
+- Insert the published `recognition` section only when one does not already
+  exist, using sort order `60` and the approved content.
+- Register the local portrait as a ready, published managed media asset when the
+  matching public URL does not exist, then add the `portrait` section assignment
+  only when that slot is empty.
+- Move the existing reach section to sort order `70` and change its default
+  title from `(04) The reach` to `(05) The reach` without overwriting a genuinely
+  customized title.
+- Move the existing CTA section to sort order `80` and change its default title
+  from `(05) Start the work` to `(06) Start the work` without overwriting a
+  genuinely customized title.
+- Leave archived and unrelated pages untouched.
+
+Update the TypeScript seed with the same section, content, numbering, and sort
+orders for fresh installations. Deployment continues to run `db:migrate`; it
+does not require `db:seed`.
 
 ## Motion and Interaction
 
@@ -142,8 +195,16 @@ new tab with `rel="noopener noreferrer"`.
 - A supporting Chromium browser lands on and highlights `Ahmed Sherif Rammah`.
 - A browser without text-fragment support still opens the official page.
 - The CMS can change all section copy, CTA data, and portrait without code edits.
-- Reach and CTA numbering is updated in fallback and deployed CMS content.
+- The recognition definition, API catalog, Next registry, generic renderer map,
+  and their parity tests agree on the new section type.
+- The idempotent migration inserts the production section once, preserves custom
+  titles, registers/assigns the default portrait once, and updates the default
+  reach/CTA ordering and numbering.
+- Fresh seeds produce the same recognition, reach, and CTA order as production.
+- Invalid non-HTTP(S) CTA values render the approved safe fallback URL.
 - Keyboard navigation, focus visibility, alt text, reduced motion, and responsive
   layout pass QA.
 - Existing About animations, globe behavior, and neighboring sections are not
   regressed.
+- The feature does not claim to repair the pre-existing publication contract for
+  every legacy About section type.
