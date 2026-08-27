@@ -7,6 +7,7 @@ import {
   getHomePageContent,
   getMarqueeContent,
   getPageMetadata,
+  getRecognitionContent,
   getSiteBrand,
   getSiteLocale,
   getServicesPageContent,
@@ -75,6 +76,66 @@ describe("CMS page content contracts", () => {
 
     expect(media.heroImage).toEqual(desktopImage);
     expect(media.heroMobileImage).toEqual(mobileImage);
+  });
+
+  it("maps recognition copy, portrait, and a safe external CTA", () => {
+    const fallbackPortrait = getRecognitionContent(null).portrait;
+    const cmsPortrait = {
+      ...fallbackPortrait,
+      id: "recognition-portrait",
+      publicUrl: "https://media.example.test/recognition.webp",
+    };
+
+    const content = getRecognitionContent(section("recognition", {
+      title: "(04) Verified",
+      body: "Official listing copy",
+      config: {
+        name: "Ahmed from CMS",
+        roles: "Supervisor · Master Trainer",
+        sourceLabel: "Official source",
+        profileBadge: "Verified profile",
+        cta: { label: "Open listing", url: "https://example.test/ahmed" },
+      },
+      media: { portrait: cmsPortrait },
+    }));
+
+    expect(content).toEqual({
+      sectionLabel: "(04) Verified",
+      name: "Ahmed from CMS",
+      statement: "Official listing copy",
+      roles: "Supervisor · Master Trainer",
+      sourceLabel: "Official source",
+      profileBadge: "Verified profile",
+      ctaLabel: "Open listing",
+      ctaUrl: "https://example.test/ahmed",
+      portrait: cmsPortrait,
+    });
+  });
+
+  it.each(["javascript:alert(1)", "data:text/html,broken", "/relative-link", "   "])(
+    "falls back from unsupported recognition URL %s",
+    (url) => {
+      const content = getRecognitionContent(section("recognition", {
+        config: { cta: { label: "Official profile", url } },
+      }));
+
+      expect(content.ctaUrl).toBe(
+        "https://acrl-academy.eu/acrl-academy-eddi-schulze-2/#:~:text=Ahmed%20Sherif%20Rammah",
+      );
+    },
+  );
+
+  it("uses approved field-level fallbacks for an incomplete recognition section", () => {
+    const content = getRecognitionContent(section("recognition", {
+      title: null,
+      body: " ",
+      config: { name: "", roles: null, cta: {} },
+    }));
+
+    expect(content.sectionLabel).toBe("(04) Official recognition");
+    expect(content.name).toBe("Ahmed Sherif Rammah");
+    expect(content.statement).toContain("aCRL® Cooperation & Project Partners");
+    expect(content.portrait.publicUrl).toBe("/acrl-ahmed-rammah.webp");
   });
 
   it("uses the home hero title as the visible display word", () => {

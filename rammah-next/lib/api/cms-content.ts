@@ -141,6 +141,78 @@ const configStringArray = (
     : fallback;
 };
 
+export const ACRL_PROFILE_URL =
+  "https://acrl-academy.eu/acrl-academy-eddi-schulze-2/#:~:text=Ahmed%20Sherif%20Rammah";
+
+const recognitionFallbackPortrait = fallbackMedia(
+  "acrl-recognition-portrait",
+  "image",
+  "image/webp",
+  "/acrl-ahmed-rammah.webp",
+  "Ahmed Sherif Rammah on the official aCRL Academy website",
+  {
+    sourceUrl: "https://acrl-academy.eu/wp-content/uploads/2025/11/achmed4.png",
+    officialPage: "https://acrl-academy.eu/acrl-academy-eddi-schulze-2/",
+  },
+  300,
+  300,
+);
+
+const nonEmptyString = (value: unknown, fallback: string) =>
+  typeof value === "string" && value.trim() ? value.trim() : fallback;
+
+const safeExternalUrl = (value: unknown, fallback: string) => {
+  if (typeof value !== "string") return fallback;
+  try {
+    const parsed = new URL(value.trim());
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? parsed.toString()
+      : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+export type RecognitionContent = {
+  sectionLabel: string;
+  name: string;
+  statement: string;
+  roles: string;
+  sourceLabel: string;
+  profileBadge: string;
+  ctaLabel: string;
+  ctaUrl: string;
+  portrait: CmsMedia;
+};
+
+export const getRecognitionContent = (
+  section: PublicPageSection | null,
+): RecognitionContent => {
+  const cta = typeof section?.config.cta === "object" && section.config.cta
+    ? section.config.cta as { label?: unknown; url?: unknown }
+    : {};
+  const portraitValue = section?.media.portrait;
+  const portrait = Array.isArray(portraitValue) ? portraitValue[0] : portraitValue;
+
+  return {
+    sectionLabel: nonEmptyString(section?.title, "(04) Official recognition"),
+    name: nonEmptyString(section?.config.name, "Ahmed Sherif Rammah"),
+    statement: nonEmptyString(
+      section?.body,
+      "Officially listed among aCRL® Cooperation & Project Partners — Middle East.",
+    ),
+    roles: nonEmptyString(
+      section?.config.roles,
+      "Supervisor aCRL® Middle East · Master Trainer aCRL®",
+    ),
+    sourceLabel: nonEmptyString(section?.config.sourceLabel, "acrl-academy.eu"),
+    profileBadge: nonEmptyString(section?.config.profileBadge, "Official profile"),
+    ctaLabel: nonEmptyString(cta.label, "View Ahmed on aCRL® Academy"),
+    ctaUrl: safeExternalUrl(cta.url, ACRL_PROFILE_URL),
+    portrait: portrait ?? recognitionFallbackPortrait,
+  };
+};
+
 export const getMarqueeContent = (
   section: PublicPageSection | null,
   fallback: [string, string],
