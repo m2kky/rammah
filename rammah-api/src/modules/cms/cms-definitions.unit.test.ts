@@ -22,6 +22,7 @@ describe("CMS definition registry", () => {
       "standalone_image",
       "video",
       "gallery",
+      "recognition",
       "cta",
       "divider_spacer",
     ]);
@@ -48,6 +49,11 @@ describe("CMS definition registry", () => {
     expect(resolveSectionMediaSlot("video", "video")).toMatchObject({
       accepts: ["video"],
       cardinality: "single",
+    });
+    expect(resolveSectionMediaSlot("recognition", "portrait")).toMatchObject({
+      accepts: ["image"],
+      cardinality: "single",
+      required: false,
     });
     expect(resolveSectionMediaSlot("unknown_legacy_type", "primaryMedia")).toMatchObject({
       accepts: ["image", "video", "animation_bundle"],

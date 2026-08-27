@@ -160,6 +160,21 @@ export const sectionDefinitions: ReadonlyArray<CmsSectionDefinition> = [
     ],
   },
   {
+    key: "recognition",
+    label: "Official Recognition",
+    description: "Verified external profile with portrait, roles, source, and action.",
+    fields: [
+      { key: "title", label: "Section label", type: "text", required: true },
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "body", label: "Official statement", type: "text", required: true },
+      { key: "roles", label: "Roles", type: "text", required: true },
+      { key: "sourceLabel", label: "Source label", type: "text", required: true },
+      { key: "profileBadge", label: "Portrait badge", type: "text" },
+      { key: "cta", label: "Official profile action", type: "link", required: true },
+      singleImage("portrait", "Portrait"),
+    ],
+  },
+  {
     key: "cta",
     label: "Call to Action",
     description: "A focused action block with optional background media.",

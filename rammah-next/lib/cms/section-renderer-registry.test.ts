@@ -10,6 +10,7 @@ describe("CMS section renderer registry", () => {
       standalone_image: "StandaloneImageSection",
       video: "VideoSection",
       gallery: "GallerySection",
+      recognition: "RecognitionSection",
       cta: "CtaSection",
       divider_spacer: "DividerSpacerSection",
     });

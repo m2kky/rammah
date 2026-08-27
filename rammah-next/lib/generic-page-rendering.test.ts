@@ -12,6 +12,7 @@ describe("generic CMS rendering", () => {
       "gallery",
       "hero",
       "image_with_text",
+      "recognition",
       "rich_text",
       "standalone_image",
       "video",

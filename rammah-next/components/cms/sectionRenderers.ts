@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import type { PublicPageSection } from "../../lib/api/cms";
+import { RecognitionSection } from "../about/RecognitionSection";
 import { CtaSection } from "./sections/CtaSection";
 import { DividerSection } from "./sections/DividerSection";
 import { GallerySection } from "./sections/GallerySection";
@@ -16,6 +17,7 @@ export const SECTION_RENDERERS: Record<string, ComponentType<{ section: PublicPa
   standalone_image: ImageSection,
   video: VideoSection,
   gallery: GallerySection,
+  recognition: RecognitionSection,
   cta: CtaSection,
   divider_spacer: DividerSection,
 };
