@@ -1,7 +1,7 @@
 # Admin “How to use” Guide — Design
 
 **Date:** 2026-08-27  
-**Status:** Design approved; awaiting written specification review  
+**Status:** Approved for implementation  
 **Audience:** Ahmed Rammah site administrators
 
 ## 1. Goal
