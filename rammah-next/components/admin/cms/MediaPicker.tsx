@@ -1,7 +1,7 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AdminApiError,
   createAdminExternalMedia,
@@ -67,9 +67,9 @@ const MediaPreview = ({ asset }: { asset: AdminMediaAsset }) => {
 
 export function MediaPicker({ accepts, multiple = false, value, onChange }: MediaPickerProps) {
   const [assets, setAssets] = useState<AdminMediaAsset[]>([]);
-  const [showLibrary, setShowLibrary] = useState(false);
-  const [mode, setMode] = useState<"upload" | "external">("upload");
+  const [mode, setMode] = useState<"library" | "upload" | "external" | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadState, setUploadState] = useState<UploadState>("idle");
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -93,8 +93,8 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
   }, [acceptedKey]);
 
   useEffect(() => {
-    if (showLibrary) void loadAssets();
-  }, [showLibrary, loadAssets]);
+    if (mode === "library") void loadAssets();
+  }, [mode, loadAssets]);
 
   const usableAssets = useMemo(() => assets.filter((asset) =>
     accepts.includes(asset.mediaKind)
@@ -107,7 +107,7 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
       ? value.some(({ id }) => id === asset.id) ? value : [...value, asset]
       : [asset];
     onChange(next);
-    if (!multiple) setShowLibrary(false);
+    if (!multiple) setMode(null);
   };
 
   const upload = async () => {
@@ -130,7 +130,7 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
       setFile(null);
       if (asset.processingState === "ready") {
         onChange(multiple ? [...value, asset] : [asset]);
-        setShowLibrary(false);
+        setMode(null);
       } else {
         setError("The animation bundle is processing. Refresh the library before selecting it.");
       }
@@ -161,7 +161,7 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
       setExternalUrl("");
       setExternalName("");
       setExternalPreviewReady(false);
-      setShowLibrary(false);
+      setMode(null);
     } catch (externalError) {
       setError(externalError instanceof Error ? externalError.message : "Could not add external media.");
     }
@@ -186,36 +186,51 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
       ) : <p className="font-inter text-xs text-[#102329]/48">No media selected.</p>}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => { setShowLibrary(true); setMode("upload"); }} className="border border-[#0F3B46] px-3 py-2 font-inter text-xs font-semibold text-[#0F3B46]">
+        <button type="button" onClick={() => setMode("library")} className="border border-[#0F3B46] px-3 py-2 font-inter text-xs font-semibold text-[#0F3B46]">
           {value.length ? "Replace" : "Choose from library"}
         </button>
-        <button type="button" onClick={() => { setShowLibrary(true); setMode("upload"); }} className="border border-[#102329]/18 px-3 py-2 font-inter text-xs font-semibold">
+        <button type="button" onClick={() => fileInputRef.current?.click()} className="border border-[#102329]/18 px-3 py-2 font-inter text-xs font-semibold">
           Upload from device
         </button>
         {accepts.some((kind) => kind === "image" || kind === "video") ? (
-          <button type="button" onClick={() => { setShowLibrary(true); setMode("external"); }} className="border border-[#102329]/18 px-3 py-2 font-inter text-xs font-semibold">
+          <button type="button" onClick={() => setMode("external")} className="border border-[#102329]/18 px-3 py-2 font-inter text-xs font-semibold">
             External URL
           </button>
         ) : null}
       </div>
 
-      {showLibrary ? (
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-label="Upload media from device"
+        accept={mediaAccept(accepts)}
+        onChange={(event) => {
+          setFile(event.target.files?.[0] ?? null);
+          setUploadState("idle");
+          setMode(event.target.files?.[0] ? "upload" : null);
+          event.target.value = "";
+        }}
+        className="hidden"
+      />
+
+      {mode ? (
         <div className="space-y-4 border-t border-[#102329]/12 pt-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em]">Media library</p>
-            <button type="button" onClick={() => setShowLibrary(false)} className="font-inter text-xs font-semibold text-[#102329]/55">Close</button>
+            <p className="font-inter text-xs font-semibold uppercase tracking-[0.14em]">
+              {mode === "library" ? "Media library" : mode === "upload" ? "Upload from device" : "External URL"}
+            </p>
+            <button type="button" onClick={() => setMode(null)} className="font-inter text-xs font-semibold text-[#102329]/55">Close</button>
           </div>
 
           {mode === "upload" ? (
             <div className="space-y-3">
-              <input type="file" accept={mediaAccept(accepts)} onChange={(event) => { setFile(event.target.files?.[0] ?? null); setUploadState("idle"); }} className="block w-full font-inter text-xs" />
               {file ? (
                 <button type="button" onClick={() => void upload()} disabled={uploadState === "signing" || uploadState === "uploading" || uploadState === "finalizing"} className="bg-[#0F3B46] px-4 py-2 font-inter text-xs font-semibold text-white disabled:opacity-50">
                   {uploadState === "uploading" ? `Uploading ${progress}%` : uploadState === "finalizing" ? "Checking file…" : uploadState === "failed" ? "Retry upload" : "Upload selected file"}
                 </button>
               ) : null}
             </div>
-          ) : (
+          ) : mode === "external" ? (
             <div className="grid gap-3 lg:grid-cols-[1fr_160px]">
               <div className="space-y-2">
                 <input value={externalName} onChange={(event) => setExternalName(event.target.value)} placeholder="Display name" className="h-10 w-full border border-[#102329]/18 bg-white px-3 text-sm" />
@@ -234,16 +249,18 @@ export function MediaPicker({ accepts, multiple = false, value, onChange }: Medi
                 <video src={externalUrl} muted playsInline controls onLoadedMetadata={() => setExternalPreviewReady(true)} onError={() => setExternalPreviewReady(false)} className="aspect-video w-full object-cover" />
               ) : null}
             </div>
-          )}
+          ) : null}
 
-          <div className="grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-4">
-            {usableAssets.map((asset) => (
-              <button key={asset.id} type="button" onClick={() => select(asset)} className="overflow-hidden border border-[#102329]/12 bg-white text-left hover:border-[#0F3B46]">
-                <MediaPreview asset={asset} />
-                <span className="block truncate p-2 font-inter text-xs font-semibold">{asset.displayName}</span>
-              </button>
-            ))}
-          </div>
+          {mode === "library" ? (
+            <div className="grid max-h-80 gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-4">
+              {usableAssets.map((asset) => (
+                <button key={asset.id} type="button" onClick={() => select(asset)} className="overflow-hidden border border-[#102329]/12 bg-white text-left hover:border-[#0F3B46]">
+                  <MediaPreview asset={asset} />
+                  <span className="block truncate p-2 font-inter text-xs font-semibold">{asset.displayName}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
       {error ? <p className="font-inter text-xs text-red-700">{error}</p> : null}
