@@ -101,7 +101,7 @@ export default function ServicesStack({
         return (
           <section
             key={offering.id}
-            className="sticky top-0 w-full min-h-[100dvh] flex flex-col items-center justify-center overflow-hidden"
+            className="relative w-full min-h-[100dvh] flex flex-col items-center justify-center overflow-hidden md:sticky md:top-0"
             style={{
               backgroundColor: bg,
               color: text,
