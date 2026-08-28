@@ -68,7 +68,7 @@ export default function HeroSection({ entryReady, content, portrait }: HeroSecti
 
       {/* DECODE background text */}
       <div
-        className={`absolute -bottom-4 sm:-bottom-5 md:bottom-0 left-0 right-0 text-center font-bricolage font-extrabold text-[#0F3B46] select-none leading-none text-[7.15rem] sm:text-[8.5rem] md:text-[14rem] lg:text-[19rem] xl:text-[21rem] 2xl:text-[24rem] z-[5] pointer-events-none transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`absolute -bottom-4 sm:-bottom-5 md:bottom-0 left-0 right-0 text-center font-bricolage font-extrabold text-[#0F3B46] select-none leading-none text-[min(7.15rem,22.5vw)] sm:text-[8.5rem] md:text-[14rem] lg:text-[19rem] xl:text-[21rem] 2xl:text-[24rem] z-[5] pointer-events-none transition-all duration-[1300ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
           entryReady ? "opacity-100 translate-y-0" : "opacity-0 translate-y-12"
         }`}
         style={{
