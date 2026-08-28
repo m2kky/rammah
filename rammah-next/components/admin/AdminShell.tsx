@@ -6,8 +6,9 @@ import { useState } from "react";
 import { logoutAdmin } from "@/lib/api/admin";
 import { useAdminAuth } from "./AdminAuthGate";
 
-const navItems = [
+export const adminNavItems = [
   { label: "Overview", href: "/admin" },
+  { label: "How to use", href: "/admin/how-to-use" },
   { label: "Offerings", href: "/admin/offerings" },
   { label: "Availability", href: "/admin/availability" },
   { label: "Locations", href: "/admin/locations" },
@@ -70,7 +71,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           </div>
 
         <nav className="mt-5 flex gap-2 overflow-x-auto pb-1 lg:mt-10 lg:flex-col lg:overflow-visible lg:pb-0">
-            {navItems.map((item) => {
+            {adminNavItems.map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/admin" && pathname.startsWith(`${item.href}/`));

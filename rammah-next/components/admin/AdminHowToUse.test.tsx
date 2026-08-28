@@ -5,6 +5,7 @@ import {
   searchGuideSections,
 } from "@/app/admin/(protected)/how-to-use/how-to-use-content";
 import HowToUsePage from "@/app/admin/(protected)/how-to-use/page";
+import { adminNavItems } from "./AdminShell";
 
 const workflowIds = [
   "create-appointment-offering",
@@ -64,6 +65,13 @@ describe("admin how-to content", () => {
 });
 
 describe("admin how-to page", () => {
+  it("is linked immediately after Overview in the admin navigation", () => {
+    expect(adminNavItems.slice(0, 2)).toEqual([
+      { label: "Overview", href: "/admin" },
+      { label: "How to use", href: "/admin/how-to-use" },
+    ]);
+  });
+
   it("filters the Arabic guide and resets an empty result", () => {
     render(<HowToUsePage />);
 
