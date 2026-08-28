@@ -1,8 +1,10 @@
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   guideSections,
   searchGuideSections,
 } from "@/app/admin/(protected)/how-to-use/how-to-use-content";
+import HowToUsePage from "@/app/admin/(protected)/how-to-use/page";
 
 const workflowIds = [
   "create-appointment-offering",
@@ -58,5 +60,23 @@ describe("admin how-to content", () => {
   it("finds entries using Arabic and English aliases", () => {
     expect(searchGuideSections("سعة").flatMap((section) => section.entries).map((entry) => entry.id)).toContain("capacity");
     expect(searchGuideSections("Early bird").flatMap((section) => section.entries).map((entry) => entry.id)).toContain("pricing");
+  });
+});
+
+describe("admin how-to page", () => {
+  it("filters the Arabic guide and resets an empty result", () => {
+    render(<HowToUsePage />);
+
+    expect(screen.getByRole("heading", { name: "كيف تستخدم الداشبورد؟" })).toBeInTheDocument();
+
+    const search = screen.getByRole("searchbox", { name: "ابحث في الدليل" });
+    fireEvent.change(search, { target: { value: "Early bird" } });
+    expect(screen.getByText("الأسعار وPrice groups وEarly bird")).toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: "لا توجد نتيجة بهذا الاسم" } });
+    expect(screen.getByRole("status")).toHaveTextContent("لم نجد شرحًا مطابقًا");
+
+    fireEvent.click(screen.getByRole("button", { name: "مسح البحث" }));
+    expect(screen.getByText("إضافة Session ثابتة")).toBeInTheDocument();
   });
 });
