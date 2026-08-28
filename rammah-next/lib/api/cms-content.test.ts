@@ -171,6 +171,14 @@ describe("CMS page content contracts", () => {
     expect(content.hero.displayWord).toBe("DECODE");
   });
 
+  it("preserves the designed DECODE word for the legacy misspelled hero title", () => {
+    const content = getHomePageContent(
+      page([section("hero", { title: "Ahmed Ramma" })]),
+    );
+
+    expect(content.hero.displayWord).toBe("DECODE");
+  });
+
   it("maps the services hero, marquee, and listing sections created by the CMS seed", () => {
     const content = getServicesPageContent(
       page([

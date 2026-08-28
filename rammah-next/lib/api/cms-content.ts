@@ -259,7 +259,7 @@ export const getHomePageContent = (page: PublicPage | null) => {
       displayWord:
         typeof configuredDisplayWord === "string"
           ? configuredDisplayWord
-          : heroTitle === "Ahmed Rammah"
+          : heroTitle === "Ahmed Rammah" || heroTitle === "Ahmed Ramma"
             ? "DECODE"
             : heroTitle,
       body: textField(
