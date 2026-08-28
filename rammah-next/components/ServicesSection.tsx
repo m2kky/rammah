@@ -485,7 +485,7 @@ export default function ServicesSection({
             tl.fromTo(
               mobileDetailRefs.current[i],
               {
-                yPercent: i === 0 ? 28 : 108,
+                yPercent: 108,
                 scale: 1.025,
                 pointerEvents: "none",
               },

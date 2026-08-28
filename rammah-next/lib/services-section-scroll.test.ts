@@ -16,6 +16,15 @@ describe("services section scroll", () => {
     );
   });
 
+  it("returns the first mobile panel fully below the viewport before its phase", () => {
+    expect(servicesSectionSource).not.toContain(
+      "yPercent: i === 0 ? 28 : 108",
+    );
+    expect(servicesSectionSource).toMatch(
+      /tl\.fromTo\(\s*mobileDetailRefs\.current\[i\],\s*\{\s*yPercent:\s*108/,
+    );
+  });
+
   it("keeps the pinned container on-screen until the section unpins", () => {
     expect(servicesSectionSource).not.toMatch(
       /tl\.to\(\s*container,\s*\{\s*xPercent:\s*-100/,
