@@ -7,13 +7,13 @@ import { ShapeBlue, ShapeGreen, ShapeOrange, ShapeRed } from "./aCRLShapes";
 import type { CmsMedia, PublicNavigationItem } from "@/lib/api/cms";
 
 const fallbackMenuItems = [
-  { label: "Home", href: "/", align: "start" as const },
-  { label: "About", href: "/about", align: "start" as const },
-  { label: "Services", href: "/services", align: "end" as const },
-  { label: "Corporate Training", href: "/services/corporate-training", align: "start" as const },
-  { label: "Booking", href: "/booking", align: "end" as const },
-  { label: "Blog", href: "/blog", align: "start" as const },
-  { label: "Contact", href: "/contact", align: "end" as const },
+  { label: "Home", href: "/" },
+  { label: "About", href: "/about" },
+  { label: "Services", href: "/services" },
+  { label: "Corporate Training", href: "/services/corporate-training" },
+  { label: "Booking", href: "/booking" },
+  { label: "Blog", href: "/blog" },
+  { label: "Contact", href: "/contact" },
 ];
 
 const iconShapes = [ShapeGreen, ShapeOrange, ShapeBlue, ShapeRed];
@@ -85,6 +85,9 @@ export default function Navbar({
   mobileMenuVideo,
 }: NavbarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuItems = navigation.length > 0
+    ? navigation.map((item) => ({ label: item.label, href: item.url }))
+    : fallbackMenuItems;
 
   useEffect(() => {
     const onEsc = (event: KeyboardEvent) => {
@@ -121,7 +124,9 @@ export default function Navbar({
             <button
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
-              aria-label="Open menu"
+              aria-expanded={menuOpen}
+              aria-controls="site-menu"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
               className="inline-flex h-7 w-auto md:h-10 items-center justify-center"
             >
               <AnimatedaCRLGlyph />
@@ -151,6 +156,7 @@ export default function Navbar({
               type="button"
               onClick={() => setMenuOpen((prev) => !prev)}
               aria-expanded={menuOpen}
+              aria-controls="site-menu"
               aria-label={menuOpen ? "Close menu" : "Open menu"}
               className="group flex h-10 w-10 flex-col items-center justify-center gap-[4.5px] rounded-full bg-white/5 border border-white/10 transition-all hover:bg-white/15 active:scale-90"
             >
@@ -165,9 +171,10 @@ export default function Navbar({
 
       {/* Fullscreen menu overlay */}
       <div
-        className={`fixed inset-0 z-[70] transition-all duration-500 ${
-          menuOpen ? "opacity-100 visible" : "hidden"
-        }`}
+        id="site-menu"
+        inert={!menuOpen}
+        className={`fixed inset-0 z-[70] bg-black transition-[opacity,visibility] duration-500 motion-reduce:transition-none ${menuOpen ? "opacity-100 visible" : "opacity-0 invisible"
+          }`}
       >
         <video
           className="absolute inset-0 h-full w-full object-cover"
@@ -183,29 +190,22 @@ export default function Navbar({
         <div className="absolute inset-0 bg-black/68 backdrop-blur-[2px]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(15,59,70,0.18)_0%,rgba(0,0,0,0.8)_70%)]" />
 
-        <div className="relative z-10 h-full mx-auto max-w-[1440px] px-6 md:px-12 flex items-center">
-          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-14">
-            {(navigation.length > 0 ? navigation.map((item, i) => ({
-              label: item.label,
-              href: item.url,
-              align: i % 2 === 0 ? ("start" as const) : ("end" as const)
-            })) : fallbackMenuItems).map((item) => (
-              <div
-                key={item.label}
-                className={`${item.align === "start" ? "md:text-left" : "md:text-right"
-                  }`}
-              >
-                <Link
-                  href={item.href}
-                  onClick={() => setMenuOpen(false)}
-                  className="inline-block text-[#F4EBD8] font-bricolage font-bold leading-[0.9] tracking-tight transition-all duration-300 hover:scale-[1.04] hover:tracking-[0.01em]"
-                  style={{ fontSize: "clamp(3.2rem, 9vw, 8.4rem)" }}
-                >
-                  {item.label}
-                </Link>
-              </div>
-            ))}
-          </div>
+        <div className="absolute inset-0 overflow-y-auto overscroll-contain">
+          <nav aria-label="Main menu" className="mx-auto flex min-h-full max-w-[1280px] flex-col justify-center px-6 pt-20 pb-28 md:px-12 md:pt-28 lg:px-16">
+            <ul className="grid grid-cols-1 gap-y-3 min-[900px]:grid-cols-2 min-[900px]:gap-x-12 min-[900px]:gap-y-6">
+              {menuItems.map((item) => (
+                <li key={item.href} className="min-w-0">
+                  <Link
+                    href={item.href}
+                    onClick={() => setMenuOpen(false)}
+                    className="inline-block min-h-11 max-w-full rounded-sm py-1.5 text-[clamp(1.75rem,8vw,3rem)] leading-[1.05] font-bricolage font-bold tracking-tight text-[#F4EBD8] [overflow-wrap:anywhere] transition-opacity duration-300 hover:opacity-75 focus-visible:outline-2 focus-visible:outline-offset-4 motion-reduce:transition-none min-[900px]:text-[clamp(2.25rem,4vw,3.75rem)]"
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
       </div>
     </>
