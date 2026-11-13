@@ -1,8 +1,8 @@
+import { env } from "../config/env.js";
 import { closeDatabase, pool } from "../db/client.js";
 import {
   assertPricingGroupsMigrationReady,
   inspectPricingGroupsMigration,
-  parseSupportedCurrencies,
 } from "../modules/pricing/pricing-groups-preflight.js";
 import { isoCountryCodes } from "../shared/geo/countries.js";
 
@@ -11,12 +11,9 @@ const run = async () => {
 
   try {
     await client.query("BEGIN TRANSACTION READ ONLY");
-    const supportedCurrencies = parseSupportedCurrencies(
-      process.env.PAYMENT_SUPPORTED_CURRENCIES ?? "EGP",
-    );
     const report = await inspectPricingGroupsMigration(
       client,
-      supportedCurrencies,
+      new Set(env.PAYMENT_SUPPORTED_CURRENCIES),
       isoCountryCodes,
     );
 

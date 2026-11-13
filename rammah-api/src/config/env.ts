@@ -61,7 +61,6 @@ const trustedProxyCidrs = commaSeparatedList.superRefine((values, context) => {
 });
 const supportedCurrencyList = z
   .string()
-  .default("EGP")
   .transform((value, context) => {
     try {
       return [...parseSupportedCurrencies(value)];
@@ -92,7 +91,7 @@ const envSchema = z.object({
   PAYMENT_PROVIDER: z.enum(["mock", "kashier"]).default("mock"),
   PAYMENT_MODE: z.enum(["test", "live"]).default("test"),
   PAYMENT_HOLD_MINUTES: z.coerce.number().int().positive().default(15),
-  PAYMENT_SUPPORTED_CURRENCIES: supportedCurrencyList,
+  PAYMENT_SUPPORTED_CURRENCIES: supportedCurrencyList.optional(),
   ADMIN_PRICE_WRITES_ENABLED: booleanFlag.default(true),
   BOOKING_CHANGE_MINIMUM_NOTICE_MINUTES: nonNegativeInteger.default(1440),
   BOOKING_DAILY_LIMIT: positiveInteger.default(8),
@@ -175,7 +174,12 @@ const envSchema = z.object({
       }
     }
   }
-});
+}).transform((value) => ({
+  ...value,
+  PAYMENT_SUPPORTED_CURRENCIES:
+    value.PAYMENT_SUPPORTED_CURRENCIES ??
+    (value.PAYMENT_MODE === "live" ? ["EGP"] : ["EGP", "USD", "EUR", "GBP"]),
+}));
 
 export const parseEnv = (source: Record<string, unknown>) => envSchema.parse(source);
 

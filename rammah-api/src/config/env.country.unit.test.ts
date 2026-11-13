@@ -16,13 +16,22 @@ describe("country pricing environment", () => {
     ({ parseEnv } = await import("./env.js"));
   });
 
-  it("defaults to no trusted country provider or proxy and EGP only", () => {
+  it("defaults to no trusted country provider or proxy and includes Kashier test currencies", () => {
     expect(parseEnv(baseEnv)).toMatchObject({
       COUNTRY_HEADER_PROVIDER: "none",
       TRUSTED_PROXY_CIDRS: [],
-      PAYMENT_SUPPORTED_CURRENCIES: ["EGP"],
+      PAYMENT_SUPPORTED_CURRENCIES: ["EGP", "USD", "EUR", "GBP"],
       ADMIN_PRICE_WRITES_ENABLED: true,
     });
+  });
+
+  it("defaults live payments to EGP and respects merchant currency overrides", () => {
+    const liveEnv = { ...baseEnv, PAYMENT_MODE: "live" };
+    expect(parseEnv(liveEnv).PAYMENT_SUPPORTED_CURRENCIES).toEqual(["EGP"]);
+    expect(
+      parseEnv({ ...liveEnv, PAYMENT_SUPPORTED_CURRENCIES: "EGP,EUR" })
+        .PAYMENT_SUPPORTED_CURRENCIES,
+    ).toEqual(["EGP", "EUR"]);
   });
 
   it("parses the explicit admin price write pause", () => {
